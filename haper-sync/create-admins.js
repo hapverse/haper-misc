@@ -35,7 +35,12 @@ async function main() {
         },
         { upsert: true },
     );
-    console.log("✅ Super admin created: superadmin@haper.in");
+    console.log(
+        "✅ Super admin created: ",
+        process.env.SUPER_ADMIN_EMAIL,
+        "with password:",
+        process.env.SUPER_ADMIN_PASSWORD,
+    );
 
     // ── Store Admin ───────────────────────────────────────────
     const storeAdminPassword = await bcrypt.hash(process.env.STORE_ADMIN_PASSWORD, SALT_ROUNDS);
@@ -59,7 +64,12 @@ async function main() {
         },
         { upsert: true },
     );
-    console.log("✅ Store admin created: admin@haper.in");
+    console.log(
+        "✅ Store admin created: ",
+        process.env.STORE_ADMIN_EMAIL,
+        "with password:",
+        process.env.STORE_ADMIN_PASSWORD,
+    );
 
     await client.close();
 }
