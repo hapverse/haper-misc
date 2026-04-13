@@ -144,11 +144,25 @@ const transformers = {
         ...doc,
         storeId: doc.storeId || DEFAULT_STORE_ID,
         invoiceNumber: doc.invoiceNumber || null,
-        // Ensure each item has costPrice
-        items: (doc.items || []).map((item) => ({
-            ...item,
-            costPrice: item.costPrice ?? 0,
-        })),
+        items: (doc.items || []).map((item) => {
+            // Resolve salePrice: new docs have it directly; old docs stored it
+            // in `price` (frozen sellingPrice at checkout). `sellingPrice` on an
+            // order item comes from Mongoose populate and is NOT the frozen value
+            // — prefer explicit `salePrice`, then fall back to `price`.
+            const salePrice = item.salePrice ?? item.price ?? 0;
+
+            // Build clean item — drop legacy `price` and stale `sellingPrice`
+            // so the destination DB only contains the canonical schema.
+            const { price: _price, sellingPrice: _sp, ...rest } = item;
+            void _price; void _sp; // suppress unused-var lint
+
+            return {
+                ...rest,
+                salePrice,
+                costPrice: item.costPrice ?? 0,
+                name: item.name ?? null,
+            };
+        }),
     }),
 
     carts: (doc) => ({
