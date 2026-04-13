@@ -1,11 +1,12 @@
 /**
  * Haper One-Shot Setup Script
  * ─────────────────────────────────────────────────────────────────────────────
- * Runs three steps in order. Safe to re-run — nothing is done twice.
+ * Runs four steps in order. Safe to re-run — nothing is done twice.
  *
- *   Step 1 — Seed admins & test rider   (upsert, skips if already exists)
+ *   Step 1 — Seed admins & test rider    (upsert, skips if already exists)
  *   Step 2 — Backfill costPrice on orders (only patches items still at 0/null)
- *   Step 3 — Backfill profit snapshots   (upserts, recomputes any day changed)
+ *   Step 3 — Backfill profit snapshots    (upserts, recomputes any day changed)
+ *   Step 4 — Ensure all DB indexes        (createIndex is idempotent)
  *
  * Usage:
  *   node setup.js
@@ -19,6 +20,7 @@
 require("dotenv").config();
 const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
+const { MongoClient } = require("mongodb");
 
 const MONGO_URI = process.env.NEW_DB_URI;
 if (!MONGO_URI) {
@@ -434,6 +436,165 @@ async function backfillProfitSnapshots() {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
+// STEP 4 — Ensure all indexes
+// ═════════════════════════════════════════════════════════════════════════════
+
+const INDEX_DEFS = [
+    { name: "addresses", indexes: [
+        { key: { userId: 1 } },
+        { key: { _id: 1, userId: 1 } },
+        { key: { userId: 1, isDefault: 1 }, options: { partialFilterExpression: { isDefault: true } } },
+        { key: { location: "2dsphere" } },
+    ]},
+    { name: "carts", indexes: [
+        { key: { userId: 1 } },
+        { key: { storeId: 1, userId: 1, type: 1 } },
+    ]},
+    { name: "transactions", indexes: [
+        { key: { orderId: 1 }, options: { unique: true } },
+        { key: { storeId: 1 } },
+        { key: { userId: 1 } },
+        { key: { storeId: 1, status: 1 } },
+    ]},
+    { name: "categories", indexes: [
+        { key: { storeId: 1, status: 1, isSuggested: -1, seq: -1, createdAt: -1 } },
+        { key: { storeId: 1, name: 1, status: 1 } },
+    ]},
+    { name: "sub-categories", indexes: [
+        { key: { storeId: 1, status: 1, category: 1, isSuggested: -1, createdAt: -1 } },
+        { key: { storeId: 1, name: 1, status: 1 } },
+    ]},
+    { name: "items", indexes: [
+        { key: { important: 1 } },
+        { key: { iId: 1 }, options: { unique: true } },
+        { key: { barcode: 1 }, options: { unique: true, sparse: true, partialFilterExpression: { barcode: { $exists: true, $type: "string", $gt: "" } } } },
+        { key: { status: 1 } },
+        { key: { lowQty: 1 } },
+        { key: { "category._id": 1, status: 1 } },
+        { key: { "subCategory._id": 1, status: 1 } },
+        { key: { storeId: 1 } },
+        { key: { storeId: 1, status: 1 } },
+        { key: { storeId: 1, "category._id": 1, status: 1 } },
+        { key: { storeId: 1, "subCategory._id": 1, status: 1 } },
+        { key: { storeId: 1, status: 1, important: -1, isSuggested: -1, createdAt: -1 } },
+        { key: { storeId: 1, expiresAt: 1, status: 1 } },
+        { key: { storeId: 1, quantity: 1, lowQty: 1, status: 1 } },
+        { key: { isSuggested: 1, seq: -1 } },
+    ]},
+    { name: "users", indexes: [
+        { key: { email: 1 }, options: { unique: true, partialFilterExpression: { email: { $ne: null } } } },
+        { key: { phone: 1 }, options: { unique: true, partialFilterExpression: { phone: { $ne: null } } } },
+        { key: { refCode: 1 }, options: { unique: true } },
+        { key: { status: 1, createdAt: -1 } },
+        { key: { createdAt: -1 } },
+        { key: { name: 1 } },
+    ]},
+    { name: "configs", indexes: [
+        { key: { name: 1 }, options: { unique: true } },
+    ]},
+    { name: "delivery-incentives", indexes: [
+        { key: { orderId: 1 }, options: { unique: true } },
+        { key: { storeId: 1, deliveredOn: -1 } },
+        { key: { storeId: 1, deliveryBoyId: 1, deliveredOn: -1 } },
+        { key: { storeId: 1, payoutMonth: 1, payoutStatus: 1 } },
+        { key: { storeId: 1, deliveryBoyId: 1, payoutMonth: 1, payoutStatus: 1 } },
+    ]},
+    { name: "banners", indexes: [
+        { key: { storeId: 1, status: 1, seq: -1, createdAt: -1 } },
+        { key: { storeId: 1, seq: -1, createdAt: -1 } },
+        { key: { storeId: 1, status: 1, isPermanent: 1, startDate: 1, endDate: 1 } },
+        { key: { storeId: 1, updatedAt: -1 } },
+    ]},
+    { name: "ratings", indexes: [
+        { key: { orderId: 1 }, options: { unique: true } },
+        { key: { riderId: 1, createdAt: -1 } },
+        { key: { storeId: 1, createdAt: -1 } },
+        { key: { userId: 1 } },
+    ]},
+    { name: "stores", indexes: [
+        { key: { location: "2dsphere" } },
+    ]},
+    { name: "admin-audit-logs", indexes: [
+        { key: { occurredAt: -1 } },
+        { key: { "actor.adminId": 1, occurredAt: -1 } },
+        { key: { "target.adminId": 1, occurredAt: -1 } },
+        { key: { action: 1, occurredAt: -1 } },
+        { key: { storeId: 1, occurredAt: -1 } },
+    ]},
+    { name: "delivery-boys", indexes: [
+        { key: { storeId: 1, status: 1 } },
+        { key: { storeId: 1, createdAt: -1 } },
+        { key: { storeId: 1, status: 1, createdAt: -1 } },
+        { key: { storeId: 1, name: 1 } },
+    ]},
+    { name: "cash-reconciliations", indexes: [
+        { key: { riderId: 1, settledOn: -1 } },
+        { key: { storeId: 1, settledOn: -1 } },
+    ]},
+    { name: "admins", indexes: [
+        { key: { storeId: 1, roles: 1 } },
+    ]},
+    { name: "orders", indexes: [
+        { key: { userId: 1, status: 1 } },
+        { key: { orderId: "text" } },
+        { key: { createdAt: 1, paymentMethod: 1, price: 1 } },
+        { key: { userId: 1, "meta.id": 1, "meta.type": 1 }, options: { partialFilterExpression: { "meta.id": { $exists: true }, "meta.type": { $exists: true } } } },
+        { key: { status: 1, createdAt: -1 } },
+        { key: { storeId: 1 } },
+        { key: { storeId: 1, userId: 1, status: 1 } },
+        { key: { storeId: 1, createdAt: -1 } },
+        { key: { storeId: 1, status: 1, createdAt: -1 } },
+        { key: { storeId: 1, assignedTo: 1, createdAt: -1 } },
+        { key: { storeId: 1, paymentMethod: 1, createdAt: -1 } },
+        { key: { storeId: 1, addressId: 1, createdAt: -1 } },
+        { key: { storeId: 1, userId: 1, createdAt: -1 } },
+        { key: { storeId: 1, status: 1, deliveredOn: -1 } },
+        { key: { storeId: 1, assignedTo: 1, deliveredOn: -1 } },
+        { key: { invoiceNumber: 1 }, options: { unique: true, sparse: true } },
+    ]},
+    { name: "profit_snapshots", indexes: [
+        { key: { date: 1, storeId: 1 }, options: { unique: true } },
+        { key: { storeId: 1, date: -1 } },
+        { key: { date: -1 } },
+    ]},
+];
+
+async function ensureIndexes() {
+    console.log("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    console.log("STEP 4 — Ensure all DB indexes");
+    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+
+    const client = new MongoClient(MONGO_URI);
+    await client.connect();
+    const db = client.db();
+
+    let created = 0;
+    let skipped = 0;
+    let errors = 0;
+
+    for (const { name, indexes } of INDEX_DEFS) {
+        const col = db.collection(name);
+        for (const { key, options = {} } of indexes) {
+            try {
+                await col.createIndex(key, { background: true, ...options });
+                created++;
+            } catch (err) {
+                if (err.code === 85 || err.code === 86) {
+                    skipped++;
+                } else {
+                    console.error(`   ❌  ${name} ${JSON.stringify(key)}: ${err.message}`);
+                    errors++;
+                }
+            }
+        }
+        console.log(`   ✅  ${name}`);
+    }
+
+    await client.close();
+    console.log(`   Created/confirmed: ${created}  |  Already existed: ${skipped}  |  Errors: ${errors}`);
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
 // MAIN
 // ═════════════════════════════════════════════════════════════════════════════
 
@@ -445,6 +606,7 @@ async function main() {
     await seedAdmins();
     await backfillCostPrices();
     await backfillProfitSnapshots();
+    await ensureIndexes();
 
     console.log("\n✅  All steps complete.\n");
     await mongoose.disconnect();
