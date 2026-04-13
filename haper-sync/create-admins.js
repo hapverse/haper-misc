@@ -71,6 +71,35 @@ async function main() {
         process.env.STORE_ADMIN_PASSWORD,
     );
 
+    // ── Test Rider ────────────────────────────────────────────
+    const riders = db.collection("delivery-boys");
+    const testRiderPassword = await bcrypt.hash("test@1234", SALT_ROUNDS);
+    await riders.updateOne(
+        { email: "testrider@haper.in" },
+        {
+            $setOnInsert: {
+                name: "Test-Rider-No-Order",
+                phone: "9708647494",
+                email: "testrider@haper.in",
+                username: "testrider",
+                password: testRiderPassword,
+                avatar: null,
+                storeId: STORE_ID,
+                status: 1,
+                fcmTokens: [],
+                notificationPreferences: {
+                    newAssignment: true,
+                    incentiveCountdown: true,
+                    payoutReady: true,
+                },
+                createdAt: new Date(),
+                updatedAt: new Date(),
+            },
+        },
+        { upsert: true },
+    );
+    console.log("✅ Test rider created: testrider@haper.in with password: test@1234");
+
     await client.close();
 }
 
