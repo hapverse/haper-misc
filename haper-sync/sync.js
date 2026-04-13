@@ -101,6 +101,23 @@ const DEFAULT_STORE = {
     updatedAt: new Date("2026-03-29T20:29:44.499Z"),
 };
 
+// ─── Item Name Lookup Map ────────────────────────────────────────────────────
+// Built once from the old DB before bulk migration so the orders transformer
+// can backfill item names on old order items that never stored a name snapshot.
+// Map key: itemId.toString()  →  value: item name string
+
+let itemNameMap = new Map();
+
+async function buildItemNameMap(oldDb) {
+    const cursor = oldDb.collection("items").find({}, { projection: { _id: 1, name: 1 } });
+    let count = 0;
+    for await (const item of cursor) {
+        itemNameMap.set(item._id.toString(), item.name || null);
+        count++;
+    }
+    console.log(`[Init] Item name map built: ${count} items indexed.`);
+}
+
 // ─── Transformation Functions ────────────────────────────────────────────────
 // Each function takes an old-DB document and returns the new-DB document.
 // We spread the original doc and add/override only the new fields.
@@ -160,7 +177,7 @@ const transformers = {
                 ...rest,
                 salePrice,
                 costPrice: item.costPrice ?? 0,
-                name: item.name ?? null,
+                name: item.name ?? itemNameMap.get(item.itemId?.toString()) ?? null,
             };
         }),
     }),
@@ -475,6 +492,10 @@ async function main() {
 
             // Step 2: Create default store in new DB
             await createDefaultStore(newDb);
+
+            // Build item name lookup map so the orders transformer can backfill
+            // item name snapshots on old order items that never stored a name.
+            await buildItemNameMap(oldDb);
 
             // Step 3: Bulk migrate all data
             await bulkMigrate(oldDb, newDb);
