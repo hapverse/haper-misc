@@ -467,7 +467,7 @@ const INDEX_DEFS = [
     { name: "items", indexes: [
         { key: { important: 1 } },
         { key: { iId: 1 }, options: { unique: true } },
-        { key: { barcode: 1 }, options: { unique: true, sparse: true, partialFilterExpression: { barcode: { $exists: true, $type: "string", $gt: "" } } } },
+        { key: { barcode: 1 }, options: { unique: true, partialFilterExpression: { barcode: { $exists: true, $type: "string", $gt: "" } } } },
         { key: { status: 1 } },
         { key: { lowQty: 1 } },
         { key: { "category._id": 1, status: 1 } },
@@ -482,8 +482,8 @@ const INDEX_DEFS = [
         { key: { isSuggested: 1, seq: -1 } },
     ]},
     { name: "users", indexes: [
-        { key: { email: 1 }, options: { unique: true, partialFilterExpression: { email: { $ne: null } } } },
-        { key: { phone: 1 }, options: { unique: true, partialFilterExpression: { phone: { $ne: null } } } },
+        { key: { email: 1 }, options: { unique: true, partialFilterExpression: { email: { $exists: true, $type: "string" } } } },
+        { key: { phone: 1 }, options: { unique: true, partialFilterExpression: { phone: { $exists: true, $type: "string" } } } },
         { key: { refCode: 1 }, options: { unique: true } },
         { key: { status: 1, createdAt: -1 } },
         { key: { createdAt: -1 } },
@@ -550,7 +550,7 @@ const INDEX_DEFS = [
         { key: { storeId: 1, userId: 1, createdAt: -1 } },
         { key: { storeId: 1, status: 1, deliveredOn: -1 } },
         { key: { storeId: 1, assignedTo: 1, deliveredOn: -1 } },
-        { key: { invoiceNumber: 1 }, options: { unique: true, sparse: true } },
+        { key: { invoiceNumber: 1 }, options: { unique: true, partialFilterExpression: { invoiceNumber: { $exists: true, $type: "string" } } } },
     ]},
     { name: "profit_snapshots", indexes: [
         { key: { date: 1, storeId: 1 }, options: { unique: true } },
