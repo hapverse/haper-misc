@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400..800;1,400..800&amp;family=Manrope:wght@200..800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "on-secondary": "#ffffff",
+            "surface-container-low": "#f6f0e8",
+            "on-error-container": "#7a1a10",
+            "outline": "#9a9088",
+            "background": "#faf5ee",
+            "secondary-fixed": "#eae2da",
+            "surface-dim": "#dcd6cc",
+            "on-surface": "#3a302a",
+            "on-primary-fixed": "#401a08",
+            "on-primary-container": "#fbe8d8",
+            "on-secondary-container": "#605850",
+            "on-secondary-fixed-variant": "#504840",
+            "inverse-on-surface": "#faf5ee",
+            "outline-variant": "#d8d0c8",
+            "on-primary": "#ffffff",
+            "primary": "#c2652a",
+            "on-primary-fixed-variant": "#8a4518",
+            "primary-fixed": "#fbe8d8",
+            "error": "#c0392b",
+            "on-tertiary-container": "#3a2020",
+            "on-tertiary": "#ffffff",
+            "secondary-fixed-dim": "#cec6be",
+            "inverse-primary": "#f0a878",
+            "surface-bright": "#faf5ee",
+            "on-tertiary-fixed": "#2e1515",
+            "secondary-container": "#eae2da",
+            "on-surface-variant": "#605850",
+            "surface": "#faf5ee",
+            "inverse-surface": "#3a302a",
+            "primary-container": "#e08850",
+            "error-container": "#fce4e0",
+            "surface-container": "#f2ece4",
+            "on-secondary-fixed": "#2a2420",
+            "tertiary-container": "#d47070",
+            "on-background": "#3a302a",
+            "surface-tint": "#c2652a",
+            "primary-fixed-dim": "#f0a878",
+            "on-tertiary-fixed-variant": "#6e3030",
+            "tertiary-fixed": "#fce0e0",
+            "surface-variant": "#ece6dc",
+            "on-error": "#ffffff",
+            "tertiary-fixed-dim": "#e8a0a0",
+            "surface-container-lowest": "#ffffff",
+            "secondary": "#78706a",
+            "surface-container-highest": "#e6e0d6",
+            "tertiary": "#8c3c3c",
+            "surface-container-high": "#ece6dc"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "full": "9999px"
+          },
+          "fontFamily": {
+            "headline": ["EB Garamond"],
+            "body": ["Manrope"],
+            "label": ["Manrope"]
+          }
+        },
+      },
+    }
+  </script>
+<style>
+    body { font-family: 'Manrope', sans-serif; }
+    .serif-headline { font-family: 'EB Garamond', serif; }
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    }
+  </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-surface min-h-screen pb-32">
+<!-- TopAppBar -->
+<header class="bg-[#faf5ee] dark:bg-stone-950 border-b border-stone-200/60 dark:border-stone-800/60 shadow-[0_2px_16px_rgba(58,48,42,0.04)] sticky top-0 z-50">
+<div class="flex justify-between items-center w-full px-6 h-16 max-w-7xl mx-auto">
+<div class="flex items-center gap-4">
+<button class="text-orange-800 dark:text-orange-400 hover:bg-stone-100 dark:hover:bg-stone-800 transition-colors p-2 rounded-full">
+<span class="material-symbols-outlined">menu</span>
+</button>
+<h1 class="font-serif italic text-2xl text-orange-900 dark:text-orange-200">Sahara</h1>
+</div>
+<div class="flex items-center gap-2">
+<button class="text-orange-800 dark:text-orange-400 hover:bg-stone-100 dark:hover:bg-stone-800 transition-colors p-2 rounded-full">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+</div>
+</div>
+</header>
+<main class="max-w-3xl mx-auto px-4 py-8">
+<div class="mb-8">
+<h2 class="serif-headline text-4xl font-bold tracking-tight text-on-surface mb-2">Order Management</h2>
+<p class="text-on-surface-variant font-medium">Keep track of your active deliveries</p>
+</div>
+<!-- Status Filter Tabs -->
+<div class="overflow-x-auto no-scrollbar mb-8 -mx-4 px-4">
+<div class="flex gap-2 min-w-max pb-2">
+<button class="px-5 py-2.5 rounded-full bg-primary text-on-primary font-bold text-sm transition-all shadow-sm">All</button>
+<button class="px-5 py-2.5 rounded-full bg-surface-container-high text-on-surface-variant font-bold text-sm hover:bg-surface-variant transition-all">Assigned</button>
+<button class="px-5 py-2.5 rounded-full bg-surface-container-high text-on-surface-variant font-bold text-sm hover:bg-surface-variant transition-all">Processing</button>
+<button class="px-5 py-2.5 rounded-full bg-surface-container-high text-on-surface-variant font-bold text-sm hover:bg-surface-variant transition-all">Out for delivery</button>
+<button class="px-5 py-2.5 rounded-full bg-surface-container-high text-on-surface-variant font-bold text-sm hover:bg-surface-variant transition-all">Delivered</button>
+<button class="px-5 py-2.5 rounded-full bg-surface-container-high text-on-surface-variant font-bold text-sm hover:bg-surface-variant transition-all">Undelivered</button>
+</div>
+</div>
+<!-- Order List -->
+<div class="space-y-6">
+<!-- Order Card 1: Out for Delivery -->
+<article class="bg-surface-container-lowest rounded-2xl p-6 shadow-[0_2px_16px_rgba(58,48,42,0.04)] border border-outline-variant/60 relative overflow-hidden">
+<div class="absolute top-0 right-0 px-4 py-1.5 bg-orange-100/50 text-orange-800 font-bold text-[10px] uppercase tracking-widest rounded-bl-xl">
+          Out for delivery
+        </div>
+<div class="flex flex-col gap-6">
+<div class="flex justify-between items-start pt-2">
+<div>
+<p class="text-[10px] font-bold text-outline uppercase tracking-widest mb-1">Order #SH-4829</p>
+<h3 class="serif-headline text-2xl font-bold text-on-surface">Eleanor Vance</h3>
+</div>
+<div class="text-right">
+<p class="text-xs font-bold text-on-surface-variant mb-1">Prepaid</p>
+<p class="text-xl font-bold text-primary">$124.50</p>
+</div>
+</div>
+<div class="flex gap-4 items-start">
+<span class="material-symbols-outlined text-outline mt-0.5">location_on</span>
+<div>
+<p class="text-sm font-medium text-on-surface leading-relaxed">2482 Desert Rose Ave, Unit 4B<br/>Giza Plateau, Cairo</p>
+<p class="text-[11px] font-bold text-outline mt-1 uppercase tracking-wider">Estimated arrival: 14:45</p>
+</div>
+</div>
+<div class="bg-surface-container-low rounded-xl p-4">
+<p class="text-[10px] font-bold text-outline uppercase tracking-widest mb-2">Items (3)</p>
+<ul class="text-sm font-medium text-on-secondary-container space-y-1">
+<li class="flex justify-between"><span>1 × Hand-woven Kilim Rug</span><span>$85.00</span></li>
+<li class="flex justify-between"><span>2 × Ceramic Spice Jars</span><span>$39.50</span></li>
+</ul>
+</div>
+<div class="flex gap-3 pt-2">
+<button class="flex-1 bg-primary text-on-primary font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-2 hover:opacity-90 active:scale-95 transition-all">
+<span class="material-symbols-outlined text-lg">call</span>
+              Call Customer
+            </button>
+<button class="flex-1 border border-primary text-primary font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-2 hover:bg-primary-fixed transition-all">
+              View Details
+            </button>
+</div>
+</div>
+</article>
+<!-- Order Card 2: Assigned -->
+<article class="bg-surface-container-lowest rounded-2xl p-6 shadow-[0_2px_16px_rgba(58,48,42,0.04)] border border-outline-variant/60 relative">
+<div class="absolute top-0 right-0 px-4 py-1.5 bg-secondary-container text-on-secondary-container font-bold text-[10px] uppercase tracking-widest rounded-bl-xl">
+          Assigned
+        </div>
+<div class="flex flex-col gap-6">
+<div class="flex justify-between items-start pt-2">
+<div>
+<p class="text-[10px] font-bold text-outline uppercase tracking-widest mb-1">Order #SH-4830</p>
+<h3 class="serif-headline text-2xl font-bold text-on-surface">Julian Blackwood</h3>
+</div>
+<div class="text-right">
+<p class="text-xs font-bold text-on-surface-variant mb-1">Cash on Delivery</p>
+<p class="text-xl font-bold text-primary">$42.00</p>
+</div>
+</div>
+<div class="flex gap-4 items-start">
+<span class="material-symbols-outlined text-outline mt-0.5">location_on</span>
+<div>
+<p class="text-sm font-medium text-on-surface leading-relaxed">88 Ozymandias Way<br/>Luxor East Bank</p>
+<p class="text-[11px] font-bold text-outline mt-1 uppercase tracking-wider">Assigned at: 13:10</p>
+</div>
+</div>
+<div class="flex gap-3 pt-2">
+<button class="flex-1 bg-primary text-on-primary font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-2 hover:opacity-90 active:scale-95 transition-all">
+<span class="material-symbols-outlined text-lg">call</span>
+              Call Customer
+            </button>
+<button class="flex-1 border border-primary text-primary font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-2 hover:bg-primary-fixed transition-all">
+              View Details
+            </button>
+</div>
+</div>
+</article>
+<!-- Order Card 3: Processing -->
+<article class="bg-surface-container-lowest rounded-2xl p-6 shadow-[0_2px_16px_rgba(58,48,42,0.04)] border border-outline-variant/60 relative">
+<div class="absolute top-0 right-0 px-4 py-1.5 bg-surface-variant text-on-surface-variant font-bold text-[10px] uppercase tracking-widest rounded-bl-xl">
+          Processing
+        </div>
+<div class="flex flex-col gap-6">
+<div class="flex justify-between items-start pt-2">
+<div>
+<p class="text-[10px] font-bold text-outline uppercase tracking-widest mb-1">Order #SH-4831</p>
+<h3 class="serif-headline text-2xl font-bold text-on-surface">Thebes Hotel (Concierge)</h3>
+</div>
+<div class="text-right">
+<p class="text-xs font-bold text-on-surface-variant mb-1">Prepaid</p>
+<p class="text-xl font-bold text-primary">$315.75</p>
+</div>
+</div>
+<div class="flex gap-4 items-start">
+<span class="material-symbols-outlined text-outline mt-0.5">location_on</span>
+<div>
+<p class="text-sm font-medium text-on-surface leading-relaxed">Main Entrance Lobby, Suite 102<br/>King Valley Road</p>
+<p class="text-[11px] font-bold text-outline mt-1 uppercase tracking-wider">Ready in approx: 20m</p>
+</div>
+</div>
+<div class="flex gap-3 pt-2">
+<button class="flex-1 bg-primary text-on-primary font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-2 hover:opacity-90 active:scale-95 transition-all">
+<span class="material-symbols-outlined text-lg">call</span>
+              Call Customer
+            </button>
+<button class="flex-1 border border-primary text-primary font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-2 hover:bg-primary-fixed transition-all">
+              View Details
+            </button>
+</div>
+</div>
+</article>
+</div>
+</main>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-4 pb-6 pt-3 bg-[#faf5ee]/90 dark:bg-stone-950/90 backdrop-blur-md border-t border-stone-200/60 dark:border-stone-800/60 shadow-[0_-4px_20px_rgba(58,48,42,0.05)] rounded-t-2xl">
+<a class="flex flex-col items-center justify-center text-stone-400 dark:text-stone-500 px-3 py-1 hover:text-orange-700 dark:hover:text-orange-300" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+<span class="font-sans text-[10px] font-bold uppercase tracking-wider mt-1">Dashboard</span>
+</a>
+<a class="flex flex-col items-center justify-center text-orange-800 dark:text-orange-400 bg-orange-100/50 dark:bg-orange-900/30 rounded-xl px-3 py-1 transform scale-105 transition-transform duration-200" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">local_shipping</span>
+<span class="font-sans text-[10px] font-bold uppercase tracking-wider mt-1">Orders</span>
+</a>
+<a class="flex flex-col items-center justify-center text-stone-400 dark:text-stone-500 px-3 py-1 hover:text-orange-700 dark:hover:text-orange-300" href="#">
+<span class="material-symbols-outlined">payments</span>
+<span class="font-sans text-[10px] font-bold uppercase tracking-wider mt-1">Earnings</span>
+</a>
+<a class="flex flex-col items-center justify-center text-stone-400 dark:text-stone-500 px-3 py-1 hover:text-orange-700 dark:hover:text-orange-300" href="#">
+<span class="material-symbols-outlined">person</span>
+<span class="font-sans text-[10px] font-bold uppercase tracking-wider mt-1">Profile</span>
+</a>
+</nav>
+</body></html>

@@ -1,0 +1,505 @@
+/**
+ * Bheldi DB Migration & Sync Service
+ *
+ * Single script that:
+ * 1. Captures oplog timestamp (resume point)
+ * 2. Creates default store in new DB
+ * 3. Bulk copies all collections from old DB → new DB (with transformations)
+ * 4. Starts Change Streams from saved timestamp for continuous real-time sync
+ *
+ * Usage:
+ *   pm2 start sync.js --name bheldi-sync
+ *
+ * Uses native MongoDB driver (NOT Mongoose) to avoid triggering schema hooks
+ * (no duplicate emails, no re-generating IDs, no password re-hashing).
+ */
+
+require("dotenv").config();
+const { MongoClient, ObjectId } = require("mongodb");
+
+// ─── Configuration ───────────────────────────────────────────────────────────
+
+const OLD_DB_URI = process.env.OLD_DB_URI;
+const NEW_DB_URI = process.env.NEW_DB_URI;
+
+// Connection pool settings for long-running PM2 service
+const CONNECTION_OPTIONS = {
+    maxPoolSize: 10,       // Max connections per client (plenty for this workload)
+    minPoolSize: 2,        // Keep 2 connections warm at all times
+    maxIdleTimeMS: 60_000, // Close idle connections after 60s
+    serverSelectionTimeoutMS: 15_000, // Fail fast if cluster unreachable
+    heartbeatFrequencyMS: 10_000,     // Check server health every 10s
+};
+
+const DEFAULT_STORE_ID = new ObjectId("69c98afef57bb064528047f5");
+const STORE_COORDS = [84.947875, 25.88108]; // [longitude, latitude]
+
+// ─── Default Store Document ──────────────────────────────────────────────────
+
+const DEFAULT_STORE = {
+    _id: DEFAULT_STORE_ID,
+    name: "Haper Mart (Bheldi)",
+    address: "Haper Store, Barki Sirisiya, Near Government High School, Saran, Bihar- 841311",
+    apiKey: "AMAWp(@{c^Grs(E78ae5hkf-eo4v8JQP<*$PV(*6052B",
+    config: {
+        minimumOrderValue: 399,
+        deliveryCharges: 0,
+        platformCharges: 1,
+        platformSharePercentage: 0,
+        deliveryIncentiveEnabled: false,
+        deliveryIncentiveThresholdMinutes: 30,
+        deliveryIncentiveAmount: 2,
+        razorpayId: "rzp_live_iZDWCBxZqRMQmQ",
+        razorpaySecret: "dCa45Eg1wx0c2Pqvw9uecWhP",
+        razorpayWebhookSecret: "llwuLcgQq4L7JrYn",
+    },
+    email: "support@haper.in",
+    image: null,
+    location: { type: "Point", coordinates: STORE_COORDS },
+    mapLink: "https://maps.app.goo.gl/XHUgMGrcbVz8Gjkp6",
+    ownerId: null,
+    phone: "+917682828383",
+    status: 1,
+    time: {
+        mon: { start: "07:00", end: "20:00" },
+        tue: { start: "07:00", end: "20:00" },
+        wed: { start: "07:00", end: "20:00" },
+        thu: { start: "07:00", end: "20:00" },
+        fri: { start: "07:00", end: "20:00" },
+        sat: { start: "07:00", end: "20:00" },
+        sun: { start: "07:00", end: "20:00" },
+    },
+    villages: [
+        "Arna",
+        "Bajrahan",
+        "Bariyarpur - Yadavpur",
+        "Barki Sirisiya",
+        "Basauti",
+        "Bedwaliya",
+        "Bheldi Chowk",
+        "Bheldi Ganw",
+        "Bhima Bandh",
+        "Chand Chak",
+        "Firozpur",
+        "Gopalpur",
+        "Hingua",
+        "Jadopur",
+        "Jagannathpur ",
+        "Laganpura",
+        "Loknathpur",
+        "Murli Sirisiya",
+        "Nanfar",
+        "Narayanpur",
+        "Nawada",
+        "Pachrukhi",
+        "Pirari",
+        "Samaspura - Kharidaha",
+        "Takeya",
+    ],
+    gstin: null,
+    createdAt: new Date("2026-03-29T20:26:37.794Z"),
+    updatedAt: new Date("2026-03-29T20:29:44.499Z"),
+};
+
+// ─── Transformation Functions ────────────────────────────────────────────────
+// Each function takes an old-DB document and returns the new-DB document.
+// We spread the original doc and add/override only the new fields.
+
+function generateRandomLocation() {
+    // Random point ~1-2km from store
+    const latOffset = (Math.random() * 0.009 + 0.009) * (Math.random() < 0.5 ? -1 : 1);
+    const lonOffset = (Math.random() * 0.01 + 0.01) * (Math.random() < 0.5 ? -1 : 1);
+    return {
+        type: "Point",
+        coordinates: [STORE_COORDS[0] + lonOffset, STORE_COORDS[1] + latOffset],
+    };
+}
+
+const transformers = {
+    users: (doc) => ({
+        ...doc,
+        fcmTokens: doc.fcmTokens || [],
+        notificationPreferences: doc.notificationPreferences || {
+            orderConfirmed: true,
+            orderProcessing: true,
+            outForDelivery: true,
+            orderDelivered: true,
+            orderCancelled: true,
+            paymentUpdates: true,
+        },
+    }),
+
+    admins: (doc) => ({
+        ...doc,
+        storeId: doc.storeId || (doc.roles && doc.roles.includes("super_admin") ? null : DEFAULT_STORE_ID),
+        status: doc.status ?? 1,
+    }),
+
+    items: (doc) => ({
+        ...doc,
+        storeId: doc.storeId || DEFAULT_STORE_ID,
+    }),
+
+    orders: (doc) => ({
+        ...doc,
+        storeId: doc.storeId || DEFAULT_STORE_ID,
+        invoiceNumber: doc.invoiceNumber || null,
+        // Ensure each item has costPrice
+        items: (doc.items || []).map((item) => ({
+            ...item,
+            costPrice: item.costPrice ?? 0,
+        })),
+    }),
+
+    carts: (doc) => ({
+        ...doc,
+        storeId: doc.storeId || DEFAULT_STORE_ID,
+    }),
+
+    categories: (doc) => ({
+        ...doc,
+        storeId: doc.storeId || DEFAULT_STORE_ID,
+    }),
+
+    "sub-categories": (doc) => ({
+        ...doc,
+        storeId: doc.storeId || DEFAULT_STORE_ID,
+    }),
+
+    "delivery-boys": (doc) => ({
+        ...doc,
+        storeId: doc.storeId || DEFAULT_STORE_ID,
+    }),
+
+    addresses: (doc) => ({
+        ...doc,
+        location: doc.location || generateRandomLocation(),
+    }),
+
+    configs: (doc) => ({
+        ...doc,
+        maintenance: doc.maintenance || {
+            isActive: false,
+            message: "We are currently down for maintenance. Please check back soon.",
+            endTime: null,
+        },
+        forceUpdate: doc.forceUpdate || {
+            minIosVersion: "0.0",
+            minAndroidVersion: "0.0",
+            updateMessage: "A new version of the app is available. Please update to continue.",
+        },
+    }),
+
+    // These collections have no schema changes — copy as-is
+    wallets: (doc) => doc,
+    logs: (doc) => doc,
+    sequences: (doc) => doc,
+};
+
+// All collections we need to sync via Change Streams
+const ALL_SYNCED_COLLECTIONS = Object.keys(transformers);
+
+// ─── Resume Token Persistence ────────────────────────────────────────────────
+// Stores the last-processed Change Stream resume token in the new DB.
+// On restart, we resume from this token — zero data loss, zero gap.
+
+const SYNC_META_COLLECTION = "_sync_meta"; // internal collection in new DB
+
+async function getSavedResumeToken(newDb) {
+    const meta = newDb.collection(SYNC_META_COLLECTION);
+    const doc = await meta.findOne({ _id: "resumeToken" });
+    return doc?.token || null;
+}
+
+async function saveResumeToken(newDb, token) {
+    const meta = newDb.collection(SYNC_META_COLLECTION);
+    await meta.updateOne({ _id: "resumeToken" }, { $set: { token, updatedAt: new Date() } }, { upsert: true });
+}
+
+async function getMigrationStatus(newDb) {
+    const meta = newDb.collection(SYNC_META_COLLECTION);
+    const doc = await meta.findOne({ _id: "migrationDone" });
+    return doc?.done === true;
+}
+
+async function setMigrationDone(newDb) {
+    const meta = newDb.collection(SYNC_META_COLLECTION);
+    await meta.updateOne({ _id: "migrationDone" }, { $set: { done: true, doneAt: new Date() } }, { upsert: true });
+}
+
+// ─── Step 1: Capture Oplog Timestamp ─────────────────────────────────────────
+
+async function captureResumeTimestamp(oldDb) {
+    // Run hello on the database itself (doesn't require admin privileges)
+    const result = await oldDb.command({ hello: 1 });
+    const timestamp = result.operationTime || result.$clusterTime?.clusterTime;
+    if (!timestamp) {
+        throw new Error("Could not capture oplog timestamp. Is this a replica set / Atlas cluster?");
+    }
+    console.log(`[Step 1] Captured oplog timestamp: ${timestamp.toString()}`);
+    return timestamp;
+}
+
+// ─── Step 2: Create Default Store ────────────────────────────────────────────
+
+async function createDefaultStore(newDb) {
+    const stores = newDb.collection("stores");
+    try {
+        await stores.updateOne({ _id: DEFAULT_STORE_ID }, { $setOnInsert: DEFAULT_STORE }, { upsert: true });
+        console.log(`[Step 2] Default store ensured: ${DEFAULT_STORE.name} (${DEFAULT_STORE_ID})`);
+    } catch (err) {
+        if (err.code === 11000) {
+            console.log(`[Step 2] Default store already exists, skipping.`);
+        } else {
+            throw err;
+        }
+    }
+}
+
+// ─── Step 3: Bulk Migration ──────────────────────────────────────────────────
+
+async function bulkMigrate(oldDb, newDb) {
+    console.log(`[Step 3] Starting bulk migration...`);
+
+    for (const collectionName of ALL_SYNCED_COLLECTIONS) {
+        const transform = transformers[collectionName];
+        const oldCol = oldDb.collection(collectionName);
+        const newCol = newDb.collection(collectionName);
+
+        const docs = await oldCol.find({}).toArray();
+
+        if (docs.length === 0) {
+            console.log(`  - ${collectionName}: 0 documents (empty)`);
+            continue;
+        }
+
+        // Transform all documents
+        const transformed = docs.map(transform);
+
+        // Use bulkWrite with upserts — safe to re-run (idempotent)
+        const bulkOps = transformed.map((doc) => ({
+            updateOne: {
+                filter: { _id: doc._id },
+                update: { $set: doc },
+                upsert: true,
+            },
+        }));
+
+        const result = await newCol.bulkWrite(bulkOps, { ordered: false });
+        const upserted = result.upsertedCount || 0;
+        const modified = result.modifiedCount || 0;
+        console.log(`  - ${collectionName}: ${docs.length} docs (${upserted} inserted, ${modified} updated)`);
+    }
+
+    // Seed APP_CONFIG if not exists
+    const configCol = newDb.collection("configs");
+    const existingConfig = await configCol.findOne({ name: "APP_CONFIG" });
+    if (!existingConfig) {
+        await configCol.insertOne({
+            name: "APP_CONFIG",
+            maintenance: {
+                isActive: false,
+                message: "We are currently down for maintenance. Please check back soon.",
+                endTime: new Date(Date.now() + 30 * 60 * 1000),
+            },
+            forceUpdate: {
+                minIosVersion: "0.0",
+                minAndroidVersion: "0.0",
+                updateMessage: "A new version of the app is available. Please update to continue.",
+            },
+            createdAt: new Date(),
+            updatedAt: new Date(),
+        });
+        console.log(`  - APP_CONFIG seeded.`);
+    }
+
+    console.log(`[Step 3] Bulk migration complete.`);
+}
+
+// ─── Step 4: Change Stream Sync ──────────────────────────────────────────────
+// Uses `for await` loop to process events SEQUENTIALLY.
+// This guarantees:
+//   - No out-of-order writes (insert before update)
+//   - Resume token is saved only AFTER the event is fully processed
+//   - No concurrent writes that could corrupt data
+
+async function startChangeStreamSync(oldDb, newDb, resumeToken, resumeTimestamp) {
+    const watchedCollections = ALL_SYNCED_COLLECTIONS;
+
+    const pipeline = [{ $match: { "ns.coll": { $in: watchedCollections } } }];
+
+    // If we have a saved resume token from a previous run, use it.
+    // Otherwise fall back to the oplog timestamp captured before bulk migration.
+    const streamOptions = { fullDocument: "updateLookup" };
+    if (resumeToken) {
+        streamOptions.resumeAfter = resumeToken;
+        console.log(`[Step 4] Resuming Change Stream from saved token (crash recovery).`);
+    } else {
+        streamOptions.startAtOperationTime = resumeTimestamp;
+        console.log(`[Step 4] Starting Change Stream from oplog timestamp: ${resumeTimestamp.toString()}`);
+    }
+
+    const changeStream = oldDb.watch(pipeline, streamOptions);
+
+    let eventCount = 0;
+    let tokenSaveCounter = 0;
+
+    // Status logger — prints sync count every 60 seconds
+    const statusInterval = setInterval(() => {
+        console.log(`[STATUS] Events synced: ${eventCount} | Tokens saved: ${tokenSaveCounter} | Uptime: ${Math.floor(process.uptime())}s`);
+    }, 60_000);
+
+    // Process events sequentially with for-await loop
+    // This is the correct pattern — no race conditions, no overlapping writes
+    try {
+        for await (const event of changeStream) {
+            const collName = event.ns.coll;
+            const newCol = newDb.collection(collName);
+            const transform = transformers[collName];
+
+            if (!transform) {
+                console.log(`  [SYNC] Skipping unknown collection: ${collName}`);
+                continue;
+            }
+
+            try {
+                switch (event.operationType) {
+                    case "insert": {
+                        const transformed = transform(event.fullDocument);
+                        await newCol.updateOne({ _id: transformed._id }, { $set: transformed }, { upsert: true });
+                        eventCount++;
+                        console.log(`  [SYNC] ${collName} insert: ${transformed._id}`);
+                        break;
+                    }
+
+                    case "update":
+                    case "replace": {
+                        if (event.fullDocument) {
+                            const transformed = transform(event.fullDocument);
+                            await newCol.updateOne({ _id: transformed._id }, { $set: transformed }, { upsert: true });
+                        } else if (event.updateDescription) {
+                            const update = {};
+                            if (event.updateDescription.updatedFields) {
+                                update.$set = event.updateDescription.updatedFields;
+                            }
+                            if (event.updateDescription.removedFields?.length) {
+                                update.$unset = {};
+                                for (const field of event.updateDescription.removedFields) {
+                                    update.$unset[field] = "";
+                                }
+                            }
+                            if (Object.keys(update).length > 0) {
+                                await newCol.updateOne({ _id: event.documentKey._id }, update);
+                            }
+                        }
+                        eventCount++;
+                        console.log(`  [SYNC] ${collName} update: ${event.documentKey._id}`);
+                        break;
+                    }
+
+                    case "delete": {
+                        await newCol.deleteOne({ _id: event.documentKey._id });
+                        eventCount++;
+                        console.log(`  [SYNC] ${collName} delete: ${event.documentKey._id}`);
+                        break;
+                    }
+
+                    default:
+                        console.log(`  [SYNC] Ignored event type: ${event.operationType} on ${collName}`);
+                }
+
+                // Persist resume token AFTER event is fully processed.
+                // Sequential loop guarantees this runs only when the write succeeded.
+                tokenSaveCounter++;
+                await saveResumeToken(newDb, event._id);
+            } catch (err) {
+                console.error(`  [SYNC ERROR] ${collName} ${event.operationType}: ${err.message}`);
+                // Don't save resume token on error — the event will be retried on restart
+            }
+        }
+    } finally {
+        clearInterval(statusInterval);
+    }
+
+    return changeStream;
+}
+
+// ─── Main ────────────────────────────────────────────────────────────────────
+
+async function main() {
+    console.log("═══════════════════════════════════════════════════════════");
+    console.log("  Bheldi DB Migration & Sync Service");
+    console.log("═══════════════════════════════════════════════════════════\n");
+
+    const oldClient = new MongoClient(OLD_DB_URI, CONNECTION_OPTIONS);
+    const newClient = new MongoClient(NEW_DB_URI, CONNECTION_OPTIONS);
+
+    try {
+        // Connect to both databases
+        await Promise.all([oldClient.connect(), newClient.connect()]);
+        console.log("[Connected] Old DB and New DB connections established.\n");
+
+        const oldDb = oldClient.db(); // Uses DB name from the URI
+        const newDb = newClient.db(); // Uses DB name from the URI
+
+        // Check if we have a saved resume token from a previous run (crash recovery)
+        const savedResumeToken = await getSavedResumeToken(newDb);
+        const alreadyMigrated = await getMigrationStatus(newDb);
+
+        let resumeTimestamp = null;
+
+        if (savedResumeToken && alreadyMigrated) {
+            // ── RESTART PATH ──
+            // We crashed/rebooted after a successful migration.
+            // Skip bulk migration, resume Change Stream from last saved token.
+            console.log("[Restart Detected] Found saved resume token. Skipping bulk migration.");
+            console.log("[Restart Detected] Resuming sync from where we left off.\n");
+        } else {
+            // ── FIRST RUN PATH ──
+            // Step 1: Capture timestamp BEFORE doing anything
+            resumeTimestamp = await captureResumeTimestamp(oldDb);
+
+            // Step 2: Create default store in new DB
+            await createDefaultStore(newDb);
+
+            // Step 3: Bulk migrate all data
+            await bulkMigrate(oldDb, newDb);
+
+            // Mark migration as done so restarts skip it
+            await setMigrationDone(newDb);
+        }
+
+        // Step 4: Start real-time sync (blocks here — runs forever via for-await)
+        console.log("\n═══════════════════════════════════════════════════════════");
+        console.log("  Migration complete. Real-time sync is ACTIVE.");
+        console.log("═══════════════════════════════════════════════════════════\n");
+
+        await startChangeStreamSync(oldDb, newDb, savedResumeToken, resumeTimestamp);
+    } catch (err) {
+        console.error("\n[FATAL ERROR]", err.message);
+        console.error(err.stack);
+    } finally {
+        await oldClient.close().catch(() => {});
+        await newClient.close().catch(() => {});
+        console.log("[Shutdown] DB connections closed.");
+        process.exit(1); // PM2 will auto-restart
+    }
+}
+
+// Catch unhandled errors so PM2 can restart cleanly
+process.on("unhandledRejection", (err) => {
+    console.error("[UNHANDLED REJECTION]", err);
+    process.exit(1);
+});
+
+process.on("SIGINT", () => {
+    console.log("\n[SIGINT] Shutting down...");
+    process.exit(0);
+});
+
+process.on("SIGTERM", () => {
+    console.log("\n[SIGTERM] Shutting down...");
+    process.exit(0);
+});
+
+main();

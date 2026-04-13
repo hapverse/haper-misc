@@ -1,0 +1,24 @@
+{
+  "name": "newvsold",
+  "version": "1.0.0",
+  "description": "npm install mongodb pm2 start sync.js --name bheldi-sync pm2 logs bheldi-sync",
+  "homepage": "https://github.com/vikash5472/haper-sync#readme",
+  "bugs": {
+    "url": "https://github.com/vikash5472/haper-sync/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vikash5472/haper-sync.git"
+  },
+  "license": "ISC",
+  "author": "",
+  "type": "commonjs",
+  "main": "sync.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.1",
+    "mongodb": "^7.1.1"
+  }
+}

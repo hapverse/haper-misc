@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400..800;1,400..800&amp;family=Manrope:wght@200..800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-secondary": "#ffffff",
+                        "surface-container-low": "#f6f0e8",
+                        "on-error-container": "#7a1a10",
+                        "outline": "#9a9088",
+                        "background": "#faf5ee",
+                        "secondary-fixed": "#eae2da",
+                        "surface-dim": "#dcd6cc",
+                        "on-surface": "#3a302a",
+                        "on-primary-fixed": "#401a08",
+                        "on-primary-container": "#fbe8d8",
+                        "on-secondary-container": "#605850",
+                        "on-secondary-fixed-variant": "#504840",
+                        "inverse-on-surface": "#faf5ee",
+                        "outline-variant": "#d8d0c8",
+                        "on-primary": "#ffffff",
+                        "primary": "#c2652a",
+                        "on-primary-fixed-variant": "#8a4518",
+                        "primary-fixed": "#fbe8d8",
+                        "error": "#c0392b",
+                        "on-tertiary-container": "#3a2020",
+                        "on-tertiary": "#ffffff",
+                        "secondary-fixed-dim": "#cec6be",
+                        "inverse-primary": "#f0a878",
+                        "surface-bright": "#faf5ee",
+                        "on-tertiary-fixed": "#2e1515",
+                        "secondary-container": "#eae2da",
+                        "on-surface-variant": "#605850",
+                        "surface": "#faf5ee",
+                        "inverse-surface": "#3a302a",
+                        "primary-container": "#e08850",
+                        "error-container": "#fce4e0",
+                        "surface-container": "#f2ece4",
+                        "on-secondary-fixed": "#2a2420",
+                        "tertiary-container": "#d47070",
+                        "on-background": "#3a302a",
+                        "surface-tint": "#c2652a",
+                        "primary-fixed-dim": "#f0a878",
+                        "on-tertiary-fixed-variant": "#6e3030",
+                        "tertiary-fixed": "#fce0e0",
+                        "surface-variant": "#ece6dc",
+                        "on-error": "#ffffff",
+                        "tertiary-fixed-dim": "#e8a0a0",
+                        "surface-container-lowest": "#ffffff",
+                        "secondary": "#78706a",
+                        "surface-container-highest": "#e6e0d6",
+                        "tertiary": "#8c3c3c",
+                        "surface-container-high": "#ece6dc"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "fontFamily": {
+                        "headline": ["EB Garamond", "serif"],
+                        "body": ["Manrope", "sans-serif"],
+                        "label": ["Manrope", "sans-serif"]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            display: inline-block;
+            line-height: 1;
+            text-transform: none;
+            letter-spacing: normal;
+            word-wrap: normal;
+            white-space: nowrap;
+            direction: ltr;
+        }
+        body { font-family: 'Manrope', sans-serif; }
+        h1, h2, h3 { font-family: 'EB Garamond', serif; }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-surface min-h-screen pb-24">
+<!-- TopAppBar -->
+<header class="bg-[#faf5ee] dark:bg-stone-950 flex justify-between items-center w-full px-6 h-16 border-b border-stone-200/60 dark:border-stone-800/60 shadow-[0_2px_16px_rgba(58,48,42,0.04)] sticky top-0 z-50">
+<div class="flex items-center gap-3">
+<button class="text-orange-800 dark:text-orange-400 hover:bg-stone-100 dark:hover:bg-stone-800 transition-colors p-2 rounded-full">
+<span class="material-symbols-outlined">menu</span>
+</button>
+<span class="font-serif italic text-2xl text-orange-900 dark:text-orange-200">Sahara</span>
+</div>
+<div class="flex items-center gap-4">
+<button class="text-stone-500 dark:text-stone-400 hover:bg-stone-100 dark:hover:bg-stone-800 transition-colors p-2 rounded-full relative">
+<span class="material-symbols-outlined">notifications</span>
+<span class="absolute top-2 right-2 w-2 h-2 bg-primary rounded-full"></span>
+</button>
+</div>
+</header>
+<main class="max-w-5xl mx-auto px-6 pt-8 space-y-8">
+<!-- Header: User Greeting & Status -->
+<section class="flex flex-col md:flex-row md:items-end justify-between gap-6">
+<div class="flex items-center gap-5">
+<div class="relative">
+<img alt="Rider Avatar" class="w-16 h-16 rounded-full object-cover border-2 border-primary-fixed shadow-sm" data-alt="Close-up portrait of a friendly man with a slight beard in a warm sunlit outdoor setting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAS_46q3nVzFAsOACRVwzklFdW9n6fr-XqStCxMsxF4GiA9KM7e8PdBNBLzcCz4TMIsPVLsinhvnUva6Mc0DXfJI_F2CZlNycD9LQMfbJJR2GGyuwnJtiUpzGEglwrlDZuuh2ciEl1bKQ826DqsTnl1IIzEGrtGc--MowbtKdsHO6V4G_4notPhNdr9fYL1QHCu0wcC7eoCQi_JEf7EZBMg2YiLytXih0FxlF2Ct61SXC2hqMFT1W3N-E0bm0Mxm9ks-Wt7B5YWFmg"/>
+<div class="absolute bottom-0 right-0 w-4 h-4 bg-green-500 border-2 border-background rounded-full"></div>
+</div>
+<div>
+<h1 class="text-4xl font-headline tracking-tight leading-tight">Good afternoon, Carlos</h1>
+<div class="flex items-center gap-2 mt-1">
+<span class="bg-primary/10 text-primary text-xs font-bold px-3 py-1 rounded-full uppercase tracking-widest">Active Duty</span>
+<span class="text-on-surface-variant text-sm font-medium">Shift started 2h 15m ago</span>
+</div>
+</div>
+</div>
+<!-- Rider Rating Card -->
+<div class="bg-surface-container-lowest p-4 rounded-xl shadow-[0_2px_16px_rgba(58,48,42,0.04)] border border-outline-variant flex items-center gap-4 min-w-[180px]">
+<div class="bg-primary-fixed p-2 rounded-lg">
+<span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">star</span>
+</div>
+<div>
+<p class="text-2xl font-headline font-bold text-on-surface">4.8</p>
+<p class="text-xs text-on-surface-variant font-medium">124 reviews</p>
+</div>
+</div>
+</section>
+<!-- Active Trip & Incentive Layout -->
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+<!-- Active Trip Card -->
+<section class="lg:col-span-2">
+<div class="bg-surface-container-lowest rounded-2xl border border-outline-variant shadow-[0_2px_16px_rgba(58,48,42,0.04)] overflow-hidden">
+<div class="p-6 md:p-8 space-y-6">
+<div class="flex justify-between items-start">
+<div class="space-y-1">
+<span class="text-xs font-bold uppercase tracking-widest text-primary">Current Delivery</span>
+<h2 class="text-3xl font-headline">Picking up from Joe's Pizza</h2>
+</div>
+<div class="bg-surface-container p-3 rounded-xl text-center min-w-[80px]">
+<p class="text-xs font-bold text-on-surface-variant uppercase">Elapsed</p>
+<p class="text-lg font-bold font-body text-primary">08:42</p>
+</div>
+</div>
+<div class="flex items-center gap-4 p-4 bg-surface-container-low rounded-xl">
+<span class="material-symbols-outlined text-primary-container bg-primary p-2 rounded-full">local_pizza</span>
+<div class="flex-1">
+<p class="text-sm font-bold text-on-surface">1248 Oak Street, Suite B</p>
+<p class="text-xs text-on-surface-variant">Order #9821 • 3 items</p>
+</div>
+<button class="bg-primary text-on-primary font-bold px-5 py-2 rounded-lg text-sm transition hover:brightness-110 active:scale-95 duration-150 flex items-center gap-2">
+<span class="material-symbols-outlined text-sm">near_me</span>
+                                Navigate
+                            </button>
+</div>
+<div class="relative h-48 w-full rounded-xl overflow-hidden grayscale opacity-80 border border-outline-variant">
+<div class="absolute inset-0 bg-orange-900/5 z-10 pointer-events-none"></div>
+<img alt="Map View" class="w-full h-full object-cover" data-alt="Minimalist map interface showing stylized streets and a delivery route in warm sepia and earthy tones" data-location="Austin, Texas" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA8kD0pdI44Xl9_uC1EKm8u4Vodgicec9ReXLWVfpL2_y5bis-aKvDUAywc2ym5JblDdOK1op0mts7MlZHWDGT90W6980qqr89SIVvZM0pLzSZF8XmaZLSSGRqtPH76drHCYW3BWtBBeL5lohsiGjqGy44Zt9YU7f1hK5oTBIKSu5Z7J0sYGwlGet9AbkyPqawJieHJSAWMOUaCBVeXlPJT3EtuT26YnOJq6dWW4jqva9c3UvHITd0kNnjUuVhPpPkJdHbyAJSSBqY"/>
+<div class="absolute inset-0 flex items-center justify-center">
+<div class="w-4 h-4 bg-primary rounded-full ring-4 ring-primary/30 animate-pulse"></div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Incentive Timer & Quick Actions -->
+<aside class="space-y-6">
+<!-- Incentive Timer Card -->
+<div class="bg-tertiary text-on-tertiary p-6 rounded-2xl shadow-[0_2px_16px_rgba(58,48,42,0.04)] relative overflow-hidden">
+<div class="absolute top-0 right-0 p-4 opacity-10">
+<span class="material-symbols-outlined text-8xl" style="font-variation-settings: 'FILL' 1;">timer</span>
+</div>
+<div class="relative z-10 space-y-4">
+<p class="text-sm font-bold uppercase tracking-[0.2em] text-tertiary-fixed/80">Active Incentive</p>
+<h3 class="text-4xl font-headline leading-none">Incentive expires in 14:15</h3>
+<p class="text-sm text-tertiary-fixed/90 leading-relaxed">Complete your next 2 deliveries to earn an extra $15.00 bonus.</p>
+<div class="w-full bg-on-tertiary/20 h-1 rounded-full overflow-hidden mt-4">
+<div class="bg-on-tertiary h-full w-2/3"></div>
+</div>
+</div>
+</div>
+<!-- Next Up Preview -->
+<div class="bg-surface-container-low p-6 rounded-2xl border border-outline-variant">
+<div class="flex justify-between items-center mb-4">
+<h3 class="text-xl font-headline">Next up</h3>
+<span class="text-xs font-bold text-on-surface-variant">1 order waiting</span>
+</div>
+<div class="bg-surface-container-lowest p-4 rounded-xl border border-outline-variant/60">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-primary-container bg-primary/20 p-2 rounded-lg">shopping_bag</span>
+<div>
+<p class="text-sm font-bold text-on-surface">Whole Foods Market</p>
+<p class="text-xs text-on-surface-variant">2.4 miles from current drop-off</p>
+</div>
+</div>
+</div>
+</div>
+</aside>
+</div>
+<!-- Queue Preview -->
+<section class="space-y-4">
+<div class="flex justify-between items-baseline px-2">
+<h2 class="text-3xl font-headline">Delivery Queue</h2>
+<button class="text-primary text-sm font-bold hover:underline">Manage Queue</button>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+<!-- Queue Item 1 -->
+<div class="bg-surface-container-lowest p-5 rounded-2xl border border-outline-variant flex justify-between items-center group hover:bg-surface transition-colors">
+<div class="flex items-center gap-4">
+<div class="w-10 h-10 rounded-full bg-secondary-container flex items-center justify-center text-on-secondary-container">
+<span class="text-sm font-bold">1</span>
+</div>
+<div>
+<p class="font-bold text-on-surface">Joe's Pizza</p>
+<p class="text-xs text-on-surface-variant">Pick-up in progress</p>
+</div>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant opacity-0 group-hover:opacity-100 transition-opacity">chevron_right</span>
+</div>
+<!-- Queue Item 2 -->
+<div class="bg-surface-container-lowest p-5 rounded-2xl border border-outline-variant flex justify-between items-center group hover:bg-surface transition-colors">
+<div class="flex items-center gap-4">
+<div class="w-10 h-10 rounded-full bg-secondary-container/50 flex items-center justify-center text-on-secondary-container">
+<span class="text-sm font-bold">2</span>
+</div>
+<div>
+<p class="font-bold text-on-surface">Whole Foods Market</p>
+<p class="text-xs text-on-surface-variant">Scheduled for 1:45 PM</p>
+</div>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant opacity-0 group-hover:opacity-100 transition-opacity">chevron_right</span>
+</div>
+<!-- Queue Item 3 - Empty Slot -->
+<div class="border-2 border-dashed border-outline-variant rounded-2xl flex flex-col items-center justify-center p-5 text-on-surface-variant opacity-60">
+<span class="material-symbols-outlined mb-1">add_circle</span>
+<p class="text-xs font-bold uppercase tracking-widest">Accepting Offers</p>
+</div>
+</div>
+</section>
+</main>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-4 pb-6 pt-3 bg-[#faf5ee]/90 dark:bg-stone-950/90 backdrop-blur-md border-t border-stone-200/60 dark:border-stone-800/60 shadow-[0_-4px_20px_rgba(58,48,42,0.05)] rounded-t-2xl">
+<a class="flex flex-col items-center justify-center text-orange-800 dark:text-orange-400 bg-orange-100/50 dark:bg-orange-900/30 rounded-xl px-3 py-1 transform scale-105 transition-transform duration-200" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">dashboard</span>
+<span class="font-sans text-[10px] font-bold uppercase tracking-wider Manrope mt-1">Dashboard</span>
+</a>
+<a class="flex flex-col items-center justify-center text-stone-400 dark:text-stone-500 px-3 py-1 hover:text-orange-700 dark:hover:text-orange-300" href="#">
+<span class="material-symbols-outlined">local_shipping</span>
+<span class="font-sans text-[10px] font-bold uppercase tracking-wider Manrope mt-1">Orders</span>
+</a>
+<a class="flex flex-col items-center justify-center text-stone-400 dark:text-stone-500 px-3 py-1 hover:text-orange-700 dark:hover:text-orange-300" href="#">
+<span class="material-symbols-outlined">payments</span>
+<span class="font-sans text-[10px] font-bold uppercase tracking-wider Manrope mt-1">Earnings</span>
+</a>
+<a class="flex flex-col items-center justify-center text-stone-400 dark:text-stone-500 px-3 py-1 hover:text-orange-700 dark:hover:text-orange-300" href="#">
+<span class="material-symbols-outlined">person</span>
+<span class="font-sans text-[10px] font-bold uppercase tracking-wider Manrope mt-1">Profile</span>
+</a>
+</nav>
+</body></html>

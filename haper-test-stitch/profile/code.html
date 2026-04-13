@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400..800;1,400..800&amp;family=Manrope:wght@200..800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-secondary": "#ffffff",
+                        "surface-container-low": "#f6f0e8",
+                        "on-error-container": "#7a1a10",
+                        "outline": "#9a9088",
+                        "background": "#faf5ee",
+                        "secondary-fixed": "#eae2da",
+                        "surface-dim": "#dcd6cc",
+                        "on-surface": "#3a302a",
+                        "on-primary-fixed": "#401a08",
+                        "on-primary-container": "#fbe8d8",
+                        "on-secondary-container": "#605850",
+                        "on-secondary-fixed-variant": "#504840",
+                        "inverse-on-surface": "#faf5ee",
+                        "outline-variant": "#d8d0c8",
+                        "on-primary": "#ffffff",
+                        "primary": "#c2652a",
+                        "on-primary-fixed-variant": "#8a4518",
+                        "primary-fixed": "#fbe8d8",
+                        "error": "#c0392b",
+                        "on-tertiary-container": "#3a2020",
+                        "on-tertiary": "#ffffff",
+                        "secondary-fixed-dim": "#cec6be",
+                        "inverse-primary": "#f0a878",
+                        "surface-bright": "#faf5ee",
+                        "on-tertiary-fixed": "#2e1515",
+                        "secondary-container": "#eae2da",
+                        "on-surface-variant": "#605850",
+                        "surface": "#faf5ee",
+                        "inverse-surface": "#3a302a",
+                        "primary-container": "#e08850",
+                        "error-container": "#fce4e0",
+                        "surface-container": "#f2ece4",
+                        "on-secondary-fixed": "#2a2420",
+                        "tertiary-container": "#d47070",
+                        "on-background": "#3a302a",
+                        "surface-tint": "#c2652a",
+                        "primary-fixed-dim": "#f0a878",
+                        "on-tertiary-fixed-variant": "#6e3030",
+                        "tertiary-fixed": "#fce0e0",
+                        "surface-variant": "#ece6dc",
+                        "on-error": "#ffffff",
+                        "tertiary-fixed-dim": "#e8a0a0",
+                        "surface-container-lowest": "#ffffff",
+                        "secondary": "#78706a",
+                        "surface-container-highest": "#e6e0d6",
+                        "tertiary": "#8c3c3c",
+                        "surface-container-high": "#ece6dc"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "fontFamily": {
+                        "headline": ["EB Garamond"],
+                        "body": ["Manrope"],
+                        "label": ["Manrope"]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-surface font-body min-h-screen pb-24">
+<!-- TopAppBar -->
+<header class="bg-[#faf5ee] dark:bg-stone-950 border-b border-stone-200/60 dark:border-stone-800/60 shadow-[0_2px_16px_rgba(58,48,42,0.04)] flex justify-between items-center w-full px-6 h-16 sticky top-0 z-50">
+<div class="flex items-center gap-4">
+<button class="text-orange-800 dark:text-orange-400 hover:bg-stone-100 dark:hover:bg-stone-800 transition-colors p-2 rounded-full active:scale-95 duration-150">
+<span class="material-symbols-outlined" data-icon="menu">menu</span>
+</button>
+<h1 class="font-serif italic text-2xl text-orange-900 dark:text-orange-200">Sahara</h1>
+</div>
+<button class="text-orange-800 dark:text-orange-400 hover:bg-stone-100 dark:hover:bg-stone-800 transition-colors p-2 rounded-full active:scale-95 duration-150">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+</button>
+</header>
+<main class="max-w-2xl mx-auto px-6 pt-8">
+<!-- Profile Header -->
+<section class="flex flex-col items-center mb-12">
+<div class="relative mb-6 group">
+<div class="w-32 h-32 rounded-full overflow-hidden border-4 border-surface-container-high shadow-lg">
+<img alt="Rider Profile" class="w-full h-full object-cover" data-alt="Close-up portrait of a smiling young man wearing a warm brown jacket, golden hour sunlight, warm rustic outdoor background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCWWnIcMGVKbhpTfxxY4VcxW3ql8ZDkh_R1O1AOgAs2fj1acf81_-pXbXJotz06fzFpn3UTI5970Qq0gJACNIiTs33Gid9q6FopUvFjX-CrVzwJUcjH023z_qfAdhoafgondcvM3R6V2P0n83dzT1GQd4mVCjQOUfGYdr6-U_71Oz-KaPiGQMAx2p5WwkBfQfgkgMalf1PJ057myu3DCziFdSD1RhU32DsZ1oTJvevoVtkiowtaGJEys3lc4koawzNvpa9fVRcyV7w"/>
+</div>
+<button class="absolute bottom-1 right-1 bg-primary text-on-primary p-2 rounded-full shadow-md active:scale-95 transition-transform">
+<span class="material-symbols-outlined text-sm" data-icon="edit">edit</span>
+</button>
+</div>
+<div class="text-center">
+<h2 class="font-headline text-4xl text-on-surface tracking-tight mb-1">Julian Aris</h2>
+<p class="text-secondary font-medium">julian.rider@sahara.com</p>
+</div>
+</section>
+<!-- Stats Grid (Contextual for Delivery Rider) -->
+<section class="grid grid-cols-3 gap-4 mb-10">
+<div class="bg-surface-container-lowest p-4 rounded-xl text-center shadow-[0_2px_16px_rgba(58,48,42,0.04)]">
+<span class="block text-xs font-bold text-secondary uppercase tracking-widest mb-1">Deliveries</span>
+<span class="text-xl font-headline text-primary">1,248</span>
+</div>
+<div class="bg-surface-container-lowest p-4 rounded-xl text-center shadow-[0_2px_16px_rgba(58,48,42,0.04)]">
+<span class="block text-xs font-bold text-secondary uppercase tracking-widest mb-1">Rating</span>
+<span class="text-xl font-headline text-primary">4.92</span>
+</div>
+<div class="bg-surface-container-lowest p-4 rounded-xl text-center shadow-[0_2px_16px_rgba(58,48,42,0.04)]">
+<span class="block text-xs font-bold text-secondary uppercase tracking-widest mb-1">Years</span>
+<span class="text-xl font-headline text-primary">2</span>
+</div>
+</section>
+<!-- Settings List -->
+<section class="space-y-2 mb-10">
+<h3 class="text-xs font-bold text-secondary uppercase tracking-widest px-2 mb-4">Account Settings</h3>
+<div class="bg-surface-container-lowest rounded-2xl overflow-hidden shadow-[0_2px_16px_rgba(58,48,42,0.04)]">
+<button class="w-full flex items-center justify-between p-5 hover:bg-surface-container-low transition-colors border-b border-outline-variant/30">
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-primary" data-icon="badge">badge</span>
+<span class="font-medium text-on-surface">Edit Display Name</span>
+</div>
+<span class="material-symbols-outlined text-outline" data-icon="chevron_right">chevron_right</span>
+</button>
+<button class="w-full flex items-center justify-between p-5 hover:bg-surface-container-low transition-colors border-b border-outline-variant/30">
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-primary" data-icon="add_a_photo">add_a_photo</span>
+<span class="font-medium text-on-surface">Upload Profile Photo</span>
+</div>
+<span class="material-symbols-outlined text-outline" data-icon="chevron_right">chevron_right</span>
+</button>
+<button class="w-full flex items-center justify-between p-5 hover:bg-surface-container-low transition-colors border-b border-outline-variant/30">
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-primary" data-icon="lock_reset">lock_reset</span>
+<span class="font-medium text-on-surface">Change Password</span>
+</div>
+<span class="material-symbols-outlined text-outline" data-icon="chevron_right">chevron_right</span>
+</button>
+<button class="w-full flex items-center justify-between p-5 hover:bg-surface-container-low transition-colors">
+<div class="flex items-center gap-4 text-tertiary">
+<span class="material-symbols-outlined" data-icon="logout">logout</span>
+<span class="font-medium">Logout</span>
+</div>
+</button>
+</div>
+</section>
+<!-- App Info & Support -->
+<section class="space-y-2">
+<h3 class="text-xs font-bold text-secondary uppercase tracking-widest px-2 mb-4">Information</h3>
+<div class="bg-surface-container-lowest rounded-2xl overflow-hidden shadow-[0_2px_16px_rgba(58,48,42,0.04)]">
+<a class="flex items-center justify-between p-5 hover:bg-surface-container-low transition-colors border-b border-outline-variant/30" href="#">
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-primary" data-icon="help">help</span>
+<span class="font-medium text-on-surface">Support Center</span>
+</div>
+</a>
+<a class="flex items-center justify-between p-5 hover:bg-surface-container-low transition-colors border-b border-outline-variant/30" href="#">
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-primary" data-icon="policy">policy</span>
+<span class="font-medium text-on-surface">Privacy Policy</span>
+</div>
+</a>
+<div class="flex items-center justify-between p-5">
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-outline" data-icon="info">info</span>
+<span class="font-medium text-on-surface-variant">Version</span>
+</div>
+<span class="text-sm font-bold text-outline">2.4.0-pro</span>
+</div>
+</div>
+</section>
+</main>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-4 pb-6 pt-3 bg-[#faf5ee]/90 dark:bg-stone-950/90 backdrop-blur-md border-t border-stone-200/60 dark:border-stone-800/60 shadow-[0_-4px_20px_rgba(58,48,42,0.05)] rounded-t-2xl">
+<a class="flex flex-col items-center justify-center text-stone-400 dark:text-stone-500 px-3 py-1 hover:text-orange-700 dark:hover:text-orange-300" href="#">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+<span class="font-sans text-[10px] font-bold uppercase tracking-wider Manrope mt-1">Dashboard</span>
+</a>
+<a class="flex flex-col items-center justify-center text-stone-400 dark:text-stone-500 px-3 py-1 hover:text-orange-700 dark:hover:text-orange-300" href="#">
+<span class="material-symbols-outlined" data-icon="local_shipping">local_shipping</span>
+<span class="font-sans text-[10px] font-bold uppercase tracking-wider Manrope mt-1">Orders</span>
+</a>
+<a class="flex flex-col items-center justify-center text-stone-400 dark:text-stone-500 px-3 py-1 hover:text-orange-700 dark:hover:text-orange-300" href="#">
+<span class="material-symbols-outlined" data-icon="payments">payments</span>
+<span class="font-sans text-[10px] font-bold uppercase tracking-wider Manrope mt-1">Earnings</span>
+</a>
+<a class="flex flex-col items-center justify-center text-orange-800 dark:text-orange-400 bg-orange-100/50 dark:bg-orange-900/30 rounded-xl px-3 py-1 transform scale-105 transition-transform duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="person" style="font-variation-settings: 'FILL' 1;">person</span>
+<span class="font-sans text-[10px] font-bold uppercase tracking-wider Manrope mt-1">Profile</span>
+</a>
+</nav>
+</body></html>

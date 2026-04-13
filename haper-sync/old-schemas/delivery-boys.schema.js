@@ -1,0 +1,45 @@
+const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
+const { DeliveryBoyConstant } = require("../constants");
+
+
+const DeliveryBoySchema = new mongoose.Schema({
+    name: { type: String, required: true, trim: true },
+    phone: { type: String, required: true, unique: true, trim: true },
+    avatar: { type: String, default: null },
+    email: { type: String, required: true, unique: true, trim: true },
+    username: { type: String, required: true, unique: true, trim: true },
+    password: { type: String, required: true },
+    status: { type: Number, enum: Object.values(DeliveryBoyConstant.status), require: true, default: DeliveryBoyConstant.status.AVAILABLE },
+}, { timestamps: true, versionKey: false });
+
+DeliveryBoySchema.pre('save', async function (next) {
+    try {
+        if (!this.isModified('password')) {
+            return next();
+        }
+        this.password = await bcrypt.hash(this.password, 10);
+        next();
+    } catch (err) {
+        next(err);
+    }
+});
+
+DeliveryBoySchema.pre('findOneAndUpdate', async function (next) {
+    try {
+        const update = this.getUpdate();
+        if (update.password) {
+            const hashedPassword = await bcrypt.hash(update.password, 10);
+            this.getUpdate().password = hashedPassword;
+        }
+        next();
+    } catch (err) {
+        next(err);
+    }
+});
+
+DeliveryBoySchema.methods.comparePassword = function (candidatePassword) {
+    return bcrypt.compare(candidatePassword, this.password);
+};
+
+module.exports = mongoose.model('delivery-boys', DeliveryBoySchema);
