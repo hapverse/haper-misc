@@ -166,7 +166,7 @@ const transformers = {
             // in `price` (frozen sellingPrice at checkout). `sellingPrice` on an
             // order item comes from Mongoose populate and is NOT the frozen value
             // — prefer explicit `salePrice`, then fall back to `price`.
-            const salePrice = item.salePrice ?? item.price ?? 0;
+            const salePrice = item.sellingPrice ?? item.price ?? 0;
 
             // Build clean item — drop legacy `price` and stale `sellingPrice`
             // so the destination DB only contains the canonical schema.
