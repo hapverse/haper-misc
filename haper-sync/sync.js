@@ -152,10 +152,17 @@ const transformers = {
         status: doc.status ?? 1,
     }),
 
-    items: (doc) => ({
-        ...doc,
-        storeId: doc.storeId || DEFAULT_STORE_ID,
-    }),
+    // `image` (legacy single-field) is stripped; `images` array is the single
+    // source of truth on the new DB. If a legacy doc only has `image` populated,
+    // backfill it into `images` so we don't lose the thumbnail.
+    items: (doc) => {
+        const { image, ...rest } = doc;
+        return {
+            ...rest,
+            storeId: rest.storeId || DEFAULT_STORE_ID,
+            images: rest.images?.length ? rest.images : (image ? [image] : []),
+        };
+    },
 
     orders: (doc) => ({
         ...doc,
@@ -229,6 +236,29 @@ const transformers = {
 
 // All collections we need to sync via Change Streams
 const ALL_SYNCED_COLLECTIONS = Object.keys(transformers);
+
+// ─── Raw-update field strippers ──────────────────────────────────────────────
+// Applied ONLY to the change-stream fallback path where `fullDocument` is
+// absent and we have to apply `updateDescription.updatedFields` directly.
+// The regular transformer above handles the full-document path.
+//
+// For `items`, the new schema drops the legacy `image` field. If an update
+// event touches `image`, translate it into an `images` update so nothing
+// leaks into the new DB.
+const FIELD_STRIPPERS = {
+    items: (updatedFields, removedFields) => {
+        const src = updatedFields || {};
+        const { image, ...cleanUpdates } = src;
+        // If the old backend updated only `image` (not `images`), mirror it
+        // over as an `images` update. If both were updated, trust `images`
+        // and drop the redundant `image` write.
+        if (image !== undefined && cleanUpdates.images === undefined) {
+            cleanUpdates.images = image ? [image] : [];
+        }
+        const cleanRemoved = (removedFields || []).filter((f) => f !== "image");
+        return { cleanUpdates, cleanRemoved };
+    },
+};
 
 // ─── Resume Token Persistence ────────────────────────────────────────────────
 // Stores the last-processed Change Stream resume token in the new DB.
@@ -409,13 +439,24 @@ async function startChangeStreamSync(oldDb, newDb, resumeToken, resumeTimestamp)
                             const transformed = transform(event.fullDocument);
                             await newCol.updateOne({ _id: transformed._id }, { $set: transformed }, { upsert: true });
                         } else if (event.updateDescription) {
+                            // Apply per-collection stripper (e.g. items drops legacy
+                            // `image` field). Falls through unchanged for collections
+                            // with no stripper registered.
+                            const stripper = FIELD_STRIPPERS[collName];
+                            const { cleanUpdates, cleanRemoved } = stripper
+                                ? stripper(event.updateDescription.updatedFields, event.updateDescription.removedFields)
+                                : {
+                                    cleanUpdates: event.updateDescription.updatedFields,
+                                    cleanRemoved: event.updateDescription.removedFields,
+                                };
+
                             const update = {};
-                            if (event.updateDescription.updatedFields) {
-                                update.$set = event.updateDescription.updatedFields;
+                            if (cleanUpdates && Object.keys(cleanUpdates).length) {
+                                update.$set = cleanUpdates;
                             }
-                            if (event.updateDescription.removedFields?.length) {
+                            if (cleanRemoved?.length) {
                                 update.$unset = {};
-                                for (const field of event.updateDescription.removedFields) {
+                                for (const field of cleanRemoved) {
                                     update.$unset[field] = "";
                                 }
                             }
