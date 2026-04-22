@@ -214,19 +214,39 @@ const transformers = {
         location: doc.location || generateRandomLocation(),
     }),
 
-    configs: (doc) => ({
-        ...doc,
-        maintenance: doc.maintenance || {
-            isActive: false,
-            message: "We are currently down for maintenance. Please check back soon.",
-            endTime: null,
-        },
-        forceUpdate: doc.forceUpdate || {
-            minIosVersion: "0.0",
-            minAndroidVersion: "0.0",
+    configs: (doc) => {
+        // Normalize legacy two-part version strings ("1.2") to semver
+        // ("1.2.0"). Old DB may still emit two-part versions from before the
+        // convention change; the new DB schema expects X.X.X everywhere.
+        const toSemver = (v) => {
+            if (typeof v !== "string" || !v) return v;
+            const parts = v.split(".");
+            if (parts.length === 2 && parts.every((p) => /^\d+$/.test(p))) {
+                return `${v}.0`;
+            }
+            return v;
+        };
+
+        const fu = doc.forceUpdate || {
+            minIosVersion: "0.0.0",
+            minAndroidVersion: "0.0.0",
             updateMessage: "A new version of the app is available. Please update to continue.",
-        },
-    }),
+        };
+
+        return {
+            ...doc,
+            maintenance: doc.maintenance || {
+                isActive: false,
+                message: "We are currently down for maintenance. Please check back soon.",
+                endTime: null,
+            },
+            forceUpdate: {
+                ...fu,
+                minIosVersion: toSemver(fu.minIosVersion) || "0.0.0",
+                minAndroidVersion: toSemver(fu.minAndroidVersion) || "0.0.0",
+            },
+        };
+    },
 
     // These collections have no schema changes — copy as-is
     wallets: (doc) => doc,
