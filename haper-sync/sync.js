@@ -122,16 +122,6 @@ async function buildItemNameMap(oldDb) {
 // Each function takes an old-DB document and returns the new-DB document.
 // We spread the original doc and add/override only the new fields.
 
-function generateRandomLocation() {
-    // Random point ~1-2km from store
-    const latOffset = (Math.random() * 0.009 + 0.009) * (Math.random() < 0.5 ? -1 : 1);
-    const lonOffset = (Math.random() * 0.01 + 0.01) * (Math.random() < 0.5 ? -1 : 1);
-    return {
-        type: "Point",
-        coordinates: [STORE_COORDS[0] + lonOffset, STORE_COORDS[1] + latOffset],
-    };
-}
-
 const transformers = {
     users: (doc) => ({
         ...doc,
@@ -209,10 +199,16 @@ const transformers = {
         storeId: doc.storeId || DEFAULT_STORE_ID,
     }),
 
-    addresses: (doc) => ({
-        ...doc,
-        location: doc.location || generateRandomLocation(),
-    }),
+    addresses: (doc) => {
+        // `location` is owned exclusively by the new DB — set by the new app's
+        // pin-on-checkout flow for new users, or by the delivery app's
+        // OTP-success GPS capture for legacy users. Old DB has no coordinates,
+        // so we strip the field on every event (insert and update) to make
+        // sure old-DB writes can never overwrite a real coordinate.
+        const { location: _location, ...rest } = doc;
+        void _location;
+        return rest;
+    },
 
     configs: (doc) => {
         // Normalize legacy two-part version strings ("1.2") to semver
