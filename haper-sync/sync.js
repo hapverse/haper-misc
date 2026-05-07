@@ -247,7 +247,12 @@ const transformers = {
     // These collections have no schema changes — copy as-is
     wallets: (doc) => doc,
     logs: (doc) => doc,
-    sequences: (doc) => doc,
+
+    // NOTE: `sequences` is intentionally NOT synced. Both backends mint orderId
+    // and invoiceNumber from their own counters; mirroring the old DB's
+    // counters into the new DB would overwrite the new backend's progress and
+    // cause duplicate IDs. The new backend uses disjoint prefixes (see
+    // orders.schema.js) so the two ID spaces never collide.
 };
 
 // All collections we need to sync via Change Streams
