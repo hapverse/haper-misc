@@ -11,6 +11,9 @@
 
 require("dotenv").config();
 const mongoose = require("mongoose");
+const moment = require("moment-timezone");
+
+const TZ = "Asia/Kolkata";
 
 const MONGO_URI = process.env.NEW_DB_URI;
 if (!MONGO_URI) {
@@ -45,25 +48,16 @@ const DELIVERED = 1; // OrderConstants.orderStatus.CLOSED
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-const toMidnight = (d) => {
-    const dt = new Date(d);
-    dt.setUTCHours(0, 0, 0, 0);
-    return dt;
-};
-
-const addDays = (d, n) => {
-    const dt = new Date(d);
-    dt.setUTCDate(dt.getUTCDate() + n);
-    return dt;
-};
-
-const formatDate = (d) => d.toISOString().slice(0, 10);
+// Day boundaries pinned to IST so this matches the production cron.
+const toMidnight = (d) => moment.tz(d, TZ).startOf("day").toDate();
+const endOfDayIst = (d) => moment.tz(d, TZ).endOf("day").toDate();
+const addDays = (d, n) => moment.tz(d, TZ).add(n, "days").startOf("day").toDate();
+const formatDate = (d) => moment.tz(d, TZ).format("YYYY-MM-DD");
 
 // ── core: compute + upsert one day ───────────────────────────────────────────
 
 async function processDay(dayStart) {
-    const dayEnd = new Date(dayStart);
-    dayEnd.setUTCHours(23, 59, 59, 999);
+    const dayEnd = endOfDayIst(dayStart);
 
     const results = await OrderModel.aggregate([
         {
@@ -173,10 +167,9 @@ async function main() {
     await mongoose.connect(MONGO_URI);
     console.log("✅ Connected to MongoDB");
 
-    // Determine date range
+    // Determine date range (IST day boundaries)
     let fromDate, toDate;
-    const yesterday = toMidnight(new Date());
-    yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+    const yesterday = moment.tz(TZ).subtract(1, "day").startOf("day").toDate();
 
     if (process.argv[2]) {
         fromDate = toMidnight(new Date(process.argv[2]));
