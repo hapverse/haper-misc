@@ -15,6 +15,7 @@
   "type": "commonjs",
   "main": "sync.js",
   "scripts": {
+    "export:items": "node export-items-csv.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
