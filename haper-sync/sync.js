@@ -49,9 +49,7 @@ const DEFAULT_STORE = {
         deliveryIncentiveEnabled: false,
         deliveryIncentiveThresholdMinutes: 30,
         deliveryIncentiveAmount: 2,
-        razorpayId: "rzp_live_iZDWCBxZqRMQmQ",
-        razorpaySecret: "dCa45Eg1wx0c2Pqvw9uecWhP",
-        razorpayWebhookSecret: "llwuLcgQq4L7JrYn",
+        // Razorpay credentials are global (env-based), not per-store.
     },
     email: "support@haper.in",
     image: null,
