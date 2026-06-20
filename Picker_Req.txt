@@ -1,0 +1,234 @@
+You can give the following requirement document to your developer:
+
+# Picker App Workflow & Development Scope
+
+## 1. Order Assignment
+
+### Trigger
+
+* Customer places an order.
+* Order is received in Order Management System (OMS).
+
+### System Actions
+
+* Create Pick Task.
+* Assign order to available picker.
+* Send real-time notification to Picker App.
+
+### Picker App Screen
+
+Display:
+
+* Order ID
+* Item Name
+* Quantity
+* Product Image
+* Shelf/Bin Location
+* Priority Status
+
+---
+
+# 2. Picking Process
+
+### Step 1: Open Order
+
+Picker clicks "Start Picking".
+
+### Step 2: Navigate to Product Location
+
+App displays:
+
+* Aisle Number
+* Rack Number
+* Shelf/Bin Number
+
+Example:
+
+* Aisle A
+* Rack 03
+* Bin B05
+
+### Step 3: Pick Product
+
+Picker takes product from shelf.
+
+---
+
+# 3. Barcode Verification
+
+### Scan Product
+
+Picker scans product barcode using:
+
+* Mobile Camera Scanner OR
+* Bluetooth Barcode Scanner
+
+### Validation Logic
+
+System compares:
+
+Expected SKU Barcode
+vs
+Scanned Barcode
+
+#### If Match
+
+Display:
+
+* Product Verified
+* Green Check Mark
+
+Automatically mark item as Picked.
+
+#### If Not Match
+
+Display:
+
+* Wrong Product Scanned
+* Red Warning Message
+
+Do not allow picker to proceed.
+
+---
+
+# 4. Quantity Verification
+
+Example:
+
+Required Quantity = 3
+
+Picker must confirm:
+
+* Picked Quantity = 3
+
+If quantity mismatch:
+
+* Show Warning
+* Require Correction
+
+---
+
+# 5. Out of Stock Handling
+
+If product not available:
+
+Picker clicks:
+"Out of Stock"
+
+System Actions:
+
+* Notify Inventory Team
+* Notify Customer Service
+* Suggest Alternate Product (Optional)
+
+---
+
+# 6. Order Completion
+
+After all items verified:
+
+Display:
+
+* All Items Picked Successfully
+
+Picker clicks:
+"Complete Picking"
+
+Status Changes:
+
+* Picking Completed
+
+---
+
+# 7. Packing Stage Verification
+
+Packing staff receives order.
+
+For each item:
+
+* Scan Barcode Again
+* Verify Correct Product
+
+If barcode mismatch:
+
+* Stop Packing
+* Raise Error
+
+If all correct:
+
+* Packing Completed
+
+---
+
+# 8. Audit Trail
+
+Store following information:
+
+* Order ID
+* Picker ID
+* Product ID
+* Barcode Scanned
+* Pick Time
+* Completion Time
+* Device ID
+
+Purpose:
+
+* Error Tracking
+* Performance Monitoring
+* Accountability
+
+---
+
+# 9. Admin Panel Requirements
+
+### Product Management
+
+* Product Name
+* SKU
+* Barcode
+* Product Image
+
+### Shelf Management
+
+* Aisle
+* Rack
+* Bin Location
+
+### Picker Management
+
+* Picker Accounts
+* Login Access
+* Performance Reports
+
+### Order Dashboard
+
+* Pending Orders
+* Picking Orders
+* Packed Orders
+* Dispatched Orders
+
+---
+
+# 10. Hardware Compatibility
+
+Support:
+
+* Android Mobile Camera Scanning
+* Bluetooth Barcode Scanner
+* Zebra Handheld Devices (Future Support)
+
+---
+
+# 11. Recommended Tech Features
+
+* Real-time Notifications
+* Offline Sync Support
+* Barcode Validation
+* Product Image Verification
+* Inventory Auto Update
+* Role-based Access Control
+* Performance Analytics
+* Order Tracking Logs
+
+This is the basic workflow used by modern quick-commerce, warehouse, and dark-store operations. A developer can directly use this as the foundation for building your Picker App and Admin System.
