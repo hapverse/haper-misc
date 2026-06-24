@@ -26,9 +26,10 @@ or dispatched.
 3. Log in as a **super admin** for the warehouse-side setup (warehouse/supplier/goods
    receipt/transfers/approvals). Use a **store admin** to test the store-side actions.
 
-> **Note on warehouse roles:** `warehouse_manager` / `warehouse_staff` exist on the
-> backend but there is **no UI yet to create them**. For Phase 1 testing, the **super
-> admin** performs all warehouse-side actions. (Optional DB seed in the appendix.)
+> **Note on warehouse roles:** `warehouse_manager` / `warehouse_staff` can now be
+> created from the admin panel — **Sidebar → Warehouse Staff** (super admin only).
+> You can also just use a **super admin** for all warehouse-side actions during
+> testing. (A DB-seed alternative is in the appendix, but the UI is the real path.)
 
 ---
 
@@ -45,6 +46,7 @@ or dispatched.
 | Approve / reject / fulfil replenishment | ✅ | ❌ | ✅ |
 | Stock Ledger | ✅ (all) | ✅ (own store) | ✅ (their warehouse) |
 | Manual "Stock In" on an item (Items page) | ✅ | ✅ | — |
+| Manage warehouse staff (Warehouse Staff page) | ✅ | ❌ | ❌ |
 
 The **top store-switcher** sets the **target store** for creating transfers and raising
 replenishment requests. Pick the store there first.
@@ -60,6 +62,21 @@ replenishment requests. Pick the store there first.
 
 ✅ Expect: warehouse appears in the left list. Click it → empty stock panel on the right.
 ❌ Try creating a second warehouse with the **same name** → red "already exists" error.
+
+---
+
+## 1b. (Optional) Create warehouse staff  *(super admin)*
+
+If you want to test **role separation** (a warehouse manager who only sees the
+warehouse screens), create one now — no DB poking needed.
+
+1. Sidebar → **Warehouse Staff** → **+ New staff**.
+2. Pick **Role** (Warehouse Manager = full warehouse control; Warehouse Staff =
+   receive + transfers only), pick the **Warehouse**, set name/email/password.
+3. Save. The role's permissions are assigned automatically.
+4. Log in as that account → ✅ sees only **Warehouses / Suppliers / Transfers /
+   Replenishment (approvals) / Ledger** for their warehouse; cannot see stores,
+   orders, etc. (Deactivate/reactivate from the same page.)
 
 ---
 
@@ -240,10 +257,11 @@ filtered across warehouses/stores.
 
 ---
 
-## Appendix — (optional) seed a warehouse manager via DB
+## Appendix — (alternative) seed a warehouse manager via DB
 
-There is no UI to create warehouse roles yet. To test warehouse-role separation,
-seed one directly (mongosh), pointing it at an existing warehouse `_id`:
+Prefer the **Warehouse Staff** page (§1b) — it's the supported path. This DB
+snippet is only a fallback (e.g. scripting/bulk seed), pointing at an existing
+warehouse `_id`:
 
 ```js
 // password will be hashed by the schema pre-save hook only via the app;
