@@ -153,6 +153,47 @@ This is what lets a replenishment request find its warehouse automatically.
 
 ---
 
+## 7b. Automatic replenishment (cron)
+
+The system can **auto-draft** replenishment requests for low stock — you don't
+have to click "Request stock" manually. It only **drafts** a PENDING request;
+the warehouse still reviews/approves/fulfils (it never ships stock on its own).
+
+**How it works**
+- An **hourly cron** (`auto-replenishment`, runs at :30 IST) scans every
+  **warehouse-enabled** store.
+- For each store it finds items at/below their **low-stock threshold**
+  (`quantity ≤ lowQty`, with `lowQty > 0`).
+- It resolves the store's **serving warehouse** (by `servingWarehouseId`, else
+  region match) and creates **one** request with `source = AUTO`, `status =
+  PENDING`.
+- **Requested qty** per item = `reorderQty` if set → else top-up to `maxStock`
+  (`maxStock − quantity`) → else enough to clear the threshold.
+- **Idempotent:** items already on an open request (PENDING/APPROVED/
+  PARTIALLY_APPROVED) are skipped, so it won't pile up duplicates each hour.
+- **Skipped:** stores not warehouse-enabled, stores with no serving warehouse,
+  and items **without a barcode** (a SKU is required to match warehouse stock).
+
+> Note: low-stock **alerts** (push/email + 9 AM digest) are a *separate* system
+> that only notifies. Auto-replenishment is what actually drafts the request.
+
+**How to test**
+1. Pick a store, **Stores → edit → Inventory supply**: tick **Warehouse supply
+   enabled** and set **Region** (or a serving warehouse) — see step 5 above.
+2. Make sure an item in that store has a **barcode** and set its **lowQty** above
+   its current **quantity** (e.g. quantity 2, lowQty 10). Optionally set
+   `reorderQty`/`maxStock` (edit item).
+3. Wait for the hourly run, **or** trigger it manually to test immediately:
+   - On the server: `node -e "require('./packages/cron/src/jobs/auto-replenishment')()"`
+     from `haper-backend` (uses the same env/DB as the cron service), or
+   - temporarily change the schedule in `packages/cron/src/scheduler.js` to
+     `'* * * * *'` (every minute) on the dev box.
+4. Go to **Replenishment** → a new **PENDING** request with **source AUTO**
+   should appear for that store. Approve → Fulfil → Dispatch → Receive as usual.
+5. Re-run the cron → ✅ no duplicate request for the same item.
+
+---
+
 ## 8. Manual "Stock In" now writes to the ledger  *(super admin or store admin)*
 
 1. Sidebar → **Items** → an item → adjust quantity ("Stock In"), e.g. +15.
