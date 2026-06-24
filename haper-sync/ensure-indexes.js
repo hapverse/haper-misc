@@ -66,9 +66,12 @@ const COLLECTIONS = [
         name: "items",
         indexes: [
             { key: { important: 1 } },
-            { key: { iId: 1 }, options: { unique: true } },
+            // iId + barcode are unique PER STORE (the same product carries the
+            // same iId/barcode across stores). The OLD global iId_1 / barcode_1
+            // indexes must be dropped — run migrate-item-indexes.js once.
+            { key: { storeId: 1, iId: 1 }, options: { unique: true } },
             {
-                key: { barcode: 1 },
+                key: { storeId: 1, barcode: 1 },
                 options: {
                     unique: true,
                     partialFilterExpression: { barcode: { $exists: true, $type: "string", $gt: "" } },
