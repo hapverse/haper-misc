@@ -244,6 +244,37 @@ filtered across warehouses/stores.
 
 ---
 
+## 11. Supply health & data-quality checks  *(super admin / warehouse roles)*
+
+These four low-risk safeguards surface multi-store supply problems that were
+previously silent. (Stop-gaps ahead of the bigger catalog/warehouse-master rework.)
+
+1. **Routing health (no serving warehouse).** Sidebar → **Warehouses**. If any
+   `warehouse supply enabled` store can't resolve a serving warehouse, a yellow
+   banner lists them ("⚠ N warehouse-enabled stores can't reach a warehouse").
+   - Test: turn on warehouse supply for a store but give it a region no warehouse
+     matches (and no serving warehouse) → it appears in the banner. Set a serving
+     warehouse (or matching region) → banner clears. Backend: `GET /admin/warehouse/routing-health`.
+
+2. **Region match is case-insensitive.** Auto-replenishment routing now matches
+   region trimmed + case-insensitively, so a store region `"bihar"` resolves a
+   warehouse region `"Bihar"`. (Previously a casing mismatch silently skipped the store.)
+
+3. **Missing-barcode report.** Sidebar → **Items** → **Missing Barcode** toggle →
+   lists items with no barcode. These **cannot be replenished** from the warehouse
+   (no SKU to match), so they need a barcode enrolled. Backend filter:
+   `GET /admin/item/catalog?missingBarcode=true`.
+
+4. **Free-to-promise on approve.** Replenishment → **Approve** a request → the modal
+   now shows **Avail**, **Committed** (already approved on other open requests, not yet
+   dispatched), and **Free** = Avail − Committed, with a warning if you approve beyond
+   Free. "Fill to free" caps each line at free-to-promise. Backend:
+   `GET /admin/replenishment/committed?warehouseId=…`.
+   - Test: approve request A for 20 of SKU X (don't fulfil) → open request B for SKU X →
+     its **Committed** shows 20 and **Free** = Avail − 20. Fulfil A → B's Committed drops.
+
+---
+
 ## Troubleshooting
 
 | Symptom | Likely cause |
