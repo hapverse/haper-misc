@@ -196,17 +196,17 @@ store to a product is now "assign it" (creates a qty-0 item). All admin-side —
 
 ---
 
-## CH-7 · Required serving-warehouse on store create (inventory-v2 P9) — OPTIONAL, has a backend prerequisite
-**Backend:** ⚠️ **NOT built yet** — `store.servingWarehouseId` is still `default: null` (region is the fallback;
-`/admin/warehouse/routing-health` flags stores with no resolvable warehouse). The design (P9) wants every store to
-have an explicit serving warehouse so supply routing always resolves. This is a **2-part task** (small backend + admin).
+## CH-7 · Required serving-warehouse on store create (inventory-v2 P9) — ✅ DONE (backend + admin)
+**Backend:** ✅ **built on `feat/inventory-v2`** — store-create now requires an **active** `servingWarehouseId`
+(400 otherwise); update validates an active one when set (clearing allowed). `/admin/warehouse/routing-health`
+still flags any legacy stores without a resolvable warehouse. Region is now a fallback label only.
 **Plain summary:** when creating a store, the admin must pick the warehouse that supplies it. Any **active** warehouse
 is allowed (cross-region / cross-state is fine — region becomes just a label/fallback).
 
 | Client | What to do | Status |
 |---|---|---|
-| **backend (do FIRST)** | Enforce a valid **active** `servingWarehouseId` on the **store-create** endpoint (haper-backend `packages/admin/src/routes/store/` — validator/controller, **not** the Mongoose schema, so model-level `generateStore()` in tests stays valid). Optionally require it on edit too. Reject/clear a `servingWarehouseId` pointing at an inactive/missing warehouse. Add a test. | ⏳ to do |
-| **admin** | StoreModal (create/edit): add a **required "Serving warehouse"** dropdown listing **active** warehouses (`GET /admin/warehouse`); block submit until one is chosen; show the current serving warehouse on the store detail. Region field stays but is no longer how routing is decided. Pair with the routing-health page (already exists). | ⏳ to do |
+| **backend (do FIRST)** | Enforce a valid **active** `servingWarehouseId` on the **store-create** endpoint (haper-backend `packages/admin/src/routes/store/controller.js` — controller, **not** the Mongoose schema, so model-level `generateStore()` in tests stays valid). On update, a serving warehouse being SET must be active (clearing to null allowed). Added tests. | ✅ done (feat/inventory-v2) |
+| **admin** | StoreModal (create/edit): the **Serving warehouse** dropdown (active warehouses, `GET /admin/warehouse`) is now **required on create** (submit blocked + client guard); region relabelled as a fallback only. Edit keeps it optional (reassign/clear). Pairs with the routing-health page (already exists). | ✅ done |
 | **web / android / ios / delivery / picker** | Not affected (serving-warehouse is internal supply routing). | — |
 
 **Decide:** P9 is a robustness nicety, not required for correctness (region fallback + routing-health already cover gaps).
