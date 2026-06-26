@@ -208,16 +208,20 @@ A person at 2+ stores = one record per store (login resolves store on collision)
 - **Deferred:** retire `cloneStoreCatalog` → full **assignment engine** (template + idempotent "X of Y") — later.
 
 ### Phase 2 — Batch ledger + reservation
+> Built in **three milestones** (each tested + committed on `feat/inventory-v2`):
+> **2A** store batch ledger + chokepoint — **DONE** (see §11.9); **2B** warehouse batches +
+> goods-receipt + transfer batch stamping — pending; **2C** reservation buckets + auto-expire — pending.
 - **FIRST: audit & convert EVERY non-transactional quantity mutator** (restock, razorpay, manual-adjust,
-  etc.) to ONE batch-aware **transactional** helper. The FEFO decrement **refuses to run without a session**.
-- Create `store_batches` + `warehouse_batches`. Seed `LEGACY` batches for **100%** of stock
-  (idempotent/resumable) so roll-ups == current values before flipping any decrement.
-- Make `quantity`/`expiresAt`/`costPrice` DERIVED (recompute in-txn on every batch change).
+  etc.) to ONE batch-aware **transactional** helper. The FEFO decrement **refuses to run without a session**. ✅ (2A)
+- Create `store_batches` ✅ (2A) + `warehouse_batches` (2B). Seed `LEGACY` batches for **100%** of stock
+  (idempotent/resumable) so roll-ups == current values before flipping any decrement. ✅ (2A, store side)
+- Make `quantity`/`expiresAt`/`costPrice` DERIVED (recompute in-txn on every batch change). ✅ (2A)
 - Goods-receipt → insert `warehouse_batch` (real `batchNo`) + bump total. Transfer dispatch → FEFO
-  pick + stamp `{batchNo,cost,expiry}` on the line. Receive → create/merge `store_batch` + re-roll-up.
-- Add reservation buckets (`reservedQty`/`inTransitQty`) + reserve-on-approve + auto-expire cron.
-- Promote `stock-movements.batchNo` to a real field; add `iId`.
-- Ship behind a **per-store flag**; **reconcile job** asserts `items.quantity == Σ(batches)` and **alerts** on drift.
+  pick + stamp `{batchNo,cost,expiry}` on the line. Receive → create/merge `store_batch` + re-roll-up. (2B)
+- Add reservation buckets (`reservedQty`/`inTransitQty`) + reserve-on-approve + auto-expire cron. (2C)
+- Promote `stock-movements.batchNo` to a real field; add `iId`. (2B)
+- Ship behind a **per-store flag** ✅ (2A: `store.config.batchesEnabled`); **reconcile job** asserts
+  `items.quantity == Σ(batches)` and **alerts** on drift ✅ (2A: nightly `inventory-batch-reconcile`).
 
 ### Phase 3 — Per-batch COGS + reporting
 - Add `iId` + `batchAllocations` to order lines (Gson-safe). POS + user order placement record FEFO allocations.
@@ -367,3 +371,35 @@ A person at 2+ stores = one record per store (login resolves store on collision)
   global-categories code is already committed + pushed; its migration is still pending).
 - **RULE (project):** whenever migration progress changes (code merged, a step run/applied, a step added), update
   **THIS §11.8** + the `project_inventory_v2_redesign` memory + `scripts/migrations/README.md` so any session resumes cleanly.
+
+### 11.9 Phase 2A — store batch ledger + transactional chokepoint — **CODE DONE & TESTED**
+- **What shipped (uncommitted at time of writing → to be committed on `feat/inventory-v2`):**
+  - New `store_batches` collection (`store-batches.schema.js`) keyed `(itemId, batchNo)` unique +
+    `(itemId, status, expiresAt)` FEFO index; `StoreBatchModel` registered in `models/index.js`.
+  - New `store-batch.repository.js` = the **single transactional chokepoint**: `stockIn` (create/merge
+    by batchNo, weighted-avg cost), `stockOutFEFO` (oldest-expiry-first; **null expiry sorts LAST**;
+    **refuses to run without a session**; returns `{ok,allocations}` and false-on-insufficient without
+    touching a batch), `recomputeItemRollup` (quantity=Σ open, costPrice=weighted-avg, expiresAt=MIN —
+    cost/expiry only refreshed while ≥1 open batch), `setAbsoluteQuantity` (picker OOS → deplete),
+    `ensureLegacyBatch`, `reconcileStore`, + a cached **per-store flag gate** (`isStoreBatchEnabled` /
+    `isAnyStoreBatchEnabled` / `__resetBatchGateCache` test hook).
+  - `item.repository.js`: the 4 mutators (`decrementIfAvailable`, `incrementQuantity`,
+    `findOneAndUpdateAtomicQty`, `updateQuantity`) are now **batch-aware** (branch on the flag; legacy
+    path byte-for-byte unchanged when off) + new `applyStockIn` for explicit-batch receipts; `add`
+    seeds an opening batch for stocked new items. **Return contracts preserved** (bool / doc-or-null /
+    updateOne-like / true) so no caller changed.
+  - The 3 non-transactional mutators fixed to pass a session: admin manual Stock-In
+    (`items/controller.updateItemQuantity` — now in a txn, accepts optional `batchNo/costPrice/expiresAt`,
+    negative = FEFO adjust-down, validator updated) + both Razorpay rollbacks (user `order` + `razorpay`).
+  - Per-store flag `store.config.batchesEnabled` (default **false** → zero behaviour change).
+  - Migration `seed-store-batches.js` (idempotent; registered as **step 4** in `run.js`, after cost
+    backfill). Nightly **`inventory-batch-reconcile`** cron (3:15 AM IST) + `StoreRepository.getBatchEnabledStores`.
+  - Tests: `packages/admin/__tests__/store-batch-ledger.test.js` (20 cases — FEFO incl. null-last + HOLD
+    exclusion, merge + weighted-avg cost, min-expiry roll-up, insufficient contract, session-refusal,
+    absolute-set, seed idempotency + unique-index guard, reconcile drift, **concurrent-FEFO oversell
+    guard**, HTTP Stock-In create + negative). `StoreBatchModel` added to the admin test `setup.js`
+    pre-create list. **Full suite green: admin / user 259 / cron 9.**
+- **Rollout (prod):** run `npm run migrate:apply` (now includes the batch seed) → THEN flip a store's
+  `config.batchesEnabled` → reconcile cron watches for drift. Dev: enable the flag on a test store directly.
+- **NEXT:** Phase 2B (warehouse batches + goods-receipt real batchNo + transfer FEFO stamping +
+  `stock-movements.batchNo`/`iId`), then 2C (reservation buckets + auto-expire).
