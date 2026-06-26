@@ -235,6 +235,10 @@ A person at 2+ stores = one record per store (login resolves store on collision)
 
 > **Hard rule: no client changes until all backend phases land and pass tests.** Most client changes
 > are additive/optional. Order when ready: **admin → web → android → ios → picker → delivery.**
+>
+> **LIVING CHECKLIST → `haper-misc/client-followups.md`** — the actionable, status-tracked
+> per-change × per-client list (this §7 is the plan; that file is what you work through one by one).
+> Add a `CH-N` block there for every backend change. Memory: `project_client_followups`.
 
 - **haper-admin (ops console — biggest):** global category/sub-category CRUD; product-master UI;
   multi-store **assign picker** (+ ALL) + template onboarding; batch-aware **goods-receipt / Stock-In**
