@@ -9,19 +9,42 @@ with a checklist for **each** client so nothing is missed.
 **Status key:** ✅ done · ⏳ to do · ❓ verify (probably nothing) · — not affected
 
 ## How to use (new session)
-> **GATE (decided 2026-06-26):** client work begins **only after the ENTIRE backend is done** (all inventory-v2
-> phases). Until then this is a **forward-planning list** — keep adding `CH-N` blocks as backend changes ship, but
-> do NOT start client edits yet. **Client order = the user decides later.**
+> **GATE PASSED:** the ENTIRE inventory-v2 backend (Phases 0–4) is **done, on `feat/inventory-v2`,
+> and DEPLOYED + MIGRATED on dev (`dapi.haper.in`)** — so every endpoint below is **live on dev to
+> build and test against.** Prod is still pristine (the user runs prod later). Client work can begin.
+> **Order chosen by the user: `admin` first → `android` next → web/ios/picker/delivery later.**
 
-1. Read this file.
-2. To work, say e.g. **"let's do the admin client changes"** (or name any client / change).
-   The session picks the pending (⏳ / ❓) items for that client, implements them
-   one by one, and flips the status here when done.
-3. Backend-first: only start client work after the backend change is merged-ready
-   (see `haper-misc/inventory-v2-design.md`).
-4. **Android/iOS rule:** any NEW field in an item/order/category JSON must be
-   nullable or always-sent, or old app versions can crash (see memory
-   `android_gson_kotlin_defaults`).
+1. Read this whole file (it's self-sufficient — every change, every client, every endpoint is here).
+2. Say **"let's do the admin client changes"**. Work the ⏳ items for that client **one at a time**,
+   test against `dapi.haper.in`, flip the status to ✅ here as each lands.
+3. **Repos:** `haper-admin` (React ops console, on `dev`) · `haper-web` · `haper-android` (Kotlin) ·
+   `haper-ios` (Swift) · `haper-picker` · `haper-delivery`. Branch off **`dev`**, PR into **`dev`** (NEVER `main`).
+4. **Android/iOS rule:** any NEW field in an item/order/category JSON must be nullable or always-sent,
+   or old app versions can crash (memory `android_gson_kotlin_defaults`). Only **CH-5** adds a
+   customer-facing field (order line) — everything else is admin-only.
+
+### Discovering exact request/response shapes (so you never need to ask)
+- The dev backend is live at `dapi.haper.in` — **call the endpoint and read the JSON** to see the real shape.
+- Or read the route + validator + controller in **haper-backend** (`packages/admin/src/routes/<area>/`):
+  `router.js` = path + permission, `validator.js` = the exact request body it accepts, `controller.js` = the response.
+- Per-change detail + the shipped behaviour: `haper-misc/inventory-v2-design.md` **§11.9–§11.13**.
+
+## Admin build order (recommended)
+Do the standalone catalogue/data changes first, then the master that ties them together:
+1. **CH-1** global categories (super-admin CRUD + per-store on/off toggle) — foundational.
+2. **CH-2** Stock-In batch fields (small, isolated).
+3. **CH-3** goods-receipt batch-no + warehouse-stock view (wavg cost/min-expiry) + recall.
+4. **CH-4** reservation columns (Available/Reserved/In-transit + free-to-promise) + EXPIRED + **status legends everywhere**.
+5. **CH-5** product-COGS / margin report + cross-store toggle + margin = profit/costKnownRevenue.
+6. **CH-6** Product Master screen + assign (onboarding) + route catalogue editing to the master (biggest).
+7. **CH-7** required serving-warehouse on store create (optional; has a small backend prerequisite).
+
+## Already built — DON'T rebuild (just enhance)
+The earlier centralized-inventory feature already shipped these admin screens; the CH blocks **add fields onto them**, they don't build them from scratch:
+- Warehouse CRUD + **warehouse-stock list view**, **routing-health** page, **Missing-Barcode filter**.
+- **Goods-receipt** form, **stock-transfer** create/dispatch/receive, **replenishment** request/approve/fulfil screens.
+- Stock-alert / inventory-group screens.
+> If a base screen is missing in `haper-admin`, build the minimal version first, then layer the CH change on top.
 
 ---
 
@@ -167,9 +190,30 @@ store to a product is now "assign it" (creates a qty-0 item). All admin-side —
 
 ---
 
+## CH-7 · Required serving-warehouse on store create (inventory-v2 P9) — OPTIONAL, has a backend prerequisite
+**Backend:** ⚠️ **NOT built yet** — `store.servingWarehouseId` is still `default: null` (region is the fallback;
+`/admin/warehouse/routing-health` flags stores with no resolvable warehouse). The design (P9) wants every store to
+have an explicit serving warehouse so supply routing always resolves. This is a **2-part task** (small backend + admin).
+**Plain summary:** when creating a store, the admin must pick the warehouse that supplies it. Any **active** warehouse
+is allowed (cross-region / cross-state is fine — region becomes just a label/fallback).
+
+| Client | What to do | Status |
+|---|---|---|
+| **backend (do FIRST)** | Enforce a valid **active** `servingWarehouseId` on the **store-create** endpoint (haper-backend `packages/admin/src/routes/store/` — validator/controller, **not** the Mongoose schema, so model-level `generateStore()` in tests stays valid). Optionally require it on edit too. Reject/clear a `servingWarehouseId` pointing at an inactive/missing warehouse. Add a test. | ⏳ to do |
+| **admin** | StoreModal (create/edit): add a **required "Serving warehouse"** dropdown listing **active** warehouses (`GET /admin/warehouse`); block submit until one is chosen; show the current serving warehouse on the store detail. Region field stays but is no longer how routing is decided. Pair with the routing-health page (already exists). | ⏳ to do |
+| **web / android / ios / delivery / picker** | Not affected (serving-warehouse is internal supply routing). | — |
+
+**Decide:** P9 is a robustness nicety, not required for correctness (region fallback + routing-health already cover gaps).
+Skip it if you don't need hard enforcement yet; the rest of CH-1…6 is independent of it.
+
+---
+
 ## Future changes
-Phases 1–4 are logged above (CH-1…6) — **the inventory-v2 backend is complete.** **Customer-app surface across
-the whole project:** only CH-5 adds fields to a customer-facing model (the order line) — guard the Android/iOS
-decoders (don't declare `iId`/`batchAllocations` non-null). Everything else is admin-only. When client work
-begins, say e.g. "let's do the admin client changes" and work the ⏳ items per client. Design source:
-`haper-misc/inventory-v2-design.md` (§7 = client scope).
+**This file is COMPLETE for inventory-v2** — CH-1…6 cover every shipped backend change (Phases 0–4) with a
+per-client checklist + exact endpoints, and CH-7 covers the one optional P9 item (with its backend prerequisite).
+**Customer-app surface across the whole project:** only **CH-5** adds fields to a customer-facing model (the order
+line) — guard the Android/iOS decoders (don't declare `iId`/`batchAllocations` non-null). Everything else is
+admin-only, and the apps already read the per-store `items` display fields unchanged.
+
+For any FUTURE backend change beyond inventory-v2, add a new `CH-N` block above with the same per-client checklist.
+Design source: `haper-misc/inventory-v2-design.md` (§7 = client scope; §11.9–§11.13 = what each phase shipped).
