@@ -1,10 +1,16 @@
 # Inventory v2 — Multi-store + Batch-wise Redesign (Build Blueprint)
 
-> **Status:** DESIGN COMPLETE — ready to build. **No code written yet.**
-> **Kickoff:** in a new session the user will prompt **"let's build the inventory setup"**.
-> When that happens: read THIS doc end-to-end + the memory `project_inventory_v2_redesign`,
-> confirm the working branch, then start **Phase 0 (backend)**. **Backend-first — NO client
-> (admin/web/android/ios/picker/delivery) changes until the backend phases are done & tested.**
+> **Status:** committed + pushed on branch `feat/inventory-v2` (cut from `dev`) — PR into `dev` not yet opened.
+> **Phase 0 = DONE** (P7 alert storeId guards; integrity-report + costPrice-backfill scripts).
+> **Phase 1 (global categories/sub-categories) = CODE DONE & TESTED** — full backend suite green
+> (admin 626 / user 259 / cron 9). Done the *proper* way (no name-matching workaround; the Phase-0
+> add-to-all stopgap was reverted).
+> **Prod migration = PENDING** — `npm run migrate` (dry-run) → `npm run migrate:apply`. See **§11.8** for the runbook.
+> **P20 delivery-incentive = SKIPPED** by decision (kept OFF in store config) — see §11.2.
+> **Read §11 first** — authoritative log of every decision + live status. **Keep §11.8 updated as progress changes.**
+> **Kickoff phrase** (future sessions): **"let's build the inventory setup"** → read THIS doc end-to-end +
+> memory `project_inventory_v2_redesign`. **Backend-first — NO client (admin/web/android/ios/picker/delivery)
+> changes until the backend phases are done & tested.**
 
 ---
 
@@ -125,8 +131,12 @@ A person at 2+ stores = one record per store (login resolves store on collision)
 1. **`iId` = product identity** (verified: not used by apps or user/picking/delivery backends; only
    admin search/lookup/email/clone). Mint **once per product, reuse across all stores** (today it's
    regenerated per store except on clone). **RE-VERIFY iId usage at code time before flipping.**
-2. **Categories/sub-categories fully global** (shared name, ordering/seq, isSuggested, single status).
-   Per-store on/off override only if a store truly diverges later (not built now).
+2. **Categories/sub-categories fully global** (shared name, ordering/seq, isSuggested, single status; **no
+   `storeId`**; name globally unique). **BUILT NOW** (not deferred). A store "carries" a category iff it has
+   ≥1 active item in it (**membership**). **Per-store enable/disable override IS built now, default ON** — a
+   store admin can hide a carried category from their store and re-enable it (only *disabled* rows persisted,
+   in `store-category-settings`). **Global category/sub-category CRUD is SUPER_ADMIN-only**; store admins get
+   only the per-store enable/disable. See §11.
 3. **Membership = item rows.** HO assigns products to stores centrally (multi-store picker + ALL).
    New rows start **qty 0**; **app hides qty-0** items. Onboarding = template (copy a store's list) +
    trim, creating **references** (not forks); idempotent, resumable, reports "X of Y assigned".
@@ -173,23 +183,29 @@ A person at 2+ stores = one record per store (login resolves store on collision)
 
 > Naming: **"Phase N"** = migration step; **"PNN"** = a problem id. Don't confuse them.
 
-### Phase 0 — Safety net (no schema change)
-- Read-only **integrity report**: items whose `category._id` isn't in their store; null/orphan
-  `inventoryGroupId`; barcode/iId reuse across stores. Must run CLEAN on prod before Phase 1.
-- Defensive fix for add-to-all: resolve category **per target store BY NAME** (stops new pollution).
-- Add `storeId` guards to evaluator + alert repo (P7) — partly done already, complete it.
-- Backfill `items.costPrice` where 0 from latest warehouse cost (currently-zero only).
-- Fix **P20** (await delivery-incentive + log-alert/retry).
-- **Re-verify `iId` usage** before any later flip.
+### Phase 0 — Safety net (no schema change) — **DONE** (except where noted)
+- ✅ Read-only **integrity report** (`scripts/migrations/inventory-integrity-report.js`): items whose `category._id`
+  isn't valid; null/orphan `inventoryGroupId`; barcode/iId reuse; alert cross-store leak; cost-backfill candidates.
+- ↩︎ Defensive add-to-all by-NAME fix — **built then REVERTED**: superseded by Phase 1 going global now (no workaround).
+- ✅ Add `storeId` guards to evaluator + alert repo (**P7**) — completed across evaluator + repos + controllers + cron.
+- ✅ Backfill `items.costPrice` where 0 from latest warehouse cost (`scripts/migrations/backfill-item-cost-price.js`, dry-run default).
+- ⛔ **P20** delivery-incentive — **SKIPPED** (feature off in store config); the await/retry/log work was reverted (see §11).
+- ✅ **Re-verified `iId` usage** — referenced only in `admin`+`shared`; zero refs in user/picking/delivery/auth/cron.
 
-### Phase 1 — Global categories/sub-categories
-- Create global categories/sub-categories by **dedupe-by-name** (PROD has 1 store → near-trivial).
-- Build `oldPerStoreId → globalId` map (key on **NAME**, not the possibly-corrupted `_id`).
-- **add-field → backfill → verify → FLIP reads** (never in-place rewrite first). Keep old per-store
-  rows until verified.
-- Migrate **banner deep-links** that point at old category ids.
-- Point admin category/sub-category CRUD at the global collection (**admin UI changes here**).
-- Retire `cloneStoreCatalog` → **assignment engine** (template + idempotent "X of Y").
+### Phase 1 — Global categories/sub-categories — **IN PROGRESS** (simplified; see §11 for the finalized plan)
+> Because PROD has **1 store**, the existing category ids ARE the global ids → **no item remap, no banner-link
+> migration**. And **dev is disposable** → wipe + reseed. So the cautious "add-field→backfill→flip / keep old
+> rows" dance is NOT needed; we drop `storeId` and rebuild indexes directly.
+- **Schema:** drop `storeId` from `categories` + `sub-categories`; `name` globally unique; rebuild indexes.
+- **Repos:** remove `storeId` scoping from all category/sub-category finders; admin catalog = all global cats
+  with per-store item counts; **customer list = membership** (categories with ≥1 active item in the store) **AND
+  not disabled for the store**.
+- **Per-store enable/disable** (`store-category-settings`, default ON) + **SUPER_ADMIN-only global CRUD**
+  (store admins get only enable/disable; `MANAGER_PRESET` loses category CRUD, gains `TOGGLE_STORE`).
+- **Store-clone** stops copying categories/sub-categories (shared now); items keep their global category ids.
+- **Migration** `scripts/migrations/migrate-categories-global.js` (idempotent, dry-run default): defensive dedupe-by-name
+  (no-op at 1 store) → `$unset storeId` → rebuild indexes.
+- **Deferred:** retire `cloneStoreCatalog` → full **assignment engine** (template + idempotent "X of Y") — later.
 
 ### Phase 2 — Batch ledger + reservation
 - **FIRST: audit & convert EVERY non-transactional quantity mutator** (restock, razorpay, manual-adjust,
@@ -269,3 +285,77 @@ A person at 2+ stores = one record per store (login resolves store on collision)
 - **Main is hook-protected** (`~/.claude/hooks/block-main-commit-push.sh`): no direct commit/push to `main` — feature branch → dev → main via PR only.
 - **Never push to dev** unless explicitly asked; user merges via PRs.
 - No client repos touched until backend phases are merged-ready.
+
+---
+
+## 11. Finalized build decisions — 2026-06-26 session (AUTHORITATIVE)
+
+> This log captures every decision made/changed during the build session so nothing is lost across sessions.
+> Where it conflicts with earlier prose above, **this section wins.**
+
+### 11.1 Branch & current state
+- Working branch **`feat/inventory-v2`** cut from **`dev`** in `haper-backend` (and `haper-misc` holds this doc).
+- **Phase 0 landed** (uncommitted): P7 storeId guards across alert evaluator + `inventory-group`/`stock-alert`
+  repos + admin `inventory-group`/`stock-alert` controllers + `item.repository` old-group hook + cron daily-digest.
+- **Phase 1 (global categories) CODE DONE & TESTED** (uncommitted): category/sub-category schemas → global,
+  repos (membership reads), admin controllers/routers/validators, permission model, new `store-category-settings`
+  model+repo, `store-clone` change. Full backend suite green (**admin 626 / user 259 / cron 9**).
+- **Migration scripts organized** under `scripts/migrations/` with an ordered entry runner `run.js`
+  (`npm run migrate` / `npm run migrate:apply`). See **§11.8** for live status + runbook.
+- The Phase-0 **add-to-all by-NAME stopgap was reverted** in favour of going global (see 11.3).
+
+### 11.2 P20 delivery-incentive — SKIPPED (do not re-add)
+- Business is **not running rider incentives yet**; kept **OFF in store config** (`config.deliveryIncentiveEnabled`
+  already defaults `false`). The reliability work (await + retry + `INCENTIVE_AWARD_FAILED` durable log) was
+  implemented then **fully reverted**; the award stays the original fire-and-forget IIFE. Don't revive unless asked.
+
+### 11.3 Categories & sub-categories → GLOBAL master (the right way, now)
+- **Decision:** do NOT ship the name-matching workaround. Make `categories` + `sub-categories` a single **global**
+  master (drop `storeId`; `name` globally unique; `sub-category.category` stays an **array** of parent ids so one
+  global sub-category can have multiple parents). Mirrors how `warehouses` are already global.
+- **Why cheap now:** PROD = **1 store** → existing ids already serve as global ids (no item remap, no banner-link
+  migration). **Dev is disposable** → wipe + reseed; no careful dev migration.
+- **Membership:** a store carries a category iff it has **≥1 active item** referencing it. Customer category/
+  sub-category lists are derived by membership, NOT by a `storeId` on the category.
+- **Items keep `storeId`**; `items.category._id`/`subCategory._id` remain plain refs to the (now global) ids.
+
+### 11.4 Per-store enable/disable override (default ON)
+- New collection **`store-category-settings`** `{ storeId, categoryId, enabled }`, unique `(storeId, categoryId)`.
+  **Default = enabled**; only *disabled* overrides are persisted (absence of a row = enabled).
+- Customer visibility = **membership AND not-disabled-for-store**. A store admin can hide a carried category and
+  re-enable it. (Chosen over explicit opt-in so categories appear automatically once a store stocks them.)
+
+### 11.5 Permission model
+- **Global category/sub-category CRUD (create/update/delete/global-activate) = SUPER_ADMIN only** — enforced by a
+  **role gate** (`requireRole(SUPER_ADMIN)`), NOT a permission, because `store_admin` bypasses permission checks
+  within its store.
+- **Store admins only get per-store enable/disable** via `PATCH /admin/category/:id/store-state`, gated by the new
+  `CATEGORIES.TOGGLE_STORE` permission. **Built category-level only** (disabling a category hides its whole subtree;
+  no separate sub-category toggle). `MANAGER_PRESET` loses category/sub-category CRUD perms, gains `CATEGORIES.TOGGLE_STORE`.
+
+### 11.6 Migration / rollout
+- `scripts/migrations/migrate-categories-global.js` (idempotent, **dry-run default**, `--apply` to write): defensive
+  dedupe-by-name (no-op at 1 store) → `$unset storeId` on cats/sub-cats → drop old `storeId` indexes → create
+  global/unique indexes. **Dev:** wipe + reseed instead. **Prod:** run after code lands; re-runnable.
+- `store-clone.utils` stops cloning categories/sub-categories; `item.repository.copyItemsToStore` keeps category/
+  subCategory ids unchanged when no remap map is supplied (still remaps per-store inventory groups).
+
+### 11.7 Still deferred (unchanged)
+- Assignment-engine onboarding (retire `cloneStoreCatalog`), Phase 2 batches/FEFO + reservations, Phase 3 per-batch
+  COGS, Phase 4 product master. No client-app changes until backend lands & tests pass (order: admin→web→android→ios→picker→delivery).
+
+### 11.8 Current status & migration runbook — **KEEP THIS UPDATED**
+- **Backend code:** ✅ DONE & tested (admin 626 / user 259 / cron 9 green). Committed + pushed on `feat/inventory-v2`
+  (backend `d87c0b9`, this doc in haper-misc). **PR into `dev` not yet opened** (user opens/merges).
+- **Prod migration:** ⏳ PENDING (not yet applied). Entry runner runs the steps **in order**, integrity report is a **gate**:
+  - `npm run migrate`        → DRY RUN (previews all steps, writes nothing)
+  - `npm run migrate:apply`  → applies in order: **integrity gate → `migrate-categories-global` → `backfill-item-cost-price`**
+  - **Dev:** wipe + reseed `categories`/`sub-categories` instead (disposable) — migration optional there.
+  - Run details / per-step docs: `haper-backend/scripts/migrations/README.md`.
+- **Old one-time migrations applied in prod & removed from repo** (recoverable via git history):
+  `migrate-to-multi-store`, `backfill-item-images`, `backfill-config-version-format`, `update-media-base-path`
+  (the last verified applied 2026-06-26 — new uploads now write the `v1.static.haper.in` base, so it won't refill).
+- **Next when resuming:** commit `feat/inventory-v2` → PR into `dev` (NEVER push to dev directly) → after the new
+  code is deployed, run the prod migration (`npm run migrate` → `--apply`) → then client-app work (§7).
+- **RULE (project):** whenever migration progress changes (code merged, a step run/applied, a step added), update
+  **THIS §11.8** + the `project_inventory_v2_redesign` memory + `scripts/migrations/README.md` so any session resumes cleanly.
