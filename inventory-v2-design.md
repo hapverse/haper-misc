@@ -224,10 +224,10 @@ A person at 2+ stores = one record per store (login resolves store on collision)
 - Ship behind a **per-store flag** ✅ (2A: `store.config.batchesEnabled`); **reconcile job** asserts
   `items.quantity == Σ(batches)` and **alerts** on drift ✅ (2A: nightly `inventory-batch-reconcile`).
 
-### Phase 3 — Per-batch COGS + reporting
-- Add `iId` + `batchAllocations` to order lines (Gson-safe). POS + user order placement record FEFO allocations.
-- Profit/COGS read `batchAllocations`; exclude+flag cost-unknown.
-- Fix analytics `$lookup`s (P14) to join on `iId`/`storeId`; per-store vs all-stores toggle.
+### Phase 3 — Per-batch COGS + reporting — **DONE** (see §11.12)
+- Add `iId` + `batchAllocations` to order lines (Gson-safe). POS + user order placement record FEFO allocations. ✅ (3A)
+- Profit/COGS read the true per-line cost; exclude + flag cost-unknown (kill the P13 cost-0 fallback). ✅ (3B)
+- Fix analytics `$lookup`s (P14) to join on `iId`/`storeId`; per-store vs all-stores toggle. ✅ (3C)
 
 ### Phase 4 — Product master carve-out (optional, last)
 - Materialise `products` from canonical store rows keyed by `iId`; items reference it; one-way
@@ -460,3 +460,26 @@ A person at 2+ stores = one record per store (login resolves store on collision)
     dispatched-is-skipped guard). **Full suite green: admin / user 259 / delivery 133 / auth 43 / picking 20 / cron 9.**
 - **Phase 2 is now COMPLETE.** Backend remaining: Phase 3 (per-batch COGS + reporting) → Phase 4
   (product master, optional). Clients still LAST.
+
+### 11.12 Phase 3 — per-batch COGS + cross-store reporting — **CODE DONE & TESTED**
+- **3A — COGS capture (committed `420eae8`):** order item line gains `iId` (cross-store identity, default "")
+  + `batchAllocations:[{batchNo,qty,costPrice}]` (default []) — both ALWAYS emitted (Gson/Codable-safe).
+  New `ItemRepository.sellFEFO(itemId, qty, session)`: batch ON → FEFO-consume + return per-lot allocations +
+  the FEFO-weighted cost; batch OFF → the same race-safe decrement, empty allocations. User order placement
+  + admin POS sale route through it and stamp `iId` + `batchAllocations` + the TRUE line `costPrice`. POS
+  SALE ledger row carries iId/batchNo. **The order line is the first customer-facing JSON to gain fields →
+  CH-5 (android/iOS Gson rule).**
+- **3B — true COGS, no faked cost (committed `329ccc2`):** profit-snapshot aggregation counts a line toward
+  profit + cost ONLY if `costPrice > 0`; a no-cost line is EXCLUDED from margin (was faked to cost=salePrice).
+  New `costKnownRevenue` field (projection + snapshot schema) = the correct margin denominator
+  (margin% = profit / costKnownRevenue; revenue − costKnownRevenue = "cost unknown" revenue). Threaded through
+  getLiveProfit / getSnapshotSum / computeAndSaveSnapshot. No migration (additive, default 0).
+- **3C — cross-store analytics / P14 (this commit):** shared `CROSS_STORE_KEY` (group by `iId`, fall back to
+  per-store itemId for legacy lines). `getAdvancedMetrics` top-sellers + `getItemSaleFrequency` group by the
+  cross-store key when all-stores (so the same product across stores adds up, not double-counts);
+  `getItemSaleFrequency` gains a `crossStore` flag. New **`getProductCogsReport`** (margin/COGS by product:
+  units, revenue, cogs, grossProfit, marginPct, costUnknownUnits — per-store or cross-store) + endpoint
+  **`GET /admin/analytics/product-cogs`** (revenue-gated, `crossStore=true` or super-admin no-store).
+  (Also fixed a latent `moment.tz(momentObj)` default-date bug copied from item-frequency.)
+- **Tests:** `order-cogs-capture` (5), `order-cogs-profit` (3), `order-cogs-report` (5). Full suite green.
+- **NEXT:** Phase 4 (product master carve-out — optional, can be deferred indefinitely). Then clients.

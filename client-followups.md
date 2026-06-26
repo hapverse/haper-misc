@@ -120,10 +120,32 @@ approved-but-unshipped for >7 days is auto-released and the request marked **EXP
 
 ---
 
+## CH-5 · Per-batch COGS on order lines + cross-store reporting (inventory-v2 Phase 3)
+**Backend:** `feat/inventory-v2` (haper-backend `420eae8` 3A, `329ccc2` 3B, + 3C) — committed; PR into `dev` pending.
+**Plain summary:** each **order line** now records the TRUE cost of the stock sold (the FEFO lots
+consumed) via two new fields — `iId` (the cross-store product id) and `batchAllocations`
+(`[{batchNo, qty, costPrice}]`). Profit/margin now reads that real cost and **never fakes a 0% margin**
+for a no-cost line (it flags it instead). Reports can roll the **same product up across all stores**.
+**This is the FIRST change that touches the customer-facing ORDER JSON** → the Android/iOS decoding rule applies.
+
+| Client | What to do | Status |
+|---|---|---|
+| **admin** | • New report `GET /admin/analytics/product-cogs` (revenue-gated): margin/COGS **by product** — `unitsSold`, `revenue`, `cogs`, `grossProfit`, `marginPct`, `costUnknownUnits`. Add a screen/table; support a **per-store ↔ all-stores** toggle (`?crossStore=true`, or super admin with no store).<br>• Best-sellers (`/analytics/item-frequency`) gains the same `?crossStore=true` toggle (merge a product across stores).<br>• Profit dashboard: a new `costKnownRevenue` is returned — compute **margin% = profit / costKnownRevenue** (NOT profit / revenue), and surface `revenue − costKnownRevenue` as **"₹X revenue has unknown cost"** instead of showing 0% margin.<br>• (Optional) order detail can show the per-line `batchAllocations` (which lots, at what cost) for COGS drill-down. | ⏳ to do |
+| **web** | Order history/detail JSON now has extra line fields (`iId`, `batchAllocations`). The site doesn't need them — just **verify it ignores unknown fields** (JS does by default). No change expected. | ❓ verify |
+| **android** | **CRITICAL (Gson):** old orders have NO `iId`/`batchAllocations` → if you DECLARE them as non-null Kotlin fields, Gson decodes missing → null → crash (see `android_gson_kotlin_defaults`). The app **doesn't need these COGS fields** → simplest + safest is to **NOT add them to the Order model** (Gson silently ignores unknown JSON keys). If you ever do add them, make them **nullable** (`iId: String?`, `batchAllocations: List<…>? = null`). Verify order history/detail still parse. | ⏳ verify/guard |
+| **ios** | Same as android (Codable): don't add the new line fields, or make them optional. Verify order parsing. | ⏳ verify/guard |
+| **delivery** | Order lines it receives now carry the new internal fields — rider app doesn't read them; same "ignore / don't add as non-null" rule. Verify order parse. | ❓ verify |
+| **picker** | Same — picker reads order items; the new COGS fields are internal. Verify pick-list/order parse. | ❓ verify |
+
+**Backend notes (CH-5):**
+- Order line: `iId` (string, default ""), `batchAllocations: [{batchNo, qty, costPrice}]` (default []) — both always emitted.
+- Profit responses (`/analytics/profit`): new `costKnownRevenue` on each bucket. Snapshot schema adds it (default 0).
+- New `GET /admin/analytics/product-cogs` (revenue-gated) + `?crossStore=true` on `/analytics/item-frequency`.
+
+---
+
 ## Future changes
-Phase 2 (batches/FEFO + warehouse batches + reservations) is logged above (CH-2/3/4) — all
-**admin-only**, customer apps unaffected (no new customer JSON fields yet). The **android/iOS Gson
-rule first bites in Phase 3**, which adds `iId` + `batchAllocations` to **order** lines (must be
-nullable / always-emitted). For each later backend change (Phase 3 per-batch COGS + reporting,
-Phase 4 product master — or anything else), add a new `CH-N` block above with the same 6-client
-checklist. Design source: `haper-misc/inventory-v2-design.md` (§7 = client scope).
+Phases 1–3 are logged above (CH-1…5). **Customer-app surface to date:** only CH-5 adds fields to a
+customer-facing model (the order line) — guard the Android/iOS decoders (don't declare them non-null).
+Everything else is admin-only. Next backend work is **Phase 4** (product master carve-out — optional);
+add a `CH-6` block when/if it ships. Design source: `haper-misc/inventory-v2-design.md` (§7 = client scope).
