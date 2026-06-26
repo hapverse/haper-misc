@@ -144,8 +144,32 @@ for a no-cost line (it flags it instead). Reports can roll the **same product up
 
 ---
 
+## CH-6 · Product master + central catalogue editing + onboarding (inventory-v2 Phase 4)
+**Backend:** `feat/inventory-v2` (haper-backend `10ee6b8` 4A, `47b05c4` 4B, `faa0280` 4C) — committed; PR into `dev` pending.
+**Plain summary:** there's now ONE shared **product master** per product (keyed by `iId`). The catalogue/display
+fields (name, brand, images, unit, weight, description, tags, GST, category) live on the master; each store's
+item is a **projection** that copies them. **Edit the master once → it fans out to every store.** Onboarding a
+store to a product is now "assign it" (creates a qty-0 item). All admin-side — **customer apps unaffected.**
+
+| Client | What to do | Status |
+|---|---|---|
+| **admin** | • New **Product Master** screen (`/admin/product`): list/detail + **super-admin** create/edit/discontinue. Editing display fields here fans out to all stores.<br>• **Assign** UI: `POST /admin/product/:id/assign` `{ storeIds: [...] \| "ALL", price, sellingPrice, lowQty }` — multi-store picker (+ ALL) to onboard a product as qty-0 projections (reports assigned/skipped). This **replaces** clone-based onboarding.<br>• **Item edit form must change:** for a materialised item, **display fields are read-only for store admins** (the backend 403s a genuine display change by a non-super-admin) and editing them as super-admin **changes every store**. Move name/brand/images/unit/weight/description/tags/GST/category editing to the **product master**; the per-store item form keeps only price/sellingPrice/costPrice/lowQty/maxStock/reorderQty/location/status/popular/barcode/stock. (`categoryId` is now optional on item edit.)<br>• Surface "this is shared — edit the product" affordance on the item form. | ⏳ to do |
+| **web** | Not affected — customer item/cart/order JSON shape unchanged (items still carry their denormalised display fields). Verify browse/checkout. | ❓ verify |
+| **android** | Not affected — no item/order JSON shape change (display fields still on the item, just sourced from the master). No Gson risk. Verify. | ❓ verify |
+| **ios** | Same — not affected; verify. | ❓ verify |
+| **delivery** | Not affected. | — |
+| **picker** | Not affected. | — |
+
+**Backend notes (CH-6):**
+- `GET/POST/PATCH /admin/product` (super-admin CRUD), `POST /admin/product/:id/assign`, `PATCH /admin/product/:id/status`.
+- Item edit (`PUT /admin/item/:id`): a genuine display-field change on a materialised item → routed to master (super-admin) or **403** (store admin); per-store fields unchanged. `categoryId` now optional.
+- `items.brand`/`items.weight` no longer required at the schema (default ""); the add validator still requires what it did.
+
+---
+
 ## Future changes
-Phases 1–3 are logged above (CH-1…5). **Customer-app surface to date:** only CH-5 adds fields to a
-customer-facing model (the order line) — guard the Android/iOS decoders (don't declare them non-null).
-Everything else is admin-only. Next backend work is **Phase 4** (product master carve-out — optional);
-add a `CH-6` block when/if it ships. Design source: `haper-misc/inventory-v2-design.md` (§7 = client scope).
+Phases 1–4 are logged above (CH-1…6) — **the inventory-v2 backend is complete.** **Customer-app surface across
+the whole project:** only CH-5 adds fields to a customer-facing model (the order line) — guard the Android/iOS
+decoders (don't declare `iId`/`batchAllocations` non-null). Everything else is admin-only. When client work
+begins, say e.g. "let's do the admin client changes" and work the ⏳ items per client. Design source:
+`haper-misc/inventory-v2-design.md` (§7 = client scope).

@@ -229,10 +229,10 @@ A person at 2+ stores = one record per store (login resolves store on collision)
 - Profit/COGS read the true per-line cost; exclude + flag cost-unknown (kill the P13 cost-0 fallback). ✅ (3B)
 - Fix analytics `$lookup`s (P14) to join on `iId`/`storeId`; per-store vs all-stores toggle. ✅ (3C)
 
-### Phase 4 — Product master carve-out (optional, last)
-- Materialise `products` from canonical store rows keyed by `iId`; items reference it; one-way
-  master→projection sync = **synchronous fan-out on edit + nightly reconcile** (no queue/CDC).
-- Onboarding becomes "create empty `(storeId, iId)` projections". Can be deferred indefinitely.
+### Phase 4 — Product master carve-out — **DONE** (see §11.13)
+- Materialise `products` from canonical store rows keyed by `iId`; items project from it; one-way
+  master→projection sync = **synchronous fan-out on edit + nightly reconcile** (no queue/CDC). ✅
+- Onboarding becomes "create empty `(storeId, iId)` projections" (the assignment engine). ✅
 
 ---
 
@@ -482,4 +482,34 @@ A person at 2+ stores = one record per store (login resolves store on collision)
   **`GET /admin/analytics/product-cogs`** (revenue-gated, `crossStore=true` or super-admin no-store).
   (Also fixed a latent `moment.tz(momentObj)` default-date bug copied from item-frequency.)
 - **Tests:** `order-cogs-capture` (5), `order-cogs-profit` (3), `order-cogs-report` (5). Full suite green.
-- **NEXT:** Phase 4 (product master carve-out — optional, can be deferred indefinitely). Then clients.
+- **NEXT:** Phase 4 (product master carve-out — done; see §11.13). **→ The entire inventory-v2 backend is COMPLETE.**
+
+### 11.13 Phase 4 — product master carve-out — **CODE DONE & TESTED** (the FULL carve-out, 4A+4B+4C)
+- **4A — master + materialise (committed `10ee6b8`):** new `products` collection keyed by `iId` (one shared
+  row per product, no storeId), holding the catalogue/display fields (name/brand/barcode/type/unit/weight/
+  description/images/tags/gstRate/category/subCategory/meta/status). `product.repository` with the item↔master
+  mappers + `materializeMissing` (canonical = most-recently-updated item per iId; idempotent fill-gaps, never
+  overwrites an edited master). Migration `materialize-products.js` (run.js **step 6**). Additive — items stay
+  the de-facto record; `products` shadows until 4B/4C wire reads/writes.
+- **4B — CRUD + one-way fan-out + reconcile (committed `47b05c4`):** super-admin product CRUD under
+  `/admin/product` (mirrors global-category gating). Create mints a fresh iId; an edit fans the display fields
+  out to EVERY store's item projection in one transaction (`ProductRepository.syncToItems` → `updateMany` by
+  iId). Nightly `product-master-reconcile` cron (4 AM IST) re-applies each active master, fixing drift.
+- **4C — onboarding + master-routed edits (this commit):**
+  - **P6 fix:** the items pre-save hook now mints `iId` ONLY if absent (was: always) — so a projection can
+    REUSE the master's iId. The same product shares one iId across all stores.
+  - **Assignment engine** `POST /admin/product/:id/assign` (super-admin): creates qty-0 item projections per
+    store (or "ALL") that reuse the master iId + display fields, seeded price (per-store editable). Idempotent
+    + resumable (skips stores that already carry it; reports assigned/skipped/failed).
+  - **Item display-edit routing:** `updateItem` splits display vs per-store fields. When the item's product is
+    materialised, a GENUINE display change (diffed vs the master) is routed to the master (super-admin → fans
+    out to all stores; store admin → 403); unchanged echoes are dropped so per-store edits still apply. Items
+    with no master keep the legacy direct edit. New-item add ensures a master exists for its iId.
+  - Schema/validator tweaks for the projection model: `items.brand`/`items.weight` no longer `required`
+    (default ""); `categoryId` optional on item edit (category is master-owned). `clone` left in place but
+    superseded by the assignment engine.
+- **Tests:** `product-master-materialize` (3), `product-master-crud` (4), `product-master-assign-edit` (6).
+  **Full suite green: admin 693 / user 259 / delivery 133 / auth 43 / picking 20 / cron 9.**
+- **Rollout:** `npm run migrate:apply` now also materialises the master (step 6). The master becomes
+  authoritative for catalogue fields; the admin client (CH-6) moves display editing to the product master and
+  hides it for store admins. Customer apps unaffected. **Backend remaining: NONE — inventory-v2 backend is complete.**
