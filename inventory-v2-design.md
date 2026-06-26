@@ -210,16 +210,16 @@ A person at 2+ stores = one record per store (login resolves store on collision)
 ### Phase 2 — Batch ledger + reservation
 > Built in **three milestones** (each tested + committed on `feat/inventory-v2`):
 > **2A** store batch ledger + chokepoint — **DONE** (see §11.9); **2B** warehouse batches +
-> goods-receipt + transfer batch stamping — pending; **2C** reservation buckets + auto-expire — pending.
+> goods-receipt + transfer batch stamping — **DONE** (see §11.10); **2C** reservation buckets + auto-expire — pending.
 - **FIRST: audit & convert EVERY non-transactional quantity mutator** (restock, razorpay, manual-adjust,
   etc.) to ONE batch-aware **transactional** helper. The FEFO decrement **refuses to run without a session**. ✅ (2A)
 - Create `store_batches` ✅ (2A) + `warehouse_batches` (2B). Seed `LEGACY` batches for **100%** of stock
   (idempotent/resumable) so roll-ups == current values before flipping any decrement. ✅ (2A, store side)
 - Make `quantity`/`expiresAt`/`costPrice` DERIVED (recompute in-txn on every batch change). ✅ (2A)
 - Goods-receipt → insert `warehouse_batch` (real `batchNo`) + bump total. Transfer dispatch → FEFO
-  pick + stamp `{batchNo,cost,expiry}` on the line. Receive → create/merge `store_batch` + re-roll-up. (2B)
+  pick + stamp `{batchNo,cost,expiry}` on the line. Receive → create/merge `store_batch` + re-roll-up. ✅ (2B)
 - Add reservation buckets (`reservedQty`/`inTransitQty`) + reserve-on-approve + auto-expire cron. (2C)
-- Promote `stock-movements.batchNo` to a real field; add `iId`. (2B)
+- Promote `stock-movements.batchNo` to a real field; add `iId`. ✅ (2B)
 - Ship behind a **per-store flag** ✅ (2A: `store.config.batchesEnabled`); **reconcile job** asserts
   `items.quantity == Σ(batches)` and **alerts** on drift ✅ (2A: nightly `inventory-batch-reconcile`).
 
@@ -401,5 +401,34 @@ A person at 2+ stores = one record per store (login resolves store on collision)
     pre-create list. **Full suite green: admin / user 259 / cron 9.**
 - **Rollout (prod):** run `npm run migrate:apply` (now includes the batch seed) → THEN flip a store's
   `config.batchesEnabled` → reconcile cron watches for drift. Dev: enable the flag on a test store directly.
-- **NEXT:** Phase 2B (warehouse batches + goods-receipt real batchNo + transfer FEFO stamping +
-  `stock-movements.batchNo`/`iId`), then 2C (reservation buckets + auto-expire).
+- **NEXT (after 2A):** Phase 2B (done — see §11.10), then 2C (reservation buckets + auto-expire).
+
+### 11.10 Phase 2B — warehouse batch ledger + receipt/transfer batch flow — **CODE DONE & TESTED**
+- **What shipped (committed on `feat/inventory-v2`):**
+  - New `warehouse_batches` collection (`warehouse-batches.schema.js`) keyed `(warehouseId, sku, batchNo)`
+    unique + FEFO index; `WarehouseBatchModel` registered. New `warehouse-batch.repository.js` = the
+    warehouse twin of the 2A store chokepoint: `stockIn` (create/merge, weighted-avg cost), `stockOutFEFO`
+    (oldest-expiry-first, session-required, returns allocations), `recomputeRollup` (upserts the
+    `warehouse-stocks` total: availableQty=Σ open, costPrice=weighted-avg, expiresAt=MIN — **fixes the
+    last-cost-overwrite + false-near-expiry bugs**), `returnToBatch` (transfer-cancel), `ensureLegacyBatch`,
+    `setBatchStatus` (recall HOLD/RECALL), `findByBatchNo` (recall trace), `reconcileWarehouse`, + a cached
+    **per-warehouse flag gate** (`warehouse.batchesEnabled`, default false).
+  - **Goods-receipt** (`procurement/controller`): flag-on → real `warehouse_batch` (merge same batchNo) +
+    derived total; flag-off → legacy `WarehouseStockRepository.receive`. Ledger row now carries a real `batchNo`.
+  - **Transfer** (`transfer/controller`): **dispatch** FEFO-picks warehouse batches → stamps
+    `line.batchAllocations[{batchNo,qty,costPrice,expiresAt}]`; **receive** builds **store batches** per
+    allocation via `ItemRepository.applyStockIn` (real warehouse cost/expiry now flow into the store, FEFO
+    across a partial receive) — falls back to the 2A single-add when there are no allocations; **cancel**
+    returns each lot to its own warehouse batch. All three degrade cleanly when a flag is off.
+  - `stock-transfers` line gains `batchAllocations:[]` (Gson-safe). `stock-movements` gains real
+    `batchNo` + `iId` fields (+ index); `stock-ledger.utils` threads them through.
+  - Migration `seed-warehouse-batches.js` (idempotent; **run.js step 5**). Reconcile cron **extended** to
+    also assert `warehouse-stocks.availableQty == Σ(open warehouse batches)` (+ `WarehouseRepository.getBatchEnabledWarehouses`).
+  - Tests: `packages/admin/__tests__/warehouse-batch-ledger.test.js` (10 cases — warehouse FEFO/merge/wavg +
+    min-expiry, session-refusal, seed idempotency + reconcile drift, recall HOLD-excludes, goods-receipt
+    on/off, **full dispatch→receive cost+expiry flow into store batches**, cancel restores exact lots, legacy
+    fallback). `WarehouseBatchModel` added to admin `setup.js` pre-create. **Full suite green: admin / user 259 / delivery 133 / auth 43 / picking 20 / cron 9.**
+- **Rollout (prod):** enable the **warehouse** `batchesEnabled` flag BEFORE the store flags (so dispatched
+  lots carry real cost/expiry into store batches). Seeds run via `npm run migrate:apply` (steps 4 + 5).
+- **NEXT:** Phase 2C — reservation buckets (`reservedQty`/`inTransitQty`) + reserve-on-approve +
+  auto-expire cron.
