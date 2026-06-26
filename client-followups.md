@@ -57,7 +57,7 @@ store admin can only turn a category **on/off** for their own store.
 
 | Client | What to do | Status |
 |---|---|---|
-| **admin** | • Drop the "store / add-to-all-stores" picker when creating a category or sub-category — they're global now, so it's one create.<br>• Show **Create / Rename / Delete** for category & sub-category **only to super admin**; hide for store admin & manager (backend now returns 403 for them).<br>• Add a per-store **on/off toggle** on each category for store admins → calls `PATCH /admin/category/:id/store-state` with `{ "enabled": true|false }`.<br>• Category list can show all global categories + this store's item count + the on/off state.<br>• Item add/edit: the category dropdown is just the global list (no per-store filtering). | ⏳ to do |
+| **admin** | • Drop the "store / add-to-all-stores" picker when creating a category or sub-category — they're global now, so it's one create.<br>• Show **Create / Rename / Delete** for category & sub-category **only to super admin**; hide for store admin & manager (backend now returns 403 for them).<br>• Add a per-store **on/off toggle** on each category for store admins → calls `PATCH /admin/category/:id/store-state` with `{ "enabled": true|false }`.<br>• Category list can show all global categories + this store's item count + the on/off state.<br>• Item add/edit: the category dropdown is just the global list (no per-store filtering). | ✅ done |
 | **web** | No code change expected — the customer category & sub-category responses are the **same shape**; categories now show up automatically when the store stocks an item. Just verify browsing + store-switch still work. | ❓ verify |
 | **android** | No new fields were added to the category JSON → no Gson crash risk, no change expected. Verify category browse. | ❓ verify |
 | **ios** | Same as android — no change expected; verify. | ❓ verify |
@@ -68,6 +68,10 @@ store admin can only turn a category **on/off** for their own store.
 - **NEW** `PATCH /admin/category/:categoryId/store-state` — body `{ enabled: boolean }`,
   needs `x-store-id` — store admin/manager turns a category on/off for the current store.
 - Category create / update / delete / activate — now **super-admin only** (others get 403).
+- `GET /admin/category/catalog` now returns **`enabledForStore`** per row (added this session so the
+  admin toggle can show current on/off honestly; absent/true when there's no store context) alongside
+  the existing `itemCount` (per-store) + `subCategoryCount` (global). Note: the catalog validator makes
+  `page` **required** and 403s on a missing/invalid query, so the admin always sends `?page=1`.
 - Customer `GET /user/home/category` and `/user/home/sub-category/:categoryId` — **same shape**;
   results are membership-based now (a category shows only if the store stocks an item in it).
 
