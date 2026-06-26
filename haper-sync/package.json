@@ -1,7 +1,7 @@
 {
-  "name": "newvsold",
+  "name": "haper-sync",
   "version": "1.0.0",
-  "description": "npm install mongodb pm2 start sync.js --name bheldi-sync pm2 logs bheldi-sync",
+  "description": "Haper DB index + migration toolkit (idempotent maintenance scripts).",
   "homepage": "https://github.com/hapverse/haper-sync#readme",
   "bugs": {
     "url": "https://github.com/hapverse/haper-sync/issues"
@@ -13,17 +13,14 @@
   "license": "ISC",
   "author": "",
   "type": "commonjs",
-  "main": "sync.js",
+  "main": "ensure-indexes.js",
   "scripts": {
-    "export:items": "node export-items-csv.js",
+    "ensure-indexes": "node ensure-indexes.js",
+    "migrate-item-indexes": "node migrate-item-indexes.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
-    "bcryptjs": "^3.0.3",
     "dotenv": "^17.4.1",
-    "mongodb": "^7.1.1",
-    "mongoose": "^9.4.1",
-    "moment": "^2.30.1",
-    "moment-timezone": "^0.6.0"
+    "mongodb": "^7.1.1"
   }
 }
