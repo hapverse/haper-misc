@@ -359,7 +359,11 @@ A person at 2+ stores = one record per store (login resolves store on collision)
 - **Old one-time migrations applied in prod & removed from repo** (recoverable via git history):
   `migrate-to-multi-store`, `backfill-item-images`, `backfill-config-version-format`, `update-media-base-path`
   (the last verified applied 2026-06-26 — new uploads now write the `v1.static.haper.in` base, so it won't refill).
-- **Next when resuming:** commit `feat/inventory-v2` → PR into `dev` (NEVER push to dev directly) → after the new
-  code is deployed, run the prod migration (`npm run migrate` → `--apply`) → then client-app work (§7).
+- **SEQUENCE (decided 2026-06-26): finish the ENTIRE backend first, clients LAST.** Continue the remaining
+  inventory-v2 backend phases on `feat/inventory-v2` — **Phase 2** (batch ledger/FEFO + reservations) → **Phase 3**
+  (per-batch COGS + reporting) → **Phase 4** (product master, optional). **Only after ALL backend is done** start
+  the client apps (admin/web/android/ios/delivery/picker) — **client order the USER decides later** (see
+  `haper-misc/client-followups.md`). PRs into `dev` and the prod migration run on the user's call (the
+  global-categories code is already committed + pushed; its migration is still pending).
 - **RULE (project):** whenever migration progress changes (code merged, a step run/applied, a step added), update
   **THIS §11.8** + the `project_inventory_v2_redesign` memory + `scripts/migrations/README.md` so any session resumes cleanly.

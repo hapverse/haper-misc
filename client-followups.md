@@ -9,6 +9,10 @@ with a checklist for **each** client so nothing is missed.
 **Status key:** ✅ done · ⏳ to do · ❓ verify (probably nothing) · — not affected
 
 ## How to use (new session)
+> **GATE (decided 2026-06-26):** client work begins **only after the ENTIRE backend is done** (all inventory-v2
+> phases). Until then this is a **forward-planning list** — keep adding `CH-N` blocks as backend changes ship, but
+> do NOT start client edits yet. **Client order = the user decides later.**
+
 1. Read this file.
 2. To work, say e.g. **"let's do the admin client changes"** (or name any client / change).
    The session picks the pending (⏳ / ❓) items for that client, implements them
