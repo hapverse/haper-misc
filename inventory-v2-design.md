@@ -414,6 +414,9 @@ A person at 2+ stores = one record per store (login resolves store on collision)
     last-cost-overwrite + false-near-expiry bugs**), `returnToBatch` (transfer-cancel), `ensureLegacyBatch`,
     `setBatchStatus` (recall HOLD/RECALL), `findByBatchNo` (recall trace), `reconcileWarehouse`, + a cached
     **per-warehouse flag gate** (`warehouse.batchesEnabled`, default false).
+  - **Recall HTTP endpoints** (`procurement` router, warehouse roles): `GET /admin/procurement/batch/:batchNo`
+    (trace — which warehouses + stores hold the lot) and `PATCH /admin/procurement/batch/status`
+    (HOLD/RECALL/AVAILABLE on a warehouse or store batch; re-rolls-up).
   - **Goods-receipt** (`procurement/controller`): flag-on → real `warehouse_batch` (merge same batchNo) +
     derived total; flag-off → legacy `WarehouseStockRepository.receive`. Ledger row now carries a real `batchNo`.
   - **Transfer** (`transfer/controller`): **dispatch** FEFO-picks warehouse batches → stamps

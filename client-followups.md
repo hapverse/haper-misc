@@ -83,7 +83,7 @@ lot** (fixes the old last-cost-overwrite + false near-expiry). Recall is a batch
 
 | Client | What to do | Status |
 |---|---|---|
-| **admin** | • Goods-receipt (`POST /admin/procurement/receive`): surface a per-line **batch-no** field (auto / supplier-printed / manual) alongside the existing cost + expiry (re-receiving the same `batchNo` merges).<br>• Warehouse stock view: `costPrice` is now weighted-avg, `expiresAt` is the earliest open lot — labels/tooltips can say so. Optionally a per-row "view batches" drill-down.<br>• Transfer detail: each line now carries `batchAllocations: [{batchNo, qty, costPrice, expiresAt}]` (the lots shipped) — show if useful.<br>• Stock-movement/ledger views now have real `batchNo` + `iId` fields (was free-text note).<br>• **Recall** UI: mark a batch HOLD/RECALL and list affected stores — **needs a small backend route first** (repo support exists: `setBatchStatus`, `findByBatchNo`; no HTTP endpoint yet).<br>• (Optional, ops) per-warehouse "batch tracking" toggle for `warehouse.batchesEnabled`. | ⏳ to do |
+| **admin** | • Goods-receipt (`POST /admin/procurement/receive`): surface a per-line **batch-no** field (auto / supplier-printed / manual) alongside the existing cost + expiry (re-receiving the same `batchNo` merges).<br>• Warehouse stock view: `costPrice` is now weighted-avg, `expiresAt` is the earliest open lot — labels/tooltips can say so. Optionally a per-row "view batches" drill-down.<br>• Transfer detail: each line now carries `batchAllocations: [{batchNo, qty, costPrice, expiresAt}]` (the lots shipped) — show if useful.<br>• Stock-movement/ledger views now have real `batchNo` + `iId` fields (was free-text note).<br>• **Recall** UI: trace a batch via `GET /admin/procurement/batch/:batchNo` (lists warehouses + stores holding it) and quarantine/re-instate a lot via `PATCH /admin/procurement/batch/status` (HOLD / RECALL / AVAILABLE). **Backend route now built.**<br>• (Optional, ops) per-warehouse "batch tracking" toggle for `warehouse.batchesEnabled`. | ⏳ to do |
 | **web** | Not affected (warehouse/transfer are internal). | — |
 | **android** | Not affected — `batchAllocations` is on the warehouse→store **transfer** line, not the customer order. No Gson risk. | — |
 | **ios** | Same — not affected. | — |
@@ -93,7 +93,7 @@ lot** (fixes the old last-cost-overwrite + false near-expiry). Recall is a batch
 **Backend notes (CH-3):**
 - `POST /admin/procurement/receive` — `items[].batchNumber` / `costPrice` / `expiresAt` already accepted; now they create/merge a real `warehouse_batch`.
 - Transfer responses: `items[].batchAllocations[]` (new, default `[]`). `stock-movements`: new `batchNo` + `iId`.
-- **TODO (backend, before the admin recall UI):** add a recall endpoint (mark batch HOLD/RECALL + return affected stores via `StoreBatchRepository.findByBatchNo`).
+- **Recall endpoints (built):** `GET /admin/procurement/batch/:batchNo` (trace) and `PATCH /admin/procurement/batch/status` (body `{ location: "warehouse"|"store", batchNo, status, warehouseId?, sku?, itemId? }`). Warehouse roles only (`view_ledger` to trace, `warehouse.manage` to set).
 
 ---
 
