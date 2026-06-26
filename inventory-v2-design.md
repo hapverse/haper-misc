@@ -259,7 +259,10 @@ A person at 2+ stores = one record per store (login resolves store on collision)
 ---
 
 ## 10. Branch & process
-- Backend tests must pass (in-memory Mongo). Keep everything on a **feature branch** (suggest
-  `feat/inventory-v2`, cut from the current `feat/centralized-inventory-phase1` which already has the
-  warehouse layer + safeguards this builds on — confirm base at kickoff). **Never push to dev**; user merges via PRs.
+- Backend tests must pass (in-memory Mongo). Keep everything on a **feature branch** `feat/inventory-v2`.
+  **Base branches (updated 2026-06-26 after `feat/centralized-inventory-phase1` was merged to dev in haper-backend):**
+  - **haper-backend:** cut `feat/inventory-v2` from **`dev`** (dev now contains all of Phase-1/POS/warehouse; the old phase1 branch was deleted).
+  - **haper-admin / haper-misc:** still on `feat/centralized-inventory-phase1` (NOT yet merged to dev) — cut v2 from there, or merge them to dev first then cut from dev. Confirm at kickoff.
+- **Main is hook-protected** (`~/.claude/hooks/block-main-commit-push.sh`): no direct commit/push to `main` — feature branch → dev → main via PR only.
+- **Never push to dev** unless explicitly asked; user merges via PRs.
 - No client repos touched until backend phases are merged-ready.
