@@ -210,7 +210,8 @@ A person at 2+ stores = one record per store (login resolves store on collision)
 ### Phase 2 — Batch ledger + reservation
 > Built in **three milestones** (each tested + committed on `feat/inventory-v2`):
 > **2A** store batch ledger + chokepoint — **DONE** (see §11.9); **2B** warehouse batches +
-> goods-receipt + transfer batch stamping — **DONE** (see §11.10); **2C** reservation buckets + auto-expire — pending.
+> goods-receipt + transfer batch stamping — **DONE** (see §11.10); **2C** reservation buckets + auto-expire — **DONE** (see §11.11).
+> **→ Phase 2 (the whole batch-ledger + reservation backend) is COMPLETE.**
 - **FIRST: audit & convert EVERY non-transactional quantity mutator** (restock, razorpay, manual-adjust,
   etc.) to ONE batch-aware **transactional** helper. The FEFO decrement **refuses to run without a session**. ✅ (2A)
 - Create `store_batches` ✅ (2A) + `warehouse_batches` (2B). Seed `LEGACY` batches for **100%** of stock
@@ -218,7 +219,7 @@ A person at 2+ stores = one record per store (login resolves store on collision)
 - Make `quantity`/`expiresAt`/`costPrice` DERIVED (recompute in-txn on every batch change). ✅ (2A)
 - Goods-receipt → insert `warehouse_batch` (real `batchNo`) + bump total. Transfer dispatch → FEFO
   pick + stamp `{batchNo,cost,expiry}` on the line. Receive → create/merge `store_batch` + re-roll-up. ✅ (2B)
-- Add reservation buckets (`reservedQty`/`inTransitQty`) + reserve-on-approve + auto-expire cron. (2C)
+- Add reservation buckets (`reservedQty`/`inTransitQty`) + reserve-on-approve + auto-expire cron. ✅ (2C)
 - Promote `stock-movements.batchNo` to a real field; add `iId`. ✅ (2B)
 - Ship behind a **per-store flag** ✅ (2A: `store.config.batchesEnabled`); **reconcile job** asserts
   `items.quantity == Σ(batches)` and **alerts** on drift ✅ (2A: nightly `inventory-batch-reconcile`).
@@ -430,5 +431,29 @@ A person at 2+ stores = one record per store (login resolves store on collision)
     fallback). `WarehouseBatchModel` added to admin `setup.js` pre-create. **Full suite green: admin / user 259 / delivery 133 / auth 43 / picking 20 / cron 9.**
 - **Rollout (prod):** enable the **warehouse** `batchesEnabled` flag BEFORE the store flags (so dispatched
   lots carry real cost/expiry into store batches). Seeds run via `npm run migrate:apply` (steps 4 + 5).
-- **NEXT:** Phase 2C — reservation buckets (`reservedQty`/`inTransitQty`) + reserve-on-approve +
-  auto-expire cron.
+- **NEXT:** Phase 2C — reservation buckets (done — see §11.11).
+
+### 11.11 Phase 2C — warehouse reservation buckets + auto-expiry — **CODE DONE & TESTED**
+- **What shipped (committed on `feat/inventory-v2`):**
+  - `warehouse-stocks` gains `reservedQty` + `inTransitQty` (additive — availableQty meaning unchanged;
+    **free-to-promise = availableQty − reservedQty**). Four session-aware, floor-at-0 mutators on
+    `WarehouseStockRepository`: `reserve` (atomic guard: only if avail−reserved ≥ qty → no over-commit),
+    `releaseReserved`, `markDispatched` (reserved→inTransit), `releaseInTransit`.
+  - **Bucket transitions:** approve `reserved+=` (rejects over-commit, in a txn with the status change);
+    dispatch `reserved−=, inTransit+=` (availableQty already lowered by 2B FEFO); receive `inTransit−=`;
+    cancel-CREATED `reserved−=`; cancel-DISPATCHED `inTransit−=` (+ availableQty restored by 2B). A
+    directly-created transfer (no approval) caps the reserved release at 0, so buckets stay consistent.
+  - New `EXPIRED` replenishment status + nightly **`inventory-reservation-expiry`** cron (3:45 AM IST,
+    window `RESERVATION_EXPIRY_DAYS` default 7): stale APPROVED/PARTIALLY_APPROVED + undispatched requests
+    → release reserved + mark EXPIRED (cancels a lingering CREATED transfer); dispatched ones are left
+    alone. + `ReplenishmentRequestRepository.getStaleApproved`.
+  - The legacy `committed` endpoint (request-based UI hint) is kept for back-compat but is now superseded
+    by the server-enforced `reservedQty`.
+  - **No migration needed** — all bucket ops are `$ifNull`-safe and the schema defaults new rows to 0
+    (existing prod rows materialise the fields on first reserve/dispatch).
+  - Tests: `packages/admin/__tests__/warehouse-reservation.test.js` (10 cases — bucket-mutator guards,
+    approve free-to-promise enforce + over-commit reject, full approve→dispatch→receive lifecycle,
+    cancel-CREATED / cancel-DISPATCHED releases, auto-expiry incl. lingering-transfer cancel + the
+    dispatched-is-skipped guard). **Full suite green: admin / user 259 / delivery 133 / auth 43 / picking 20 / cron 9.**
+- **Phase 2 is now COMPLETE.** Backend remaining: Phase 3 (per-batch COGS + reporting) → Phase 4
+  (product master, optional). Clients still LAST.
