@@ -19,13 +19,12 @@ on a **transfer Receive**, or on a **sale**. Creating or dispatching a transfer 
 
 ## 0. Prerequisites (read once)
 
-1. **Backend** = branch `feat/inventory-v2` (haper-backend), deployed + migrated on
-   **dev (`dapi.haper.in`)**. The admin app's `VITE_API_URL` must point at it.
-   - ⚠️ **Two behaviours need a fresh redeploy of `feat/inventory-v2`** to show on dev:
-     **(CH-1)** the category **On/Off state** shown on load, and **(CH-7)** the server
-     **rejecting a store created without an active serving warehouse**. If those two
-     seem to "do nothing", the backend just needs redeploying. Everything else works
-     on the current dev backend.
+1. **Backend** = branch `feat/inventory-v2` (haper-backend), **deployed + migrated and
+   live on dev (`dapi.haper.in`)** — this now includes the late **CH-1**
+   (`enabledForStore`) and **CH-7** (serving-warehouse enforcement) additions **and** the
+   B-series + warehouse-cockpit endpoints. The admin app's `VITE_API_URL` must point at it.
+   - (If a brand-new behaviour below seems to "do nothing", the dev box may just be a build
+     behind — pull / redeploy latest `feat/inventory-v2`.)
 2. **Admin** = haper-admin on `dev` with **PR #67** (inventory-v2 admin) **and PR #68**
    (`feat/inventory-v2-admin-gaps`) merged — the **batch-tracking toggle (B1)**, warehouse
    **write-off**, **reorder policy**, **push-transfer**, and the whole **§15 warehouse
@@ -134,6 +133,12 @@ This puts stock into the warehouse.
    **Cost/unit** header → "weighted average of open lots"; **Expiry** → "earliest open
    lot" (CH-3).
 ✅ Sidebar → **Stock Ledger** → a `PURCHASE_IN` row with a **Batch** column.
+✅ **Near-expiry / expired** rows are **colour-flagged** in the stock table (B5).
+✅ An **Export CSV** button (top of the stock panel) downloads the current (filtered)
+   stock for a stock-take / audit (#13).
+✅ Click any stock row → a **detail modal**: facts + **Batches (lots) · soonest-expiry
+   first** (B5 — shown when batch tracking is on) + **write-off / adjust** + **reorder
+   policy** + movement history (full detail in §15c–§15d).
 
 > **Link rule (for transfers later):** the warehouse **SKU** must equal the **barcode**
 > of the store item you'll transfer to. Keep `PB001` handy.
@@ -179,8 +184,8 @@ company** — not per store.
 4. Save.
 
 ✅ Saves with a serving warehouse chosen.
-❌ Try to save with **no serving warehouse** → blocked (and once the CH-7 backend is
-   redeployed, the server also rejects it).
+❌ Try to save with **no serving warehouse** → blocked in the form, and the **server also
+   rejects it** (CH-7 enforcement, live on dev).
 
 > **No chicken-and-egg:** a store does **not** need a store admin to be created, so
 > always make the **store first**, then its admin (next step). The Owner field being
@@ -211,6 +216,15 @@ A new store starts with **zero items**. You add them from the Product Master.
    appears at **quantity 0**, with the catalogue details copied from the master and the
    **Grocery → Spreads** category.
 5. ✅ Re-run Assign for the same product/store → it's **skipped** (idempotent).
+
+### 7b. (Alternative) Add a one-off item directly — All-Stores store picker  (B3)
+Onboarding normally goes through **Assign** (above). To add a **brand-new single item**:
+Sidebar → **Items** → **Add New Item** *(super admin)*.
+- ✅ If you're in **All Stores** mode (no store in the top switcher), the form shows a
+  **required store picker** — pick the target store. Saving **without** one shows
+  "Pick a store to add this item to…" and is blocked (no `x-store-id` to target).
+- ✅ With a store already selected in the switcher, there's no picker — it's added to
+  that store. The new item also creates/links its **product master** behind the scenes.
 
 ---
 
@@ -252,8 +266,7 @@ Log in as the **store admin** from step 6.
    ✅ Each category shows an **On / Off** switch + a short hint + the store's item count.
 2. Turn `Grocery` **Off** → ✅ customers of this store stop seeing it (and its items).
    Turn it back **On** → it reappears. The category itself is never deleted.
-   - ⚠️ The switch reflecting the *saved* state on reload needs the CH-1 backend
-     redeploy; *setting* it works regardless.
+   - ✅ The switch shows its **saved** state on reload (CH-1 `enabledForStore`, live on dev).
 
 ---
 
@@ -380,6 +393,8 @@ Sidebar → **Transfers** → **+ New transfer**.
 ✅ A **Target store** dropdown lists the stores this warehouse serves; pick one → the item search
 is **scoped to that store** → set qty → **Create transfer** → Dispatch as usual. (Before, a
 warehouse manager couldn't create a transfer at all — there was no store to target.)
+✅ The **Transfers list** and the printed **pick slip** now show the destination **store name**
+(and warehouse name), not just an id (#4).
 > ⚠️ **Known pending:** that in-modal item search still calls the store catalog endpoint
 > (`items.view`), so a **pure warehouse manager may get a 403** there until it's repointed at the
 > Item-Lookup endpoint (§15f). Super admin works today; the fix is a small follow-up.
@@ -434,8 +449,8 @@ On **Receive goods**, a line with **₹0 cost** or a **past-dated expiry** shows
 | Symptom | Likely cause |
 |---|---|
 | Every warehouse/product call 404s | Backend `feat/inventory-v2` not deployed to the dev API |
-| Category On/Off doesn't "stick" on reload | CH-1 backend not **redeployed** yet (Prerequisites) |
-| Store saves even with no serving warehouse | CH-7 backend not **redeployed** yet (the UI still requires it) |
+| Category On/Off doesn't "stick" on reload | dev box is a build behind — pull/redeploy latest `feat/inventory-v2` (CH-1 `enabledForStore` is live there) |
+| Store saves even with no serving warehouse | dev box is a build behind — pull/redeploy latest `feat/inventory-v2` (CH-7 enforcement; the form requires it regardless) |
 | Batch Recall finds nothing / shows one "legacy" lot | Batch tracking **off** for that warehouse/store — turn it on (super admin) via the Warehouse form / Store modal checkbox (step 1c / Prerequisites) |
 | "No serving warehouse" on Approve/Replenishment | Store's serving warehouse not set (step 5) |
 | "…has no barcode/SKU" on transfer create | Store item missing a barcode = warehouse SKU (step 8b) |
