@@ -310,6 +310,51 @@ admin `tsc -b` clean + **60** vitest + `vite build` ok.
 
 ---
 
+## Warehouse-manager QA findings — warehouse_manager + warehouse_staff walkthrough (session 2026-06-27)
+**What this is:** a third operator QA pass of **haper-admin** (on `feat/inventory-v2-admin-gaps`) + its
+backend, this time from the **warehouse_manager / warehouse_staff** persona (the personas the A-/B- passes
+didn't cover). Walked every screen those roles reach — Dashboard, Replenishment, Transfers, Stock Ledger,
+Batch Recall, Warehouses, Suppliers — and traced each into the real admin + backend code. Findings + fixes
+recorded here; the standalone scratch file (`warehouse-manager-test-findings.md`) is folded in and removed.
+
+**Key role facts (verified):** a warehouse role has `warehouse.manage` (manager) or the receive/transfer
+subset (staff), and **no assigned store** — `/admin/me` returns `stores: []`. That one fact caused several
+of the gaps below (no store switcher → no transfer target, store names render as raw ObjectIds, store
+dashboard shows mock data).
+
+### Findings → fixes (all shipped this session unless noted)
+| # | Pri | Finding | Fix | Commit(s) |
+|---|---|---|---|---|
+| 1 | 🔴 | Login lands on the **mock "Store Admin" sales cockpit** (warehouse role is 403 on every analytics endpoint → silent fallback to mock data) | Dedicated **Warehouse dashboard** — real counts (requests waiting, to dispatch, in-transit, low/expiring, today's receipts) from endpoints the role already has; `/admin/me` now returns the assigned warehouse for the scope label | admin `545b472`; be `2bd207d` (me-field) |
+| 2 | 🔴 | **Can't create a push transfer** — modal needs the store switcher, which warehouse roles don't have (`storeId` never set → dead end) | **Target-store dropdown** in New-transfer (`GET /admin/warehouse/:id/stores`) + item search **scoped to the chosen store** | admin `84a2ddd`; be `5351a04` |
+| 3 | 🔴 | **No way to write off / adjust warehouse stock** (damage / expiry / count) — stock only ever goes up | **Write-off / adjust** action in stock detail → `POST /admin/warehouse/:id/stock/:sku/write-off` (txn, FEFO-aware, always writes a ledger row) | be `6224778`; admin `f513aac` |
+| 4 | 🟠 | Stores show as **raw ObjectIds** on transfers / pick slip / recall; no Store column | Store names **denormalized** onto the transfer list + a **Store column** + name on the pick slip | admin `84a2ddd`; be `5351a04` |
+| 5 | 🟠 | Reorder points (low/max/reorder) are **view-only** (PATCH endpoint existed, UI never called it) | **Editable reorder policy** in stock detail (wires the existing endpoint) | admin `6e3737c` |
+| 6 | 🟠 | Reject / partial-approve gives the store **no reason** | **Reject reason** prompt + **approve note**; persisted + shown to the store | be `bf6c396`; admin `27846fd`, `393f019` |
+| 7 | 🟠 | Approve screen shows **blank availability** past 200 SKUs (page-1 only) | Approve fetches availability for **exactly the requested SKUs** (`?skus=`) | be `6224778`; admin `f513aac` |
+| 8 | 🟡 | **warehouse_staff can't view warehouses/stock/suppliers** (read gated on `manage`) → can't even reach goods-receipt | Read gates relaxed to **any warehouse role**; mutations stay on `manage` | be `2bd207d` |
+| 9 | 🟡 | Buttons gated by **role** not **permission** → staff see New/Edit/Delete + Approve/Reject/Fulfil that 403 | Buttons **permission-gated** to match the backend | admin `2399299` |
+| 10 | ⚪ | Goods-receipt accepts **₹0 cost** silently (poisons weighted-avg cost / COGS) | **Warns on ₹0 cost** | admin `6e3737c` |
+| 11 | ⚪ | Goods-receipt accepts a **past expiry** silently | **Warns on past expiry** | admin `6e3737c` |
+| 12 | ⚪ | Batch Recall needs the **exact batch no.** typed — no browse / "all held/recalled/expiring" view | ⏳ **Deferred** — needs a new batch-by-status list endpoint (trace-by-batchNo + per-SKU lots already exist) | — |
+| 13 | ⚪ | No **CSV export** of warehouse stock (stock-take / audit) | **Stock CSV export** on the warehouse stock table | admin `545b472` |
+| 14 | ⚪ | Top-bar 🔔 **bell is a dead button** | ⏳ **Deferred** — cross-role, no notification backend yet | — |
+| 15 | ⚪ | The assigned **warehouse is never named** in the UI; role can open other warehouses | Addressed by #1 (dashboard names the warehouse via the new me-field). Cross-warehouse access review left as a note | be `2bd207d` |
+
+### ✅ Status — fixes shipped (branch `feat/inventory-v2-admin-gaps`)
+All blockers + medium + role-separation + the two low-risk polish items are **done** on
+`feat/inventory-v2-admin-gaps` (haper-backend + haper-admin, into `dev`, **not merged** — user merges).
+**Deferred by decision:** #12 (recall browse), #14 (dead bell). #15 partially (warehouse named on the dashboard).
+**Verification:** the touched backend suites are green, incl. a complementary write-off test
+(`warehouse-writeoff.test.js`) covering the two paths the parallel `admin-gaps` test misses — the **batch-ledger
+FEFO write-off** (txn + FEFO + roll-up) and the **COUNT→MANUAL_ADJUST** reason mapping. Also fixed a
+**duplicate `servedStores` object key** (`no-dupe-keys`) that landed in `warehouse/controller.js`. Note: the
+full admin suite has an **intermittent isolation flake** in `health.test.js` — one run showed it 401-ing,
+a re-run was fully green (37 suites / 715 tests) and it passes **16/16 in isolation**; the failing case is
+unrelated to any warehouse-manager change. Pre-existing, worth a separate look.
+
+---
+
 ## Future changes
 **This file is COMPLETE for inventory-v2** — CH-1…6 cover every shipped backend change (Phases 0–4) with a
 per-client checklist + exact endpoints, and CH-7 covers the one optional P9 item (with its backend prerequisite).
