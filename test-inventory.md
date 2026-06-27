@@ -5,8 +5,11 @@ warehouse, no store, no catalogue — and build it up in order. Each step says *
 does it, **what to do**, and **what to expect**. The `(CH-n)` tags map a step to the
 inventory-v2 change it exercises; you can ignore them while testing.
 
-Everything is done in the **admin panel**. **Customer / picker / delivery apps are
-NOT affected** by these admin changes — there's nothing to check in those apps.
+Everything here is done in the **admin panel**. The **admin changes don't change the
+customer / picker / delivery apps**, so there's nothing to check in those apps *for this
+guide*. (The apps' own inventory-v2 items — order decoding stays safe, and the
+store-switch cart now resets cleanly — are a separate, minimal checklist in
+`client-followups.md`; only the **customer app** has any real change.)
 
 **Golden rule of stock movement:** store stock only changes on a **Stock-In/Adjust**,
 on a **transfer Receive**, or on a **sale**. Creating or dispatching a transfer does
@@ -23,20 +26,27 @@ on a **transfer Receive**, or on a **sale**. Creating or dispatching a transfer 
      **rejecting a store created without an active serving warehouse**. If those two
      seem to "do nothing", the backend just needs redeploying. Everything else works
      on the current dev backend.
-2. **Admin** = branch `feat/inventory-v2-admin` (haper-admin, PR #67 into `dev`).
-   Pull / run / deploy it, then log in.
+2. **Admin** = haper-admin on `dev` with **PR #67** (inventory-v2 admin) **and PR #68**
+   (`feat/inventory-v2-admin-gaps`) merged — the **batch-tracking toggle (B1)**, warehouse
+   **write-off**, **reorder policy**, **push-transfer**, and the whole **§15 warehouse
+   cockpit** are on PR #68. Pull / run / deploy it, then log in.
 3. **Log in as a SUPER ADMIN.** You'll create everything else (warehouse, store,
    store admin, catalogue) from here. A few steps are repeated as a **store admin**
    to check the per-store views.
 4. The **top store-switcher** sets the active store. **"All Stores"** (super admin
    only) is the cross-store view some reports use.
 
-> **Batch tracking flags (ops):** the warehouse/store *batch* features (real dated
-> lots, recall tracing, FEFO) fully light up only once ops turn on
-> `warehouse.batchesEnabled` / `store.config.batchesEnabled`. The batch **fields and
-> columns are visible regardless**; with the flag off, stock behaves as one combined
-> "legacy" lot. Ask the dev/ops person to enable the flags on your test warehouse +
-> store if you want to see real per-batch behaviour.
+> **Batch tracking (now self-serve — B1):** the warehouse/store *batch* features (real
+> dated lots, recall tracing, FEFO, per-lot cost/expiry) fully light up once **batch
+> tracking is ON**. A **super admin** now flips this **from the UI** — no ops/DB step:
+> - **Warehouse form** (Warehouses → New/Edit) → **"Batch tracking (FEFO + per-lot
+>   cost/expiry)"** checkbox.
+> - **Store edit modal** (Stores → Edit) → **"Batch tracking …"** checkbox.
+>
+> **Enabling seeds existing stock automatically**, so it's safe to turn on at any time
+> (the first sale/dispatch won't fail). The batch **fields and columns are visible
+> regardless**; with tracking **off**, stock behaves as one combined "legacy" lot.
+> Turn it **on** for your test warehouse + store to see real per-batch behaviour.
 
 ---
 
@@ -87,6 +97,13 @@ Stores can't be created without a warehouse (CH-7), so build this first.
 Sidebar → **Warehouse Staff** → **+ New staff** → pick role (Warehouse Manager =
 full warehouse control; Warehouse Staff = receive + transfers) + the warehouse +
 name/email/password. Log in as them later → they see only the warehouse screens.
+
+### 1c. (Recommended) Turn on batch tracking — to exercise FEFO / lots / recall  (B1)  *(super admin)*
+While editing the warehouse (or on create), tick **"Batch tracking (FEFO + per-lot
+cost/expiry)"** → Save. ✅ Enabling **seeds existing stock**, so the response notes how
+many lots were seeded and it's safe to flip at any time. Do the same on the **Store edit
+modal** later (step 5/8) so store sales are FEFO too. With this **off**, the batch steps
+below still work but everything is one combined "legacy" lot.
 
 ---
 
@@ -141,7 +158,8 @@ company** — not per store.
 ### 4b. Product Master  (CH-6)
 1. Sidebar → **Product Master** → **+ New product**.
 2. Fill: **Name** (`Peanut Butter 500g`), **Unit** (`unit(s)`), brand, **Category** =
-   `Grocery`, **Sub-category** = `Spreads`, GST, barcode = `PB001`, image URL(s) → Create.
+   `Grocery`, **Sub-category** = `Spreads`, GST, barcode = `PB001`, and an **image**
+   (B2 — **Upload image** from your device, or paste a URL) → Create.
    ✅ It appears in the product list with a generated product id (`iId`).
 3. (Fan-out check) Edit the product's name/brand and Save → ✅ toast "synced N store
    item(s)" (N = how many stores already carry it; 0 right now).
@@ -277,7 +295,8 @@ Log in as the **store admin** from step 6.
 2. With warehouse-manage rights, each row has **Hold / Recall / Release** buttons → set
    one to **Recall** → ✅ its status pill turns red; the lot is blocked from sale/dispatch.
    A legend explains AVAILABLE / HOLD / RECALL.
-   - (Real cross-location results require the batch flags enabled — see Prerequisites.)
+   - (Real cross-location results require **batch tracking on** for that warehouse/store
+     — flip it from the Warehouse form / Store modal, step 1c / Prerequisites.)
 
 ---
 
@@ -335,6 +354,9 @@ CRUD, **no** Approve/Reject/Fulfil, **no** write-off, and Batch Recall is **trac
 - **Goods-receipt line with ₹0 cost or a past expiry** → warning before save (#10/#11).
 - **Warehouse staff** opening New/Edit/Delete warehouse, Approve/Reject/Fulfil, or Write-off →
   the buttons aren't shown (permission-gated, not just role) (#9).
+- **Turn on batch tracking on a warehouse/store that already has stock** (B1) → it **seeds the
+  existing stock into lots** and the **next sale/dispatch still works** (no "insufficient
+  quantity"); re-saving with it already on is a no-op (idempotent).
 
 ---
 
@@ -414,7 +436,7 @@ On **Receive goods**, a line with **₹0 cost** or a **past-dated expiry** shows
 | Every warehouse/product call 404s | Backend `feat/inventory-v2` not deployed to the dev API |
 | Category On/Off doesn't "stick" on reload | CH-1 backend not **redeployed** yet (Prerequisites) |
 | Store saves even with no serving warehouse | CH-7 backend not **redeployed** yet (the UI still requires it) |
-| Batch Recall finds nothing / shows one "legacy" lot | Batch flags not enabled on that warehouse/store (ops) |
+| Batch Recall finds nothing / shows one "legacy" lot | Batch tracking **off** for that warehouse/store — turn it on (super admin) via the Warehouse form / Store modal checkbox (step 1c / Prerequisites) |
 | "No serving warehouse" on Approve/Replenishment | Store's serving warehouse not set (step 5) |
 | "…has no barcode/SKU" on transfer create | Store item missing a barcode = warehouse SKU (step 8b) |
 | 403 on a warehouse/product-master action | Logged in as store admin (those are super/warehouse-only) |
