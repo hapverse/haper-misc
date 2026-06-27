@@ -288,6 +288,26 @@ Master CRUD + multi-store **Assign** (+ALL) + item display-field gating · CH-7 
 ### Recommended order
 1. **B1** batch toggle (else the batch feature stays off in real use). 2. **B2** image upload (before onboarding a real catalog). 3. **B3** all-stores item create. 4. Backlog: **B4/B5/B6**. 5. **B7** when going multi-state.
 
+### ✅ Status — fixes shipped (session 2026-06-27, branch `feat/inventory-v2-admin-gaps`)
+Built on `feat/inventory-v2-admin-gaps` (off `origin/dev`) in **haper-backend PR #90** + **haper-admin PR #68**
+(into `dev`, **not merged** — user merges). Verified: backend **282** tests green across all changed areas;
+admin `tsc -b` clean + **60** vitest + `vite build` ok.
+- **B1 ✅ DONE** — batch-tracking toggle on the Store modal + Warehouse form (super-admin). Backend accepts
+  `batchesEnabled` on store/warehouse create+update and **seeds LEGACY batches on enable** (idempotent
+  `seedStore`/`seedWarehouse`) so flipping it on can't break the first FEFO sale/dispatch; gate cache reset.
+- **B2 ✅ DONE** — `POST /admin/product/upload-image` (reuses the item S3 pipeline) + an **Upload image**
+  control in ProductModal (device upload + URL paste).
+- **B3 ✅ DONE** — item-add accepts `storeIds` as array **or** comma-string; ItemModal shows a required
+  **Add to store** picker in All-Stores mode.
+- **B5 ✅ DONE (warehouse)** — `GET /admin/warehouse/:id/stock/:sku/batches` + near-expiry colour on the
+  warehouse stock list + a **Batches (lots)** table in the stock detail modal. *(Store-item batch drill-down
+  not built — the store items list has no expiry column; follow-up if needed.)*
+- **B6 ✅ DONE** — already present (ProductModal/ItemModal warn that catalogue edits fan out to every store). Verified.
+- **B4 ⏭️ DEFERRED (by decision)** — category/sub-category icons are `required` **and customer-facing**, so a
+  names-only bulk create would ship broken/placeholder icons to the storefront; a clean bulk flow needs an icon
+  per row (≈ no savings over single-create). Left for a product decision.
+- **B7 ⏳ future** — interstate GST, unchanged (multi-state only).
+
 ---
 
 ## Future changes
