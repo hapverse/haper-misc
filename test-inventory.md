@@ -1,277 +1,446 @@
-# Centralized Inventory (Phase 1) — End-to-End Test Guide
+# Inventory — End-to-End Test Guide (from an empty system)
 
-This guide walks through testing the warehouse supply layer from the **admin panel**,
-in order, with what to add, when, and what each role can do.
+A single **sequential** walkthrough for the tester. You start with **nothing** — no
+warehouse, no store, no catalogue — and build it up in order. Each step says **who**
+does it, **what to do**, and **what to expect**. The `(CH-n)` tags map a step to the
+inventory-v2 change it exercises; you can ignore them while testing.
 
-Flow being tested:
+Everything here is done in the **admin panel**. The **admin changes don't change the
+customer / picker / delivery apps**, so there's nothing to check in those apps *for this
+guide*. (The apps' own inventory-v2 items — order decoding stays safe, and the
+store-switch cart now resets cleanly — are a separate, minimal checklist in
+`client-followups.md`; only the **customer app** has any real change.)
 
-```
-Supplier ──▶ Warehouse ──▶ (transfer) ──▶ Store ──▶ Customer
-            goods receipt   dispatch/receive   existing sale
-```
-
-Everything sits **underneath** the existing per-store `items.quantity`. Customer /
-picker / delivery apps are unchanged. Store stock only changes on **goods receipt
-→ transfer receipt** (and existing sales), never when a transfer is merely created
-or dispatched.
+**Golden rule of stock movement:** store stock only changes on a **Stock-In/Adjust**,
+on a **transfer Receive**, or on a **sale**. Creating or dispatching a transfer does
+**not** change store stock — only **Receive** does.
 
 ---
 
-## 0. Prerequisites (one-time)
+## 0. Prerequisites (read once)
 
-1. **Deploy the feature branch backend** (`feat/centralized-inventory-phase1`) to the dev
-   server, and point the admin app's `VITE_API_URL` at that API.
-   - If the new screens 404 on every call, the backend branch isn't deployed yet.
-2. **Pull the admin feature branch** (`feat/centralized-inventory-phase1`) and run/deploy it.
-3. Log in as a **super admin** for the warehouse-side setup (warehouse/supplier/goods
-   receipt/transfers/approvals). Use a **store admin** to test the store-side actions.
+1. **Backend** = branch `feat/inventory-v2` (haper-backend), **deployed + migrated and
+   live on dev (`dapi.haper.in`)** — this now includes the late **CH-1**
+   (`enabledForStore`) and **CH-7** (serving-warehouse enforcement) additions **and** the
+   B-series + warehouse-cockpit endpoints. The admin app's `VITE_API_URL` must point at it.
+   - (If a brand-new behaviour below seems to "do nothing", the dev box may just be a build
+     behind — pull / redeploy latest `feat/inventory-v2`.)
+2. **Admin** = haper-admin on `dev` with **PR #67** (inventory-v2 admin) **and PR #68**
+   (`feat/inventory-v2-admin-gaps`) merged — the **batch-tracking toggle (B1)**, warehouse
+   **write-off**, **reorder policy**, **push-transfer**, and the whole **§15 warehouse
+   cockpit** are on PR #68. Pull / run / deploy it, then log in.
+3. **Log in as a SUPER ADMIN.** You'll create everything else (warehouse, store,
+   store admin, catalogue) from here. A few steps are repeated as a **store admin**
+   to check the per-store views.
+4. The **top store-switcher** sets the active store. **"All Stores"** (super admin
+   only) is the cross-store view some reports use.
 
-> **Note on warehouse roles:** `warehouse_manager` / `warehouse_staff` can now be
-> created from the admin panel — **Sidebar → Warehouse Staff** (super admin only).
-> You can also just use a **super admin** for all warehouse-side actions during
-> testing. (A DB-seed alternative is in the appendix, but the UI is the real path.)
+> **Batch tracking (now self-serve — B1):** the warehouse/store *batch* features (real
+> dated lots, recall tracing, FEFO, per-lot cost/expiry) fully light up once **batch
+> tracking is ON**. A **super admin** now flips this **from the UI** — no ops/DB step:
+> - **Warehouse form** (Warehouses → New/Edit) → **"Batch tracking (FEFO + per-lot
+>   cost/expiry)"** checkbox.
+> - **Store edit modal** (Stores → Edit) → **"Batch tracking …"** checkbox.
+>
+> **Enabling seeds existing stock automatically**, so it's safe to turn on at any time
+> (the first sale/dispatch won't fail). The batch **fields and columns are visible
+> regardless**; with tracking **off**, stock behaves as one combined "legacy" lot.
+> Turn it **on** for your test warehouse + store to see real per-batch behaviour.
 
 ---
 
 ## Role capabilities at a glance
 
-| Capability | Super admin | Store admin | Warehouse manager/staff |
-|---|---|---|---|
-| Warehouses (CRUD) + stock view | ✅ | ❌ (nav hidden) | ✅ (their warehouse) |
-| Suppliers (CRUD) | ✅ | ❌ | ✅ |
-| Goods receipt (stock in to warehouse) | ✅ | ❌ | ✅ |
-| Create / dispatch / cancel transfer | ✅ | ❌ | ✅ |
-| **Receive** transfer (into store) | ✅ | ✅ | ❌ |
-| Raise replenishment request | ✅ | ✅ | ❌ |
-| Approve / reject / fulfil replenishment | ✅ | ❌ | ✅ |
-| Stock Ledger | ✅ (all) | ✅ (own store) | ✅ (their warehouse) |
-| Manual "Stock In" on an item (Items page) | ✅ | ✅ | — |
-| Manage warehouse staff (Warehouse Staff page) | ✅ | ❌ | ❌ |
+> **What changed this round (warehouse-manager pass):** rows tagged **#n** are new/changed
+> warehouse-role capabilities — a real **Warehouse dashboard**, **Stock Health**, **Item Lookup**,
+> warehouse **write-off** + **reorder policy**, a working **push-transfer** (target-store picker),
+> **reject with a reason**, and **staff** can finally view warehouses + receive. Full walkthrough in **§15**.
 
-The **top store-switcher** sets the **target store** for creating transfers and raising
-replenishment requests. Pick the store there first.
+| Capability | Super admin | Store admin | Warehouse mgr | Warehouse staff |
+|---|---|---|---|---|
+| Categories / sub-categories **CRUD** (CH-1) | ✅ | ❌ (on/off only) | ❌ | ❌ |
+| Per-store category **On/Off** (CH-1) | ✅ (in a store) | ✅ | ❌ | ❌ |
+| **Product Master** + Assign (CH-6) | ✅ | ❌ | ❌ | ❌ |
+| Item per-store fields (price/stock/barcode) | ✅ | ✅ | — | — |
+| Item catalogue fields (name/brand/GST…) (CH-6) | ✅ (all stores) | ❌ (read-only) | — | — |
+| **Warehouse dashboard** (home, real counts) — #1 | ✅ | ❌ | ✅ | ✅ |
+| Warehouses + **stock view**, suppliers (view), goods **receipt** — #8 | ✅ | ❌ | ✅ | ✅ |
+| Warehouse CRUD + supplier CRUD | ✅ | ❌ | ✅ | ❌ |
+| Warehouse **write-off / adjust** + **reorder policy** — #3/#5 | ✅ | ❌ | ✅ | ❌ |
+| **Stock Health** (warehouse + served stores, by category/store) | ✅ | ❌ | ✅ | ✅ |
+| **Item Lookup** (search served-store catalogue + item details + batches) | ✅ | ❌ | ✅ | ✅ |
+| Create (**push**, w/ store picker) / dispatch / cancel transfer — #2 | ✅ | ❌ | ✅ | ✅ |
+| **Receive** transfer (into store) | ✅ | ✅ | ❌ | ❌ |
+| Replenishment: request | ✅ | ✅ | ❌ | ❌ |
+| Replenishment: approve / **reject (w/ reason)** / fulfil — CH-4/#6 | ✅ | ❌ | ✅ | ❌ |
+| **Batch Recall** trace / Hold-Recall (CH-3) | ✅ | trace only | ✅ | trace only |
+| Stores + Store Admins + serving warehouse (CH-7) | ✅ | ❌ | ❌ | ❌ |
+| Reports: Profits, **Product COGS** (CH-5) | ✅ | ❌ (revenue-gated) | ❌ | ❌ |
 
 ---
+
+# The sequential walkthrough
 
 ## 1. Create a warehouse  *(super admin)*
 
+Stores can't be created without a warehouse (CH-7), so build this first.
+
 1. Sidebar → **Warehouses** → **+ New warehouse**.
-2. Fill: **Name** (e.g. `Patna WH`), **Region** = `Bihar` (important — used for
-   replenishment routing), optional Code/address/phone.
+2. Name (e.g. `Patna WH`), **Region** = `Bihar`, optional code/address.
 3. Save.
 
-✅ Expect: warehouse appears in the left list. Click it → empty stock panel on the right.
-❌ Try creating a second warehouse with the **same name** → red "already exists" error.
+✅ Appears in the left list; clicking it shows an empty stock panel.
+❌ A second warehouse with the **same name** → red "already exists" error.
 
----
+### 1b. (Optional) Create a warehouse staff account — to test role separation
+Sidebar → **Warehouse Staff** → **+ New staff** → pick role (Warehouse Manager =
+full warehouse control; Warehouse Staff = receive + transfers) + the warehouse +
+name/email/password. Log in as them later → they see only the warehouse screens.
 
-## 1b. (Optional) Create warehouse staff  *(super admin)*
-
-If you want to test **role separation** (a warehouse manager who only sees the
-warehouse screens), create one now — no DB poking needed.
-
-1. Sidebar → **Warehouse Staff** → **+ New staff**.
-2. Pick **Role** (Warehouse Manager = full warehouse control; Warehouse Staff =
-   receive + transfers only), pick the **Warehouse**, set name/email/password.
-3. Save. The role's permissions are assigned automatically.
-4. Log in as that account → ✅ sees only **Warehouses / Suppliers / Transfers /
-   Replenishment (approvals) / Ledger** for their warehouse; cannot see stores,
-   orders, etc. (Deactivate/reactivate from the same page.)
+### 1c. (Recommended) Turn on batch tracking — to exercise FEFO / lots / recall  (B1)  *(super admin)*
+While editing the warehouse (or on create), tick **"Batch tracking (FEFO + per-lot
+cost/expiry)"** → Save. ✅ Enabling **seeds existing stock**, so the response notes how
+many lots were seeded and it's safe to flip at any time. Do the same on the **Store edit
+modal** later (step 5/8) so store sales are FEFO too. With this **off**, the batch steps
+below still work but everything is one combined "legacy" lot.
 
 ---
 
 ## 2. Create a supplier  *(super admin)*
 
-1. Sidebar → **Suppliers** → **+ New supplier**.
-2. Fill **Name** (e.g. `ACME Distributors`), optional contact/mobile/GSTIN.
-3. Save. ✅ Appears in the list.
+Sidebar → **Suppliers** → **+ New supplier** → name (e.g. `ACME Distributors`),
+optional contact/GSTIN → Save. ✅ Appears in the list.
 
 ---
 
-## 3. Receive goods into the warehouse  *(super admin)*
+## 3. Receive goods into the warehouse — with a batch no.  *(super admin)*  (CH-3)
 
-This is procurement — it puts stock into the warehouse.
+This puts stock into the warehouse.
 
-1. Sidebar → **Warehouses** → select your warehouse → **+ Receive goods**.
-2. (Optional) Invoice number.
+1. Sidebar → **Warehouses** → select the warehouse → **+ Receive goods**.
+2. (Optional) supplier + invoice number.
 3. Add a line:
-   - **SKU/Barcode** → use a value you will also set as a store item's barcode, e.g. `PB001`.
-   - **Name** (e.g. `Peanut Butter 500g`), **Cost**, **Qty** (e.g. `100`).
+   - **SKU/Barcode** — a code you'll also set as the store item's barcode, e.g. `PB001`.
+   - **Name** (e.g. `Peanut Butter 500g`), **Batch no.** (leave blank = auto, or type
+     the supplier's, e.g. `LOT-A`), **Cost / unit**, **Expiry**, **Qty** (e.g. `100`).
 4. **Receive**.
 
-✅ Expect: warehouse stock table shows `PB001 … Available 100`.
-✅ Receive the **same SKU again** (e.g. 50) → quantity becomes **150** (no duplicate row).
-✅ Sidebar → **Stock Ledger** → a `PURCHASE_IN` row, `+100` then `+50`.
+✅ Warehouse stock shows `PB001 … Available 100`.
+✅ Receive the **same SKU + same batch no.** again (e.g. 50) → quantity becomes **150**
+   (merged into the lot, no duplicate).
+✅ Stock table columns: **Available / Reserved / In-transit / Free-to-promise** (CH-4)
+   — at this point Reserved = In-transit = 0, Free-to-promise = Available. Hover the
+   **Cost/unit** header → "weighted average of open lots"; **Expiry** → "earliest open
+   lot" (CH-3).
+✅ Sidebar → **Stock Ledger** → a `PURCHASE_IN` row with a **Batch** column.
+✅ **Near-expiry / expired** rows are **colour-flagged** in the stock table (B5).
+✅ An **Export CSV** button (top of the stock panel) downloads the current (filtered)
+   stock for a stock-take / audit (#13).
+✅ Click any stock row → a **detail modal**: facts + **Batches (lots) · soonest-expiry
+   first** (B5 — shown when batch tracking is on) + **write-off / adjust** + **reorder
+   policy** + movement history (full detail in §15c–§15d).
 
-> **Key rule:** the warehouse SKU must equal the **barcode** of the store item you'll
-> transfer to (that's how the two locations are linked). Set that up in step 4.
-
----
-
-## 4. Prepare a store item with a barcode  *(super admin or store admin)*
-
-A transfer line needs a store item whose **barcode = the warehouse SKU**.
-
-1. Pick the target store in the **store-switcher**.
-2. Sidebar → **Items** → edit (or create) an item, e.g. `Peanut Butter 500g`.
-3. Set its **Barcode** = `PB001` (same as the warehouse SKU). Note its current quantity (e.g. `5`).
-
----
-
-## 5. Configure the store for supply  *(super admin)*
-
-1. Sidebar → **Stores** → edit your store → **Inventory supply** section:
-   - **Region / State** = `Bihar` (must match the warehouse region for auto-routing), OR
-   - **Serving warehouse** = pick your warehouse directly.
-   - (Optional) tick **Warehouse supply enabled**.
-2. Save.
-
-This is what lets a replenishment request find its warehouse automatically.
+> **Link rule (for transfers later):** the warehouse **SKU** must equal the **barcode**
+> of the store item you'll transfer to. Keep `PB001` handy.
 
 ---
 
-## 6. Transfer: create → dispatch → receive  *(the core test)*
+## 4. Build the shared catalogue  *(super admin)*
 
-**Create (super admin):**
-1. Store-switcher = target store. Sidebar → **Transfers** → **+ New transfer**.
-2. **Source warehouse** = your warehouse.
-3. Search the store item (`Peanut Butter`) → it's added as a line → set **Qty** = `20`.
-4. **Create transfer**. ✅ Status = **CREATED**. No stock has moved yet.
+Categories, sub-categories and products are now **one shared list for the whole
+company** — not per store.
 
-**Dispatch (super admin):**
-5. On the transfer row → **Dispatch**.
-   - ✅ Warehouse stock drops `150 → 130` (Warehouses → stock).
-   - ✅ **Store item quantity is UNCHANGED** (still `5` in Items) — *this is the rule #7 check*.
-   - ✅ Status = **DISPATCHED**.
+### 4a. Categories + sub-categories  (CH-1)
+1. Sidebar → **Categories**.
+2. **+ Add Category** → name (e.g. `Grocery`), icon → Save.
+   ✅ It's a **single create** — there is **no "store / add-to-all-stores" picker**
+   (categories are global now).
+3. **+ Add Sub-Category** → name (e.g. `Spreads`), pick **parent category** `Grocery`
+   → Save.
+4. ✅ As super admin you can **Rename / Delete / activate** categories & sub-categories.
+✅ Each category row shows a per-store **item count** (0 for now — nothing stocked yet).
 
-**Receive (super admin or store admin):**
-6. On the transfer row → **Receive**.
-   - ✅ Store item quantity rises `5 → 25` (Items).
-   - ✅ Status = **RECEIVED**.
-7. Sidebar → **Stock Ledger** → a `TRANSFER_OUT` (−20, warehouse) and `TRANSFER_IN` (+20, store).
+### 4b. Product Master  (CH-6)
+1. Sidebar → **Product Master** → **+ New product**.
+2. Fill: **Name** (`Peanut Butter 500g`), **Unit** (`unit(s)`), brand, **Category** =
+   `Grocery`, **Sub-category** = `Spreads`, GST, barcode = `PB001`, and an **image**
+   (B2 — **Upload image** from your device, or paste a URL) → Create.
+   ✅ It appears in the product list with a generated product id (`iId`).
+3. (Fan-out check) Edit the product's name/brand and Save → ✅ toast "synced N store
+   item(s)" (N = how many stores already carry it; 0 right now).
 
----
-
-## 7. Replenishment: request → approve → fulfil → receive
-
-**Request (store admin or super admin):**
-1. Store-switcher = the store. Sidebar → **Replenishment** → **+ Request stock**.
-2. Search the item → set **Requested qty** (e.g. `30`) → **Raise request**.
-   - ✅ Status = **PENDING**. (If you get "no serving warehouse", finish step 5 first.)
-
-**Approve + fulfil (super admin):**
-3. On the request row → **Approve** → status **APPROVED**.
-4. → **Fulfil → transfer** → a new transfer (CREATED) is created and linked.
-
-**Move the stock:**
-5. Sidebar → **Transfers** → find that transfer → **Dispatch** → then **Receive**.
-   - ✅ The replenishment request flips to **FULFILLED**.
-   - ✅ Store item quantity rises by the approved qty.
+> Products may already exist on dev (migrated from existing items). Either create a
+> fresh one as above, or just use an existing product for the next steps.
 
 ---
 
-## 7b. Automatic replenishment (cron)
+## 5. Create a store — serving warehouse is REQUIRED  *(super admin)*  (CH-7)
 
-The system can **auto-draft** replenishment requests for low stock — you don't
-have to click "Request stock" manually. It only **drafts** a PENDING request;
-the warehouse still reviews/approves/fulfils (it never ships stock on its own).
+1. Sidebar → **Stores** → **+ Add New Store**.
+2. Fill name/phone/email/address/map link/lat/long/GSTIN.
+3. **Inventory supply → Serving warehouse** = your warehouse. **This is required.**
+   - The **Owner** field is **optional** (leave it blank — see the note below).
+   - **Region** is now just a fallback label.
+4. Save.
 
-**How it works**
-- An **hourly cron** (`auto-replenishment`, runs at :30 IST) scans every
-  **warehouse-enabled** store.
-- For each store it finds items at/below their **low-stock threshold**
-  (`quantity ≤ lowQty`, with `lowQty > 0`).
-- It resolves the store's **serving warehouse** (by `servingWarehouseId`, else
-  region match) and creates **one** request with `source = AUTO`, `status =
-  PENDING`.
-- **Requested qty** per item = `reorderQty` if set → else top-up to `maxStock`
-  (`maxStock − quantity`) → else enough to clear the threshold.
-- **Idempotent:** items already on an open request (PENDING/APPROVED/
-  PARTIALLY_APPROVED) are skipped, so it won't pile up duplicates each hour.
-- **Skipped:** stores not warehouse-enabled, stores with no serving warehouse,
-  and items **without a barcode** (a SKU is required to match warehouse stock).
+✅ Saves with a serving warehouse chosen.
+❌ Try to save with **no serving warehouse** → blocked in the form, and the **server also
+   rejects it** (CH-7 enforcement, live on dev).
 
-> Note: low-stock **alerts** (push/email + 9 AM digest) are a *separate* system
-> that only notifies. Auto-replenishment is what actually drafts the request.
-
-**How to test**
-1. Pick a store, **Stores → edit → Inventory supply**: tick **Warehouse supply
-   enabled** and set **Region** (or a serving warehouse) — see step 5 above.
-2. Make sure an item in that store has a **barcode** and set its **lowQty** above
-   its current **quantity** (e.g. quantity 2, lowQty 10). Optionally set
-   `reorderQty`/`maxStock` (edit item).
-3. Wait for the hourly run, **or** trigger it manually to test immediately:
-   - On the server: `node -e "require('./packages/cron/src/jobs/auto-replenishment')()"`
-     from `haper-backend` (uses the same env/DB as the cron service), or
-   - temporarily change the schedule in `packages/cron/src/scheduler.js` to
-     `'* * * * *'` (every minute) on the dev box.
-4. Go to **Replenishment** → a new **PENDING** request with **source AUTO**
-   should appear for that store. Approve → Fulfil → Dispatch → Receive as usual.
-5. Re-run the cron → ✅ no duplicate request for the same item.
+> **No chicken-and-egg:** a store does **not** need a store admin to be created, so
+> always make the **store first**, then its admin (next step). The Owner field being
+> optional is what breaks the old "store needs admin / admin needs store" loop.
 
 ---
 
-## 8. Manual "Stock In" now writes to the ledger  *(super admin or store admin)*
+## 6. Create the store's admin  *(super admin)*
 
-1. Sidebar → **Items** → an item → adjust quantity ("Stock In"), e.g. +15.
-2. Sidebar → **Stock Ledger** → a `MANUAL_ADJUST` row with the delta and resulting balance.
-
----
-
-## 9. Negative / edge cases to confirm
-
-- **Insufficient warehouse stock:** create a transfer for more than the warehouse has →
-  **Dispatch** → ✅ 400 error, warehouse stock untouched.
-- **Cancel a dispatched transfer:** Transfers → a DISPATCHED transfer → **Cancel** →
-  ✅ warehouse stock is returned; status **CANCELLED**.
-- **Item without a barcode:** try to add an item with no barcode to a transfer →
-  ✅ rejected ("enroll a barcode first").
-- **Reject / cancel replenishment:** reject a PENDING request (warehouse side) or cancel
-  your own PENDING request (store side).
+1. Sidebar → **Store Admins** → **+ New** → name/email/password → **Assigned Store** =
+   the store you just made → Create.
+2. ✅ If **no stores existed yet**, the store dropdown is **disabled** with a hint
+   ("create a store first") — confirming the correct order.
+3. Log in as this store admin in a separate browser/profile for the per-store checks
+   (steps 9, and the item per-store view in step 8).
 
 ---
 
-## 10. Role separation checks
+## 7. Put products into the store (onboarding)  *(super admin)*  (CH-6)
 
-Log in as a **store admin** and confirm:
-- ✅ Sidebar does **not** show *Warehouses* or *Suppliers*.
-- ✅ *Transfers* shows only the **Receive** action (no New/Dispatch/Cancel).
-- ✅ *Replenishment* shows **Request stock** + **Cancel** (no Approve/Fulfil).
-- ✅ *Stock Ledger* shows only this store's movements.
+A new store starts with **zero items**. You add them from the Product Master.
 
-Log in as **super admin** and confirm all actions are available and the ledger can be
-filtered across warehouses/stores.
+1. Sidebar → **Product Master** → find `Peanut Butter 500g` → **Assign**.
+2. Choose **All stores** *or* **Pick stores** → select the new store. Set a **Price /
+   Selling price / Low-stock qty** → **Assign**.
+3. ✅ A result line shows **assigned / skipped / failed** (e.g. "Assigned 1, skipped 0").
+4. Sidebar → **Items** (with the new store selected in the switcher) → ✅ the item
+   appears at **quantity 0**, with the catalogue details copied from the master and the
+   **Grocery → Spreads** category.
+5. ✅ Re-run Assign for the same product/store → it's **skipped** (idempotent).
+
+### 7b. (Alternative) Add a one-off item directly — All-Stores store picker  (B3)
+Onboarding normally goes through **Assign** (above). To add a **brand-new single item**:
+Sidebar → **Items** → **Add New Item** *(super admin)*.
+- ✅ If you're in **All Stores** mode (no store in the top switcher), the form shows a
+  **required store picker** — pick the target store. Saving **without** one shows
+  "Pick a store to add this item to…" and is blocked (no `x-store-id` to target).
+- ✅ With a store already selected in the switcher, there's no picker — it's added to
+  that store. The new item also creates/links its **product master** behind the scenes.
 
 ---
 
-## 11. Supply health & data-quality checks  *(super admin / warehouse roles)*
+## 8. Stock the store
 
-These four low-risk safeguards surface multi-store supply problems that were
-previously silent. (Stop-gaps ahead of the bigger catalog/warehouse-master rework.)
+You can add stock two ways — test both.
 
-1. **Routing health (no serving warehouse).** Sidebar → **Warehouses**. If any
-   `warehouse supply enabled` store can't resolve a serving warehouse, a yellow
-   banner lists them ("⚠ N warehouse-enabled stores can't reach a warehouse").
-   - Test: turn on warehouse supply for a store but give it a region no warehouse
-     matches (and no serving warehouse) → it appears in the banner. Set a serving
-     warehouse (or matching region) → banner clears. Backend: `GET /admin/warehouse/routing-health`.
+### 8a. Manual Stock-In / Adjust-down  *(super admin or store admin)*  (CH-2)
+1. Sidebar → **Items** → the item → **Stock adjust**.
+2. **Stock In (add):** enter a quantity (e.g. `20`); optionally a **Batch no.**,
+   **Cost/unit** (super admin only) and **Expiry** → Save.
+   ✅ Quantity rises (0 → 20); a toast shows the new total.
+3. **Adjust down (remove):** switch to *Adjust down*, enter a quantity.
+   ✅ Entering **more than current stock** disables the button with a warning. A normal
+   reduction lowers the quantity. (If stock changed underneath you and the server
+   rejects it, you get a clear **"exceeds available stock"** toast.)
 
-2. **Region match is case-insensitive.** Auto-replenishment routing now matches
-   region trimmed + case-insensitively, so a store region `"bihar"` resolves a
-   warehouse region `"Bihar"`. (Previously a casing mismatch silently skipped the store.)
+### 8b. Bring stock from the warehouse (transfer)  *(super admin)*  (CH-3, CH-4)
+First make the link: **Items → the item → set Barcode = `PB001`** (same as the warehouse SKU).
+1. Store-switcher = the store. Sidebar → **Transfers** → **+ New transfer**.
+2. **Source warehouse** = your warehouse → search the item → set **Qty** `30` → **Create transfer**.
+   ✅ Status **CREATED**; no stock moved yet.
+3. **Dispatch** the transfer.
+   ✅ Warehouse **Available** drops by 30; **store item quantity is unchanged** (golden rule).
+   ✅ Expand the transfer → each line shows **Batches (shipped)** (the lots that went out) (CH-3).
+4. **Receive** the transfer.
+   ✅ Store item quantity rises by 30; the lot's real cost + expiry flow into the store.
+5. **Stock Ledger** → a `TRANSFER_OUT` (warehouse, −30) and `TRANSFER_IN` (store, +30),
+   both with the **Batch** column populated.
 
-3. **Missing-barcode report.** Sidebar → **Items** → **Missing Barcode** toggle →
-   lists items with no barcode. These **cannot be replenished** from the warehouse
-   (no SKU to match), so they need a barcode enrolled. Backend filter:
-   `GET /admin/item/catalog?missingBarcode=true`.
+---
 
-4. **Free-to-promise on approve.** Replenishment → **Approve** a request → the modal
-   now shows **Avail**, **Committed** (already approved on other open requests, not yet
-   dispatched), and **Free** = Avail − Committed, with a warning if you approve beyond
-   Free. "Fill to free" caps each line at free-to-promise. Backend:
-   `GET /admin/replenishment/committed?warehouseId=…`.
-   - Test: approve request A for 20 of SKU X (don't fulfil) → open request B for SKU X →
-     its **Committed** shows 20 and **Free** = Avail − 20. Fulfil A → B's Committed drops.
+## 9. Per-store category On/Off  *(store admin)*  (CH-1)
+
+Log in as the **store admin** from step 6.
+
+1. Sidebar → **Categories**.
+   ✅ **No** Create / Edit / Delete buttons (head office owns the catalogue).
+   ✅ Each category shows an **On / Off** switch + a short hint + the store's item count.
+2. Turn `Grocery` **Off** → ✅ customers of this store stop seeing it (and its items).
+   Turn it back **On** → it reappears. The category itself is never deleted.
+   - ✅ The switch shows its **saved** state on reload (CH-1 `enabledForStore`, live on dev).
+
+---
+
+## 10. Replenishment — request → approve → fulfil → receive  (CH-4)
+
+**Request  *(store admin)*:**
+1. Store-switcher = the store. Sidebar → **Replenishment** → **+ Request stock** →
+   search the item → **Requested qty** `40` → **Raise request**. ✅ Status **PENDING**.
+
+**Approve  *(super admin / warehouse)*:**
+2. Open the request → **Approve**. The modal shows per line: **Avail**, **Reserved**,
+   and **Free** (= Avail − Reserved).
+   ❌ Set an approve qty **above Free** → the server **rejects it** with a clear message
+   and the modal stays open (CH-4).
+   ✅ Approve **within Free** → status **APPROVED**; back on **Warehouses → stock** the
+   item's **Reserved** rises by the approved qty and **Free-to-promise** drops.
+3. **Fulfil → transfer** → a linked transfer (CREATED) is created.
+
+**Move it:**
+4. Sidebar → **Transfers** → that transfer → **Dispatch** (warehouse Reserved →
+   **In-transit**) → **Receive** (In-transit → store stock).
+   ✅ The request flips to **FULFILLED**; store quantity rises.
+
+✅ **Status legends:** on Replenishment / Transfers / Warehouse stock, open the
+   collapsible **"What do these mean?"** — every status (PENDING/APPROVED/…/**EXPIRED**,
+   CREATED/DISPATCHED/RECEIVED/CANCELLED, Available/Reserved/In-transit, batch
+   AVAILABLE/HOLD/RECALL) has a plain-English explanation.
+
+> **EXPIRED (CH-4):** if an approved request isn't shipped within the window, a nightly
+> job auto-releases the reservation and marks it **EXPIRED** (re-raisable). To see it
+> without waiting, ask dev to run the `inventory-reservation-expiry` cron manually.
+
+---
+
+## 11. Batch Recall  *(super admin / warehouse)*  (CH-3)
+
+1. Sidebar → **Batch Recall** → type the batch no. from step 3 (e.g. `LOT-A`) → **Trace**.
+   ✅ It lists every **warehouse** and **store** holding that lot, with quantities + status.
+2. With warehouse-manage rights, each row has **Hold / Recall / Release** buttons → set
+   one to **Recall** → ✅ its status pill turns red; the lot is blocked from sale/dispatch.
+   A legend explains AVAILABLE / HOLD / RECALL.
+   - (Real cross-location results require **batch tracking on** for that warehouse/store
+     — flip it from the Warehouse form / Store modal, step 1c / Prerequisites.)
+
+---
+
+## 12. Reports  *(super admin)*  (CH-5)
+
+After a few **sales** exist in the store (place test orders, or use POS → New Sale):
+
+1. Sidebar → **Profits**.
+   ✅ The **margin %** is computed over **cost-known revenue** (it no longer shows a fake
+   0% for items whose cost is unknown). When some revenue has no known cost, you see
+   **"₹X revenue has unknown cost — excluded from margin"**.
+2. Sidebar → **Product COGS**.
+   ✅ A per-product table: units, revenue, **COGS**, gross profit, **margin %**, and
+   **cost-unknown units** (highlighted). With a store selected → that store; switch to
+   **All Stores** → the same product is **merged across stores**.
+3. Sidebar → **Most Sold** → in **All Stores** mode there's a **"Merge same product
+   across stores"** toggle.
+
+---
+
+## 13. Role-separation checks
+
+**Store admin** should see:
+- ✅ Categories with **On/Off only** (no CRUD); **no** Product Master / Warehouses /
+  Suppliers / Store Admins / Profits / Product COGS in the sidebar.
+- ✅ Items: can edit price/stock/barcode/location; catalogue fields (name/brand/category/
+  GST/…) are **read-only/greyed** with an explainer (CH-6).
+- ✅ Transfers: only **Receive**; Replenishment: **Request** + **Cancel** (no Approve/Fulfil).
+
+**Super admin** should see all of the above as editable; editing a product's catalogue
+fields warns it **updates every store**.
+
+**Warehouse manager** should see (no store switcher): **Dashboard** (warehouse cockpit),
+**Stock Health**, **Item Lookup**, **Warehouses** (stock + write-off + reorder policy),
+**Suppliers**, **Transfers** (create/dispatch/cancel), **Replenishment** (approve/reject/fulfil),
+**Stock Ledger**, **Batch Recall** — and **nothing** store-side (no Items/Categories/Product
+Master/Orders/Analytics/Stores). **Warehouse staff**: the same minus the manage-only actions —
+they can **view** warehouses/stock + **receive** + do transfers, but get **no** warehouse
+CRUD, **no** Approve/Reject/Fulfil, **no** write-off, and Batch Recall is **trace-only** (full §15).
+
+---
+
+## 14. Negative / edge cases to confirm
+
+- **Store create with no serving warehouse** → blocked (CH-7).
+- **Approve beyond free-to-promise** → server 400, modal stays open (CH-4).
+- **Adjust-down beyond stock** → button disabled / "exceeds available stock" (CH-2).
+- **Insufficient warehouse stock on Dispatch** → 400, warehouse stock untouched.
+- **Cancel a dispatched transfer** → warehouse stock returned; In-transit cleared; status CANCELLED.
+- **Transfer line with no barcode** → rejected ("enroll a barcode first").
+- **Edit a category as a store admin** → no edit controls (only On/Off).
+- **Edit catalogue fields on an item as a store admin** → read-only (CH-6).
+- **Warehouse write-off above on-hand** → 400, stock untouched (#3).
+- **Stock Health / Item Lookup into a non-served store** → 403 (scoped to served stores).
+- **Goods-receipt line with ₹0 cost or a past expiry** → warning before save (#10/#11).
+- **Warehouse staff** opening New/Edit/Delete warehouse, Approve/Reject/Fulfil, or Write-off →
+  the buttons aren't shown (permission-gated, not just role) (#9).
+- **Turn on batch tracking on a warehouse/store that already has stock** (B1) → it **seeds the
+  existing stock into lots** and the **next sale/dispatch still works** (no "insufficient
+  quantity"); re-saving with it already on is a no-op (idempotent).
+
+---
+
+## 15. Warehouse-manager cockpit (new this round)
+
+> Needs the latest **`feat/inventory-v2`** (backend) + **`feat/inventory-v2-admin`** (admin)
+> deployed on dev. Seed a warehouse manager via the **Warehouse Staff** page (§1b) or the DB
+> fallback (last appendix), assign them the warehouse from §1, and log in as them in a separate
+> browser/profile. They have **no store switcher** (a warehouse isn't tied to one store) — their
+> screens are scoped to **their warehouse + the stores it serves**.
+
+### 15a. Warehouse home  (#1)
+On login a warehouse role lands on a **Warehouse dashboard** (not the store sales "cockpit").
+✅ Real counts from their own data: **requests waiting** to approve, **transfers to dispatch**,
+**in-transit**, **low-stock + expiring** lots, **recent receipts** — with quick links. The top
+strip reads **WAREHOUSE · &lt;their warehouse name&gt;**. (Before: warehouse roles saw a mock
+"Store Admin" sales dashboard with fake numbers.)
+
+### 15b. Create a push transfer — target-store picker  (#2)
+Sidebar → **Transfers** → **+ New transfer**.
+✅ A **Target store** dropdown lists the stores this warehouse serves; pick one → the item search
+is **scoped to that store** → set qty → **Create transfer** → Dispatch as usual. (Before, a
+warehouse manager couldn't create a transfer at all — there was no store to target.)
+✅ The **Transfers list** and the printed **pick slip** now show the destination **store name**
+(and warehouse name), not just an id (#4).
+> ⚠️ **Known pending:** that in-modal item search still calls the store catalog endpoint
+> (`items.view`), so a **pure warehouse manager may get a 403** there until it's repointed at the
+> Item-Lookup endpoint (§15f). Super admin works today; the fix is a small follow-up.
+
+### 15c. Write off / adjust warehouse stock  (#3)  *(manager only)*
+Warehouses → select the warehouse → click a stock row → **Write off / adjust** → qty + reason
+(**Damage / Expiry / Count correction / Other**).
+✅ On-hand drops; a **ledger row** is written (DAMAGE, or MANUAL_ADJUST for a count); on a
+batch-enabled warehouse it consumes the **soonest-expiry lot first**.
+❌ More than on-hand → 400, untouched. ❌ Warehouse **staff** don't see the action (needs manage).
+
+### 15d. Editable reorder policy  (#5)
+Same stock detail → set **low / max / reorder** → Save. Drives the Low-stock filter,
+auto-replenishment, and the Stock-Health buckets.
+
+### 15e. Stock Health  *(sidebar → Stock Health)*
+✅ **My warehouse stock (SKUs)** summary + **Stores I supply — overall**, then **By store** and
+**By category → sub-category**, bucketed **Out / Low / Expiring / Expired / Overstock / Healthy**.
+✅ Click a store row → its **at-risk items** (worst first) with barcode, qty, low/max, expiry.
+> **Overstock** only flags items with a **real max** (`maxStock > 0`). If items have no max
+> (0/blank), Overstock = 0 and they count as **Healthy** — that's correct, not "all overstocked".
+Super admin sees the same with a **warehouse picker**.
+
+### 15f. Item Lookup  *(sidebar → Item Lookup)*  — search / filter / details
+A read-only catalogue browser over the served stores.
+✅ **Search** by name or barcode; **filter** by **store**, **category**, and **sub-category** (the
+dropdowns list every category/sub-category present, with item counts).
+✅ Click a row → full detail: **Common** (name, brand, category, unit, weight, GST, product id) +
+**per-store** (store, barcode, on-hand, low/max, price, selling, avg cost, location, status, expiry)
++ **Batches** (batch no, qty left, cost, expiry, status).
+❌ A store the warehouse doesn't serve never appears (server **403** if forced).
+
+### 15g. Reject a request with a reason  (#6)
+Replenishment → a PENDING request → **Reject** → you're prompted for a **reason** (and an approve
+note on a partial approval); the requesting store sees that warehouse note on the request.
+
+### 15h. Goods-receipt warnings  (#10/#11)
+On **Receive goods**, a line with **₹0 cost** or a **past-dated expiry** shows a warning before save
+(catches a poisoned weighted-avg cost / already-expired stock).
+
+### 15i. Staff vs manager  (#8/#9)
+- **Warehouse staff** can now **view Warehouses + stock** and **Receive goods** (previously a 403
+  blocked the whole flow) and do transfers — but get **no** warehouse CRUD, **no**
+  Approve/Reject/Fulfil, **no** Write-off (buttons hidden, gated by permission), Batch Recall
+  **trace-only**.
+- **Warehouse manager** has the full set above.
 
 ---
 
@@ -279,25 +448,36 @@ previously silent. (Stop-gaps ahead of the bigger catalog/warehouse-master rewor
 
 | Symptom | Likely cause |
 |---|---|
-| Every warehouse call 404s | Backend feature branch not deployed to the dev API |
-| "No serving warehouse — provide warehouseId" on Approve | Store's region/serving warehouse not set (step 5) |
-| "…has no barcode/SKU — enroll one" on transfer create | Store item missing a barcode (step 4) |
-| Dispatch returns 400 "Insufficient warehouse stock" | Receive goods first / qty too high (expected for the edge test) |
-| 403 on a warehouse action | Logged in as store admin (warehouse actions are super/warehouse-role only) |
-| Store stock didn't change after Dispatch | Correct — store stock only rises on **Receive** (rule #7) |
+| Every warehouse/product call 404s | Backend `feat/inventory-v2` not deployed to the dev API |
+| Category On/Off doesn't "stick" on reload | dev box is a build behind — pull/redeploy latest `feat/inventory-v2` (CH-1 `enabledForStore` is live there) |
+| Store saves even with no serving warehouse | dev box is a build behind — pull/redeploy latest `feat/inventory-v2` (CH-7 enforcement; the form requires it regardless) |
+| Batch Recall finds nothing / shows one "legacy" lot | Batch tracking **off** for that warehouse/store — turn it on (super admin) via the Warehouse form / Store modal checkbox (step 1c / Prerequisites) |
+| "No serving warehouse" on Approve/Replenishment | Store's serving warehouse not set (step 5) |
+| "…has no barcode/SKU" on transfer create | Store item missing a barcode = warehouse SKU (step 8b) |
+| 403 on a warehouse/product-master action | Logged in as store admin (those are super/warehouse-only) |
+| Store stock didn't change after Dispatch | Correct — store stock only rises on **Receive** |
+| Warehouse manager sees a "Store Admin" sales dashboard | Admin not on latest `feat/inventory-v2-admin` (the #1 warehouse dashboard) |
+| Stock Health shows **everything Overstock**, Healthy 0 | Backend not redeployed — fixed so Overstock needs `maxStock > 0` (§15e) |
+| Stock Health / Item Lookup are empty | This warehouse serves **no stores** (no store's serving-warehouse = this one) |
+| Item search 403s inside **New Transfer** (warehouse mgr) | Known pending — uses the `items.view` catalog endpoint (§15b); super admin works |
 
 ---
 
-## Appendix — (alternative) seed a warehouse manager via DB
+## Appendix — auto-replenishment (optional)
 
-Prefer the **Warehouse Staff** page (§1b) — it's the supported path. This DB
-snippet is only a fallback (e.g. scripting/bulk seed), pointing at an existing
-warehouse `_id`:
+The system can **auto-draft** PENDING replenishment requests for low stock (hourly
+`auto-replenishment` cron) for warehouse-enabled stores with a resolvable serving
+warehouse; it only drafts — the warehouse still approves/fulfils. Items at/below
+`lowQty` (with a barcode) get a `source = AUTO` request. To test: set an item's
+`lowQty` above its quantity, ensure the store has a serving warehouse + the item has a
+barcode, then wait for the hourly run (or ask dev to trigger the cron) → a PENDING
+**AUTO** request appears under Replenishment. Re-running won't duplicate an open request.
+
+## Appendix — seed a warehouse manager via DB (fallback)
+
+Prefer the **Warehouse Staff** page (§1b). DB fallback (point at an existing warehouse `_id`):
 
 ```js
-// password will be hashed by the schema pre-save hook only via the app;
-// for a quick test, create through the app's admin creation flow if available,
-// or copy an existing admin doc and set:
 db.admins.updateOne(
   { email: "wh.manager@example.com" },
   { $set: {
@@ -312,7 +492,3 @@ db.admins.updateOne(
   { upsert: false }
 );
 ```
-
-A `warehouse_manager` logs into the same admin panel and sees only the warehouse-side
-screens (Warehouses, Suppliers, Transfers, Replenishment approvals, Ledger) for **their**
-warehouse.
