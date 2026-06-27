@@ -42,21 +42,31 @@ on a **transfer Receive**, or on a **sale**. Creating or dispatching a transfer 
 
 ## Role capabilities at a glance
 
-| Capability | Super admin | Store admin | Warehouse mgr/staff |
-|---|---|---|---|
-| Categories / sub-categories **CRUD** (CH-1) | ✅ | ❌ (per-store on/off only) | ❌ |
-| Per-store category **On/Off** (CH-1) | ✅ (in a store) | ✅ | ❌ |
-| **Product Master** + Assign (CH-6) | ✅ | ❌ | ❌ |
-| Item per-store fields (price/stock/barcode) | ✅ | ✅ | — |
-| Item catalogue fields (name/brand/GST…) (CH-6) | ✅ (edits all stores) | ❌ (read-only) | — |
-| Warehouses + stock view, suppliers, goods receipt | ✅ | ❌ | ✅ |
-| Create/dispatch/cancel transfer | ✅ | ❌ | ✅ |
-| **Receive** transfer (into store) | ✅ | ✅ | ❌ |
-| Replenishment: request | ✅ | ✅ | ❌ |
-| Replenishment: approve/reject/fulfil (CH-4) | ✅ | ❌ | ✅ |
-| **Batch Recall** trace / Hold-Recall (CH-3) | ✅ | trace only | ✅ |
-| Stores + Store Admins + serving warehouse (CH-7) | ✅ | ❌ | ❌ |
-| Reports: Profits, **Product COGS** (CH-5) | ✅ | ❌ (revenue-gated) | ❌ |
+> **What changed this round (warehouse-manager pass):** rows tagged **#n** are new/changed
+> warehouse-role capabilities — a real **Warehouse dashboard**, **Stock Health**, **Item Lookup**,
+> warehouse **write-off** + **reorder policy**, a working **push-transfer** (target-store picker),
+> **reject with a reason**, and **staff** can finally view warehouses + receive. Full walkthrough in **§15**.
+
+| Capability | Super admin | Store admin | Warehouse mgr | Warehouse staff |
+|---|---|---|---|---|
+| Categories / sub-categories **CRUD** (CH-1) | ✅ | ❌ (on/off only) | ❌ | ❌ |
+| Per-store category **On/Off** (CH-1) | ✅ (in a store) | ✅ | ❌ | ❌ |
+| **Product Master** + Assign (CH-6) | ✅ | ❌ | ❌ | ❌ |
+| Item per-store fields (price/stock/barcode) | ✅ | ✅ | — | — |
+| Item catalogue fields (name/brand/GST…) (CH-6) | ✅ (all stores) | ❌ (read-only) | — | — |
+| **Warehouse dashboard** (home, real counts) — #1 | ✅ | ❌ | ✅ | ✅ |
+| Warehouses + **stock view**, suppliers (view), goods **receipt** — #8 | ✅ | ❌ | ✅ | ✅ |
+| Warehouse CRUD + supplier CRUD | ✅ | ❌ | ✅ | ❌ |
+| Warehouse **write-off / adjust** + **reorder policy** — #3/#5 | ✅ | ❌ | ✅ | ❌ |
+| **Stock Health** (warehouse + served stores, by category/store) | ✅ | ❌ | ✅ | ✅ |
+| **Item Lookup** (search served-store catalogue + item details + batches) | ✅ | ❌ | ✅ | ✅ |
+| Create (**push**, w/ store picker) / dispatch / cancel transfer — #2 | ✅ | ❌ | ✅ | ✅ |
+| **Receive** transfer (into store) | ✅ | ✅ | ❌ | ❌ |
+| Replenishment: request | ✅ | ✅ | ❌ | ❌ |
+| Replenishment: approve / **reject (w/ reason)** / fulfil — CH-4/#6 | ✅ | ❌ | ✅ | ❌ |
+| **Batch Recall** trace / Hold-Recall (CH-3) | ✅ | trace only | ✅ | trace only |
+| Stores + Store Admins + serving warehouse (CH-7) | ✅ | ❌ | ❌ | ❌ |
+| Reports: Profits, **Product COGS** (CH-5) | ✅ | ❌ (revenue-gated) | ❌ | ❌ |
 
 ---
 
@@ -300,6 +310,14 @@ After a few **sales** exist in the store (place test orders, or use POS → New 
 **Super admin** should see all of the above as editable; editing a product's catalogue
 fields warns it **updates every store**.
 
+**Warehouse manager** should see (no store switcher): **Dashboard** (warehouse cockpit),
+**Stock Health**, **Item Lookup**, **Warehouses** (stock + write-off + reorder policy),
+**Suppliers**, **Transfers** (create/dispatch/cancel), **Replenishment** (approve/reject/fulfil),
+**Stock Ledger**, **Batch Recall** — and **nothing** store-side (no Items/Categories/Product
+Master/Orders/Analytics/Stores). **Warehouse staff**: the same minus the manage-only actions —
+they can **view** warehouses/stock + **receive** + do transfers, but get **no** warehouse
+CRUD, **no** Approve/Reject/Fulfil, **no** write-off, and Batch Recall is **trace-only** (full §15).
+
 ---
 
 ## 14. Negative / edge cases to confirm
@@ -312,6 +330,80 @@ fields warns it **updates every store**.
 - **Transfer line with no barcode** → rejected ("enroll a barcode first").
 - **Edit a category as a store admin** → no edit controls (only On/Off).
 - **Edit catalogue fields on an item as a store admin** → read-only (CH-6).
+- **Warehouse write-off above on-hand** → 400, stock untouched (#3).
+- **Stock Health / Item Lookup into a non-served store** → 403 (scoped to served stores).
+- **Goods-receipt line with ₹0 cost or a past expiry** → warning before save (#10/#11).
+- **Warehouse staff** opening New/Edit/Delete warehouse, Approve/Reject/Fulfil, or Write-off →
+  the buttons aren't shown (permission-gated, not just role) (#9).
+
+---
+
+## 15. Warehouse-manager cockpit (new this round)
+
+> Needs the latest **`feat/inventory-v2`** (backend) + **`feat/inventory-v2-admin`** (admin)
+> deployed on dev. Seed a warehouse manager via the **Warehouse Staff** page (§1b) or the DB
+> fallback (last appendix), assign them the warehouse from §1, and log in as them in a separate
+> browser/profile. They have **no store switcher** (a warehouse isn't tied to one store) — their
+> screens are scoped to **their warehouse + the stores it serves**.
+
+### 15a. Warehouse home  (#1)
+On login a warehouse role lands on a **Warehouse dashboard** (not the store sales "cockpit").
+✅ Real counts from their own data: **requests waiting** to approve, **transfers to dispatch**,
+**in-transit**, **low-stock + expiring** lots, **recent receipts** — with quick links. The top
+strip reads **WAREHOUSE · &lt;their warehouse name&gt;**. (Before: warehouse roles saw a mock
+"Store Admin" sales dashboard with fake numbers.)
+
+### 15b. Create a push transfer — target-store picker  (#2)
+Sidebar → **Transfers** → **+ New transfer**.
+✅ A **Target store** dropdown lists the stores this warehouse serves; pick one → the item search
+is **scoped to that store** → set qty → **Create transfer** → Dispatch as usual. (Before, a
+warehouse manager couldn't create a transfer at all — there was no store to target.)
+> ⚠️ **Known pending:** that in-modal item search still calls the store catalog endpoint
+> (`items.view`), so a **pure warehouse manager may get a 403** there until it's repointed at the
+> Item-Lookup endpoint (§15f). Super admin works today; the fix is a small follow-up.
+
+### 15c. Write off / adjust warehouse stock  (#3)  *(manager only)*
+Warehouses → select the warehouse → click a stock row → **Write off / adjust** → qty + reason
+(**Damage / Expiry / Count correction / Other**).
+✅ On-hand drops; a **ledger row** is written (DAMAGE, or MANUAL_ADJUST for a count); on a
+batch-enabled warehouse it consumes the **soonest-expiry lot first**.
+❌ More than on-hand → 400, untouched. ❌ Warehouse **staff** don't see the action (needs manage).
+
+### 15d. Editable reorder policy  (#5)
+Same stock detail → set **low / max / reorder** → Save. Drives the Low-stock filter,
+auto-replenishment, and the Stock-Health buckets.
+
+### 15e. Stock Health  *(sidebar → Stock Health)*
+✅ **My warehouse stock (SKUs)** summary + **Stores I supply — overall**, then **By store** and
+**By category → sub-category**, bucketed **Out / Low / Expiring / Expired / Overstock / Healthy**.
+✅ Click a store row → its **at-risk items** (worst first) with barcode, qty, low/max, expiry.
+> **Overstock** only flags items with a **real max** (`maxStock > 0`). If items have no max
+> (0/blank), Overstock = 0 and they count as **Healthy** — that's correct, not "all overstocked".
+Super admin sees the same with a **warehouse picker**.
+
+### 15f. Item Lookup  *(sidebar → Item Lookup)*  — search / filter / details
+A read-only catalogue browser over the served stores.
+✅ **Search** by name or barcode; **filter** by **store**, **category**, and **sub-category** (the
+dropdowns list every category/sub-category present, with item counts).
+✅ Click a row → full detail: **Common** (name, brand, category, unit, weight, GST, product id) +
+**per-store** (store, barcode, on-hand, low/max, price, selling, avg cost, location, status, expiry)
++ **Batches** (batch no, qty left, cost, expiry, status).
+❌ A store the warehouse doesn't serve never appears (server **403** if forced).
+
+### 15g. Reject a request with a reason  (#6)
+Replenishment → a PENDING request → **Reject** → you're prompted for a **reason** (and an approve
+note on a partial approval); the requesting store sees that warehouse note on the request.
+
+### 15h. Goods-receipt warnings  (#10/#11)
+On **Receive goods**, a line with **₹0 cost** or a **past-dated expiry** shows a warning before save
+(catches a poisoned weighted-avg cost / already-expired stock).
+
+### 15i. Staff vs manager  (#8/#9)
+- **Warehouse staff** can now **view Warehouses + stock** and **Receive goods** (previously a 403
+  blocked the whole flow) and do transfers — but get **no** warehouse CRUD, **no**
+  Approve/Reject/Fulfil, **no** Write-off (buttons hidden, gated by permission), Batch Recall
+  **trace-only**.
+- **Warehouse manager** has the full set above.
 
 ---
 
@@ -327,6 +419,10 @@ fields warns it **updates every store**.
 | "…has no barcode/SKU" on transfer create | Store item missing a barcode = warehouse SKU (step 8b) |
 | 403 on a warehouse/product-master action | Logged in as store admin (those are super/warehouse-only) |
 | Store stock didn't change after Dispatch | Correct — store stock only rises on **Receive** |
+| Warehouse manager sees a "Store Admin" sales dashboard | Admin not on latest `feat/inventory-v2-admin` (the #1 warehouse dashboard) |
+| Stock Health shows **everything Overstock**, Healthy 0 | Backend not redeployed — fixed so Overstock needs `maxStock > 0` (§15e) |
+| Stock Health / Item Lookup are empty | This warehouse serves **no stores** (no store's serving-warehouse = this one) |
+| Item search 403s inside **New Transfer** (warehouse mgr) | Known pending — uses the `items.view` catalog endpoint (§15b); super admin works |
 
 ---
 
