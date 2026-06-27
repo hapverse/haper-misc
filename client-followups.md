@@ -247,9 +247,21 @@ no Kotlin adapter → a missing JSON key decodes to `null` even when the Kotlin 
   the memory so a future session doesn't trust a guard that's gone (ties to **A1**).
 
 ### Status of the Android column above
-The android cells in CH-1/CH-2/CH-6 are **verified decode-safe** (see "Verified SAFE" above) and CH-5 is
-**decode-safe but left ⏳** pending the **A2** regression test + the **A1** refunds hardening. Flip them to ✅
-when A1/A2 land. CH-3/CH-4 android = `—` (not affected).
+The android cells in CH-1/CH-2/CH-6 are **verified decode-safe** (see "Verified SAFE" above). CH-5 android = ✅.
+
+### ✅ A1 + A2 SHIPPED (android) + iOS CH-5 (session 2026-06-27)
+- **A1 ✅ DONE** (haper-android **PR #31**, branch `feat/inventory-v2-android`) — `Order.refunds` +
+  `OrderRefund.items` made **nullable**; `OrderDetailScreen` reads them via `.orEmpty()`. Removes the NPE
+  crash on orders that omit `refunds` (Gson doesn't apply Kotlin defaults). Verified: `./gradlew
+  :app:testDebugUnitTest --tests "*ApiContractTest"` BUILD SUCCESSFUL.
+- **A2 ✅ DONE** (same PR) — `ApiContractTest` now decodes order list + detail with CH-5
+  `iId`+`batchAllocations` on the line, and an old order with no `refunds` key.
+- **A3 ⏳ still open** — store-switch cart UX (silent empty cart + poisoned-cart edge). Not done.
+- **iOS CH-5 ✅ DONE** (haper-ios **PR #15**, branch `feat/inventory-v2-ios`) — **no model change** (Codable
+  already ignores unknown keys + decodes refunds defensively `try? … ?? []`); added decode regression tests.
+  Verified: `xcodebuild build-for-testing -sdk iphonesimulator` → TEST BUILD SUCCEEDED (sim runtime out of
+  date locally, so tests run in CI). iOS CH-5 cell = ✅; CH-1/CH-2/CH-6 ios still ❓ verify (no shape change).
+- **web** — still ❓ verify (no code change expected; not yet click-tested).
 
 ---
 
