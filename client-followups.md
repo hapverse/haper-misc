@@ -253,6 +253,44 @@ when A1/A2 land. CH-3/CH-4 android = `—` (not affected).
 
 ---
 
+## Admin / operator QA findings — super-admin + store-admin walkthrough (session 2026-06-27)
+**What this is:** a real-world operator QA pass of **haper-admin** (`feat/inventory-v2-admin`, **merged to dev
++ deployed at damin.haper.in**) against the backend (`feat/inventory-v2`, **deployed at dapi.haper.in**). Walked
+the actual "open a 2nd store (Chapra) → build catalog → stock warehouse → transfer to store → sell → report →
+recall" lifecycle, tracing each step into real admin + backend code. **No code changed.** This is the resume point.
+
+**Deployment is LIVE on dev — verified** (credential-free route probes, 2026-06-27): every new route returns
+`401` (deployed + auth-gated) — `/admin/product`, `/admin/analytics/product-cogs`, `/admin/category/catalog`,
+`/admin/warehouse/routing-health`, `/admin/procurement/batch/:no` — a non-existent route returns `404`, and the
+admin SPA at damin.haper.in returns `200`. So CH-1 `enabledForStore` + CH-7 enforcement ARE live (earlier
+"not redeployed" caveat is RESOLVED). **Authenticated end-to-end flows were NOT click-tested** (no admin creds;
+won't fetch per rules) — findings are from code trace + route-liveness. **Only remaining go-live step = the PROD
+migration** (`npm run migrate:apply`, 7 idempotent steps) — dev is fully migrated, prod is run by the user when ready.
+
+### Verified WORKING (operator features, code-traced)
+CH-1 global categories + per-store toggle · CH-2 stock-in/adjust batch fields + clean over-adjust 400 ·
+CH-3 goods-receipt per-line batch (merge on re-receive) + transfer FEFO dispatch/receive carrying real cost/expiry
++ **Recall** trace + HOLD/RECALL/AVAILABLE · CH-4 replenishment approve enforces **free-to-promise** (400 + warning
++ "fill to free") + EXPIRED + **status legends everywhere** · CH-5 **Product-COGS** page (units/revenue/cogs/margin
+/cost-unknown) + profit margin = profit ÷ **costKnownRevenue** + best-sellers cross-store toggle · CH-6 Product
+Master CRUD + multi-store **Assign** (+ALL) + item display-field gating · CH-7 required serving-warehouse + routing-health.
+
+### OPEN items — operator gaps / new changes needed (priority order)
+| # | Pri | Item | Detail / what to do |
+|---|---|---|---|
+| **B1** | 🔴 high | **No UI to turn batch tracking ON (store + warehouse).** | Batches are gated behind `store.config.batchesEnabled` + `warehouse.batchesEnabled`, both default **OFF**, and `batchesEnabled` appears **nowhere** in `haper-admin/src` (grep-confirmed empty). So an operator types batchNo/cost/expiry into goods-receipt/stock-in and the backend **silently ignores it** (legacy flat-qty path) until someone flips the flag in the DB. The entire Phase-2 batch investment (FEFO, per-lot cost/expiry, true COGS) is inert until then. **Needed:** a "batch tracking" toggle on the Store edit modal (`config.batchesEnabled`) + Warehouse form (`warehouse.batchesEnabled`), with the rollout order enforced (warehouse flag first, seed batches, then store flag — a sale in the gap drifts the legacy batch). Was deliberately "deferred to ops"; for real rollout it's the #1 gap. |
+| **B2** | 🔴 high | **Product images are URL-only — no upload.** | `ProductModal.tsx:157` is a `https://…` text box; backend `/admin/product` is JSON-only (no multipart). Onboarding a real catalog (100s of products) means hosting every image elsewhere and pasting URLs one-by-one — unusable for store staff. **Needed:** a multipart upload route on `/admin/product` + a file-upload widget on the master form. |
+| **B3** | 🟠 med | **Super-admin "All Stores" mode can't create an item.** (medium confidence — verify on damin) | `ItemModal` sends no `storeIds` and reads no `activeStoreId` — it relies only on the `x-store-id` header. In All-Stores mode that header is absent → backend 400 "Store context required", with no store picker in the add form. **Needed:** a store picker (or "assign after create") in the item add form for super admin, OR require selecting a store first with a clear hint. |
+| **B4** | 🟡 low | **No bulk category/sub-category create.** | One modal at a time; a new store's ~20–50 categories + 100+ sub-categories is tedious/error-prone. **Needed (nice-to-have):** CSV/bulk create. |
+| **B5** | 🟡 low | **Stock views have no per-batch drill-down or near-expiry flag.** | Warehouse/store stock shows one aggregate `expiresAt`, not "LOT-A Dec vs LOT-B Nov", and no "⚠ expires in 3 days" colour. Blind FEFO/reorder planning once batches are on. **Needed:** per-row "view batches" drill-down + near-expiry colour coding. |
+| **B6** | 🟡 note | **Per-store custom item image is overwritten on master edit.** (by design) | Master→item sync is one-way, so a store-uploaded image vanishes when HQ edits the product. Intended (display fields are shared) — but **add a warning** on the master edit form so HQ knows it fans out. |
+| **B7** | ⏳ future | **Interstate GST / e-way bill / per-state GSTIN absent.** | Fine now (Bihar WH → Bihar stores). Blocks a Bihar-WH → Jharkhand-store transfer when multi-state. Correctly deferred (design §9) — list for the multi-state expansion. |
+
+### Recommended order
+1. **B1** batch toggle (else the batch feature stays off in real use). 2. **B2** image upload (before onboarding a real catalog). 3. **B3** all-stores item create. 4. Backlog: **B4/B5/B6**. 5. **B7** when going multi-state. (Run the **prod migration** whenever you're ready to take inventory-v2 live in production — dev is already there.)
+
+---
+
 ## Future changes
 **This file is COMPLETE for inventory-v2** — CH-1…6 cover every shipped backend change (Phases 0–4) with a
 per-client checklist + exact endpoints, and CH-7 covers the one optional P9 item (with its backend prerequisite).
