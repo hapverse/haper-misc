@@ -264,8 +264,7 @@ recall" lifecycle, tracing each step into real admin + backend code. **No code c
 `/admin/warehouse/routing-health`, `/admin/procurement/batch/:no` — a non-existent route returns `404`, and the
 admin SPA at damin.haper.in returns `200`. So CH-1 `enabledForStore` + CH-7 enforcement ARE live (earlier
 "not redeployed" caveat is RESOLVED). **Authenticated end-to-end flows were NOT click-tested** (no admin creds;
-won't fetch per rules) — findings are from code trace + route-liveness. **Only remaining go-live step = the PROD
-migration** (`npm run migrate:apply`, 7 idempotent steps) — dev is fully migrated, prod is run by the user when ready.
+won't fetch per rules) — findings are from code trace + route-liveness. **Dev is fully migrated and live.**
 
 ### Verified WORKING (operator features, code-traced)
 CH-1 global categories + per-store toggle · CH-2 stock-in/adjust batch fields + clean over-adjust 400 ·
@@ -287,7 +286,7 @@ Master CRUD + multi-store **Assign** (+ALL) + item display-field gating · CH-7 
 | **B7** | ⏳ future | **Interstate GST / e-way bill / per-state GSTIN absent.** | Fine now (Bihar WH → Bihar stores). Blocks a Bihar-WH → Jharkhand-store transfer when multi-state. Correctly deferred (design §9) — list for the multi-state expansion. |
 
 ### Recommended order
-1. **B1** batch toggle (else the batch feature stays off in real use). 2. **B2** image upload (before onboarding a real catalog). 3. **B3** all-stores item create. 4. Backlog: **B4/B5/B6**. 5. **B7** when going multi-state. (Run the **prod migration** whenever you're ready to take inventory-v2 live in production — dev is already there.)
+1. **B1** batch toggle (else the batch feature stays off in real use). 2. **B2** image upload (before onboarding a real catalog). 3. **B3** all-stores item create. 4. Backlog: **B4/B5/B6**. 5. **B7** when going multi-state.
 
 ---
 
