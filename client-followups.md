@@ -214,6 +214,45 @@ Skip it if you don't need hard enforcement yet; the rest of CH-1…6 is independ
 
 ---
 
+## Android client — QA findings & open items (session 2026-06-27)
+**What this is:** a full customer-flow QA pass of **haper-android** (Kotlin, on `dev`) against the
+inventory-v2 backend (`feat/inventory-v2`, live on `dapi.haper.in`). Each screen was traced into the real
+backend code to check (a) Gson decode-safety of new/missing JSON fields and (b) store-identity correctness.
+**No code was changed this session.** This block is the resume point — come back and work the OPEN items below.
+Gson rule throughout: memory `android_gson_kotlin_defaults` (plain `GsonBuilder().setLenient().create()`,
+no Kotlin adapter → a missing JSON key decodes to `null` even when the Kotlin field has a default).
+
+### Verified SAFE — no Android change needed (decode-safety confirmed this session)
+- **CH-1 categories / CH-2 item-cart-order / CH-6 product-master:** no JSON shape change. `CategoryModel`,
+  `SubCategoryModel`, `ItemModel` unchanged; existing `ApiContractTest.kt` cases already cover their decode.
+- **CH-5 order-line COGS fields:** the order line `OrderItem` (`OrderModels.kt:181`) declares **neither**
+  `iId` nor `batchAllocations`; the names appear nowhere in the app (grep clean). Gson silently drops unknown
+  keys, so both new orders (which now emit `iId:""` + `batchAllocations:[]`, schema `orders.schema.js:47-78`)
+  and old orders (which omit them) decode fine. **Do NOT add these fields to the model.**
+- **Checkout cannot leak across stores:** backend `CartRepository.getById` AND `ItemRepository.getDetail`
+  both filter by `storeId` (`item.repository.js:364`), so a foreign-store item can never be sold from the
+  wrong store — it throws "Item no longer available" instead. No data-corruption path.
+- **CH-3 / CH-4** (warehouse batches, reservations): admin/warehouse-only → Android not affected.
+
+### OPEN items — come back to these (priority order)
+| # | Pri | Item | Detail / what to do |
+|---|---|---|---|
+| **A1** | 🔴 high | **Harden `refunds` against the Gson NPE (real crash risk).** | The server-side `normalizeRefundFields` that the memory says always re-emits `refunds`/`refundedAmount`/`hasPartialRefund` **no longer exists anywhere in haper-backend** (grep-confirmed; the one-time backfill script is also gone). Reads use `.lean()`, so schema defaults are NOT re-applied on read. `OrderDetailScreen.kt:664` does `order.refunds.isNotEmpty()` on a **non-null** `List` (`OrderModels.kt:82`) → any order returned without the key NPE-crashes the detail screen (the original "BH…" bug). **Fix (small):** make the model defensive — `refunds: List<OrderRefund>? = null` + read `order.refunds?.isNotEmpty() == true`. Also verify dev order data still carries the field. Pre-existing (not caused by inventory-v2), but it's the only true crash risk found. |
+| **A2** | ✅ rec | **Add CH-5 regression test (permanent guard).** | CH-5 is safe only by *omission* — nothing stops a future edit from adding `iId`/`batchAllocations` as non-null and reviving the crash class. Add ~2 cases to `ApiContractTest.kt`: order **list** + order **detail** whose `items[]` carry `iId` + `batchAllocations:[{batchNo,qty,costPrice}]`, asserting clean decode + the app's real fields (`quantity`/`salePrice`/`itemId`) still read. Test-only, no production change. |
+| **A3** | ⚠️ med | **Store-switch cart UX (P15 not fully built).** | Backend cart is **store-LOCKED** (pre-existing guard `cart.storeId !== storeId → null`, on `dev` since 2026-03-21). Android cart has **no `iId`** → it can't be store-portable. Two gaps, both newly visible once Chapra opens: (1) switching stores with items in cart shows an **empty cart with no message** (design P15 wanted "removed — not available at this store"); (2) low-likelihood "poisoned cart" — items added while a foreign cart is hidden pile into the stale cart and then **block checkout** in the original store until removed (no bad order placed, just stuck). **Fix:** on store switch, clear the local cart + tell the user; optionally backend `add` starts a fresh cart when the active store differs. Low urgency while stores are geographically far apart. |
+
+### Housekeeping noticed (not Android code)
+- Memory **`android_gson_kotlin_defaults` is partly stale**: it states the backend always re-emits `refunds`
+  via `normalizeRefundFields` in the user order controller — that function has since been **deleted**. Update
+  the memory so a future session doesn't trust a guard that's gone (ties to **A1**).
+
+### Status of the Android column above
+The android cells in CH-1/CH-2/CH-6 are **verified decode-safe** (see "Verified SAFE" above) and CH-5 is
+**decode-safe but left ⏳** pending the **A2** regression test + the **A1** refunds hardening. Flip them to ✅
+when A1/A2 land. CH-3/CH-4 android = `—` (not affected).
+
+---
+
 ## Future changes
 **This file is COMPLETE for inventory-v2** — CH-1…6 cover every shipped backend change (Phases 0–4) with a
 per-client checklist + exact endpoints, and CH-7 covers the one optional P9 item (with its backend prerequisite).
