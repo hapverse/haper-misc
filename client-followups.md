@@ -256,12 +256,21 @@ The android cells in CH-1/CH-2/CH-6 are **verified decode-safe** (see "Verified 
   :app:testDebugUnitTest --tests "*ApiContractTest"` BUILD SUCCESSFUL.
 - **A2 ✅ DONE** (same PR) — `ApiContractTest` now decodes order list + detail with CH-5
   `iId`+`batchAllocations` on the line, and an old order with no `refunds` key.
-- **A3 ⏳ still open** — store-switch cart UX (silent empty cart + poisoned-cart edge). Not done.
+- **A3 ✅ DONE (all clients)** — store-switch cart (P15). **Root fix in backend** `CartRepository.add`
+  (haper-backend **PR #93**, branch `feat/inventory-v2-cart`): when the active store differs from the
+  cart's store, the stale cart is **dropped and a fresh one started** for the new store — kills the
+  "poisoned cart / stuck checkout" edge for every client (+ user cart test, 21 green). Clients:
+  **android PR #31** (shared cart already refetches on switch → badge correct; added a one-time per-store
+  toast); **iOS PR #15** (`selectStore` now also refreshes the cart + a per-store notice — it wasn't
+  refreshing before); **web** = N/A (no store switcher; single nearest-store session).
 - **iOS CH-5 ✅ DONE** (haper-ios **PR #15**, branch `feat/inventory-v2-ios`) — **no model change** (Codable
   already ignores unknown keys + decodes refunds defensively `try? … ?? []`); added decode regression tests.
   Verified: `xcodebuild build-for-testing -sdk iphonesimulator` → TEST BUILD SUCCEEDED (sim runtime out of
   date locally, so tests run in CI). iOS CH-5 cell = ✅; CH-1/CH-2/CH-6 ios still ❓ verify (no shape change).
-- **web** — still ❓ verify (no code change expected; not yet click-tested).
+- **web ✅ verified — no code change needed** — CH-5 order rendering ignores the unknown line fields (JS
+  drops unknown keys) and refunds are already guarded with `Array.isArray(order.refunds)` /
+  `Array.isArray(r.items)` (`pages/OrderDetail.tsx`), so the android A1 risk doesn't exist on web. P15 N/A
+  (no store switcher — `setStoreId` only set once to the nearest store). CH-1/2/6 = same JSON shapes.
 
 ---
 
