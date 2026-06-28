@@ -193,6 +193,7 @@ store to a product is now "assign it" (creates a qty-0 item). All admin-side —
 - Item edit (`PUT /admin/item/:id`): a genuine display-field change on a materialised item → routed to master (super-admin) or **403** (store admin); per-store fields unchanged. `categoryId` now optional.
 - `items.brand`/`items.weight` no longer required at the schema (default ""); the add validator still requires what it did.
 - **Admin note:** the product master endpoints are **JSON-only** (`images` is an array of URL strings — there's no multipart upload on `/admin/product`). The admin Product Master form therefore edits images as **URLs** (existing masters already carry their migrated S3 URLs); true file-upload for the master is deferred (add an upload route + multipart later if needed). `unit` must be one of the stored values (`unit(s)`/`ml`/`L`/`kg`/`g`). `PATCH /admin/product/:id` returns `syncedItems` (how many store projections it fanned out to).
+- **Single-creation-path follow-up (2026-06-29):** the redundant **Add New Item** button on the Items screen was removed (PR hapverse/haper-admin#73 → `dev`) so products are created **only** via Product Master → Add Product → Assign. The Items screen stays edit-only (per-store price/stock/location/barcode). Backend `POST /admin/item` left intact (no longer reached from the UI) — can be role-locked later. Trade-off accepted: single-store add is now two steps (Add Product → Assign to that store).
 
 ---
 

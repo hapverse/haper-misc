@@ -149,7 +149,10 @@ On **Order B**, mark one line out of stock:
    (`action: "order.line.out_of_stock"`, `metadata.oosReason` = the chosen reason,
    `actor.roles: ["picker"]`). Previously a picker-removed line vanished from the order with
    no record — now the removal/short-pick is logged on the order itself, not just the pick
-   task. Verify in the `order_audit_logs` collection (query by `orderDisplayId`).
+   task. **Verify in the admin order modal → "Order Activity" section** (it lists the action,
+   reason, who, and when) — or directly in the `order_audit_logs` collection (by
+   `orderDisplayId`). Note: only rows written *after* the audit logging is deployed appear —
+   orders OOS'd before that have no row.
 
 ### L. Undo a picked line  (feat: undo — needs backend PR #96 deployed)
 1. On a **PICKED** line (full or partial), ✅ an **"Undo — move back to to-do"** button
@@ -194,7 +197,7 @@ On **Order B**, mark one line out of stock:
 | **Partial pick** (prepaid) | wallet credited the shortfall; order line qty reduced; `refundedAmount`/`hasPartialRefund` set; item stock = 0; `order_audit_logs` has `order.line.short_pick` |
 | **Partial pick** (COD) | order total reduced; no wallet credit; item stock = 0; `order_audit_logs` has `order.line.short_pick` |
 | **Out of stock** (prepaid) | item removed from order; wallet refunded full line; item stock = 0; line `oosReason` set; `order_audit_logs` has `order.line.out_of_stock` |
-| **Order audit trail** | every picker-driven removal/reduction has a row in `order_audit_logs` (query by `orderDisplayId`) with `actor.roles: ["picker"]` + reason in `metadata` |
+| **Order audit trail** | every picker-driven removal/reduction shows in the admin order modal's **Order Activity** section (and as a row in `order_audit_logs`, `actor.roles: ["picker"]` + reason in `metadata`) |
 | **Undo a picked line** | task line back to PENDING (`pickedQty` 0, `scanVerified`/override cleared); **no** order/refund change |
 | **Complete** | order PICKING → PACKED (or CANCELED if all OOS) |
 
