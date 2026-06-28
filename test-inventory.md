@@ -11,6 +11,12 @@ guide*. (The apps' own inventory-v2 items — order decoding stays safe, and the
 store-switch cart now resets cleanly — are a separate, minimal checklist in
 `client-followups.md`; only the **customer app** has any real change.)
 
+> **Picker app** changes (scan-gate, OOS reasons, in-app scanner + torch, scan-anything,
+> undo a pick, partial pick, urgency timer) have their **own** end-to-end guide:
+> **`test-picking.md`** — run that on the Android picker app. To exercise it a store needs
+> **picking enabled**: top store-switcher → the store → sidebar **Settings → App/Store
+> Config → "Picker Workflow" → "Enable picking" → Save Store Settings**.
+
 **Golden rule of stock movement:** store stock only changes on a **Stock-In/Adjust**,
 on a **transfer Receive**, or on a **sale**. Creating or dispatching a transfer does
 **not** change store stock — only **Receive** does.
