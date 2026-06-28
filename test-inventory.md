@@ -448,6 +448,22 @@ On **Receive goods**, a line with **₹0 cost** or a **past-dated expiry** shows
   **trace-only**.
 - **Warehouse manager** has the full set above.
 
+### 15j. Warehouse manager sees ALL their options (permission floor + discoverability)
+The manager's capabilities now come from the **role**, not a snapshot saved when the
+account was created — so an older account that pre-dates a permission (e.g.
+`warehouse.receive_goods`) gets it automatically on next login, **no DB change**
+(backend `resolveEffectivePermissions`, haper-backend #98).
+
+After deploying the latest dev backend **and** admin, **fully log out and log back in** as
+the warehouse manager (a plain reload can keep a stale permission cache), then check:
+- ✅ Sidebar shows: **Stock Health, Item Lookup, Replenishment, Transfers, Stock Ledger,
+  Batch Recall, Receive Goods, Warehouses, Suppliers**.
+- ✅ Dashboard shows a **"Receive goods from supplier"** hero button + a **Receive goods**
+  chip in *Jump to*.
+- ✅ Sidebar → **Receive Goods** (new item) → opens **Warehouses** with the warehouse
+  auto-selected and the goods-receipt form already open (`/warehouses?receive=1`).
+- ❌ If any are missing → stale session or stale admin build (see Troubleshooting).
+
 ---
 
 ## Troubleshooting
@@ -466,6 +482,8 @@ On **Receive goods**, a line with **₹0 cost** or a **past-dated expiry** shows
 | Stock Health shows **everything Overstock**, Healthy 0 | Backend not redeployed — fixed so Overstock needs `maxStock > 0` (§15e) |
 | Stock Health / Item Lookup are empty | This warehouse serves **no stores** (no store's serving-warehouse = this one) |
 | Item search 403s inside **New Transfer** (warehouse mgr) | Known pending — uses the `items.view` catalog endpoint (§15b); super admin works |
+| Warehouse mgr missing Replenishment/Transfers/Recall/Receive Goods in sidebar | Stale browser session (perms cached before the floor fix) or admin build behind — **full logout → login** on the latest admin (§15j) |
+| Order modal shows no "Order Activity" trail | Expected if that order had **no** edits/cancels/refunds/picker short-pick-OOS — it now shows a **"No activity recorded yet"** line. Do an item edit/cancel, or test a picker short-pick, to see rows (or open the **Order Activity** page) |
 
 ---
 
