@@ -149,10 +149,14 @@ On **Order B**, mark one line out of stock:
    (`action: "order.line.out_of_stock"`, `metadata.oosReason` = the chosen reason,
    `actor.roles: ["picker"]`). Previously a picker-removed line vanished from the order with
    no record — now the removal/short-pick is logged on the order itself, not just the pick
-   task. **Verify in the admin order modal → "Order Activity" section** (it lists the action,
-   reason, who, and when) — or directly in the `order_audit_logs` collection (by
-   `orderDisplayId`). Note: only rows written *after* the audit logging is deployed appear —
-   orders OOS'd before that have no row.
+   task. **Three ways to view it in admin** (all show it in chronological order):
+   - **Order modal → "Order Activity"** section (lists action, reason, who, when) + an
+     **"Open full page ↗"** link.
+   - **Order list → the history (⟳) icon** next to the eye icon on each row.
+   - **Sidebar → "Order Activity"** page (Sales & Orders): search any order by id / `HP…`
+     display id (`GET /admin/order/audit-trail/:query`).
+   Or directly in the `order_audit_logs` collection (by `orderDisplayId`). Note: only rows
+   written *after* the audit logging is deployed appear — orders OOS'd before that have no row.
 
 ### L. Undo a picked line  (feat: undo — needs backend PR #96 deployed)
 1. On a **PICKED** line (full or partial), ✅ an **"Undo — move back to to-do"** button
