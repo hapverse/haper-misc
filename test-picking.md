@@ -15,9 +15,13 @@ change it exercises.
 
 1. **Backend on dev** with the picking improvements deployed:
    - `oosReason` persistence — haper-backend **PR #95** (merged).
-   - **undo (reset) + partial-pick endpoints** — haper-backend **PR #96** (merged; the dev
-     box must be **deployed** for §J / §L to work). If a step below "does nothing", the dev
-     box is a build behind.
+   - **undo (reset) endpoint** — haper-backend **PR #96** (merged; the dev box must be
+     **deployed** for §L to work).
+   - **partial-pick (short-pick) endpoint + order-audit logging** — haper-backend **new PR**
+     (the `pick` endpoint now accepts a quantity < required and reduces/refunds the line;
+     OOS + short-pick now write an `order_audit_logs` row). Needed for §J and the §K audit
+     check. If "Pick 3 of 5" returns 400 on dev, this PR isn't deployed yet.
+   - If a step below "does nothing", the dev box is a build behind.
    - Health check: `GET https://dapi.haper.in/picking/health` → `200 {"ok":true}`.
    - **Picker-app PRs:** scan-gate / OOS / scanner / scan-anything / urgency = **#1 / #2**
      (merged); **undo** = **#3** (merged); **partial pick (quantity stepper)** = **#4**
@@ -108,7 +112,7 @@ Tap **Scan to verify** (or **Scan to register barcode**):
 2. ✅ The line is **picked but marked un-scanned**; the chip reads **"Picked (no scan)"**.
 3. ✅ It will appear in **Products Without Scan** (§N).
 
-### J. Partial pick (short stock)  (feat: partial pick — needs picker PR #4 + backend PR #96 deployed)
+### J. Partial pick (short stock)  (feat: partial pick — needs picker PR #4 + backend partial-pick PR deployed)
 On **Order A**'s line with quantity ≥ 3 (reveal it first via scan):
 1. ✅ A **quantity stepper** (−/+) shows `qty / required`, defaulting to the full quantity
    (only when required > 1).
@@ -120,8 +124,16 @@ On **Order A**'s line with quantity ≥ 3 (reveal it first via scan):
      price); `refundedAmount` + `hasPartialRefund` set. (COD order: no wallet credit — the
      **total is reduced**.)
    - The item's **stock is forced to 0** (the picker took all that was on the shelf).
+   - An **order-audit row** is written (`action: "order.line.short_pick"`, `metadata`:
+     itemId/pickedQty/shortQty/refundAmount, `actor.roles: ["picker"]`) so the reduction
+     is traceable in the order history — see §K note.
 5. ❌ Try to step **above** required → the **+** is disabled (and the server rejects >
    required). Quantity **0** isn't possible (min 1 — use Out of stock instead).
+
+> ⚠️ **Until the backend partial-pick PR is deployed on dev**, stepping below the required
+> quantity returns **400** ("Picked quantity must be between 1 and the required quantity").
+> The picker UI shipped first (picker PR #4); the backend that *accepts* a short quantity is
+> the new partial-pick PR. If "Pick 3 of 5" errors on dev, the backend box is a build behind.
 
 ### K. Out of stock + reason  (feat: #3/#4/#5/#9)
 On **Order B**, mark one line out of stock:
@@ -133,6 +145,11 @@ On **Order B**, mark one line out of stock:
    a mixed order) and shows **"Reason: <chosen>"**; chip reads **"Out of stock"**.
 5. ✅ Backend: for a **prepaid** order the OOS item is **removed + refunded**; for COD the
    total drops. The reason is persisted (`oosReason`).
+6. ✅ **Audit trail (new):** an **order-audit row** is written
+   (`action: "order.line.out_of_stock"`, `metadata.oosReason` = the chosen reason,
+   `actor.roles: ["picker"]`). Previously a picker-removed line vanished from the order with
+   no record — now the removal/short-pick is logged on the order itself, not just the pick
+   task. Verify in the `order_audit_logs` collection (query by `orderDisplayId`).
 
 ### L. Undo a picked line  (feat: undo — needs backend PR #96 deployed)
 1. On a **PICKED** line (full or partial), ✅ an **"Undo — move back to to-do"** button
@@ -174,9 +191,10 @@ On **Order B**, mark one line out of stock:
 ## Backend verification (admin panel / DB) — spot checks
 | After… | Check |
 |---|---|
-| **Partial pick** (prepaid) | wallet credited the shortfall; order line qty reduced; `refundedAmount`/`hasPartialRefund` set; item stock = 0 |
-| **Partial pick** (COD) | order total reduced; no wallet credit; item stock = 0 |
-| **Out of stock** (prepaid) | item removed from order; wallet refunded full line; item stock = 0; line `oosReason` set |
+| **Partial pick** (prepaid) | wallet credited the shortfall; order line qty reduced; `refundedAmount`/`hasPartialRefund` set; item stock = 0; `order_audit_logs` has `order.line.short_pick` |
+| **Partial pick** (COD) | order total reduced; no wallet credit; item stock = 0; `order_audit_logs` has `order.line.short_pick` |
+| **Out of stock** (prepaid) | item removed from order; wallet refunded full line; item stock = 0; line `oosReason` set; `order_audit_logs` has `order.line.out_of_stock` |
+| **Order audit trail** | every picker-driven removal/reduction has a row in `order_audit_logs` (query by `orderDisplayId`) with `actor.roles: ["picker"]` + reason in `metadata` |
 | **Undo a picked line** | task line back to PENDING (`pickedQty` 0, `scanVerified`/override cleared); **no** order/refund change |
 | **Complete** | order PICKING → PACKED (or CANCELED if all OOS) |
 
@@ -187,8 +205,10 @@ On **Order B**, mark one line out of stock:
 |---|---|
 | Order never appears in Available | Store `pickingEnabled` off, order not OPEN, or wrong `storeId`; orders placed *before* picking was enabled need a backfill |
 | Quantity stepper missing on a line | Picker **PR #4** not merged (partial-pick UI) |
+| "Pick 3 of 5" returns **400** ("must be between 1 and the required quantity") | Backend **partial-pick PR** not deployed on dev (the `pick` endpoint still requires the full qty) |
 | Undo button does nothing / 404 | Backend **PR #96** not deployed on dev (the reset endpoint) |
 | OOS reason not shown in history | Backend `oosReason` (PR #95) not deployed on the running dev build |
+| Item silently gone from an order, no record | Backend **partial-pick PR** not deployed — order-audit logging for OOS/short-pick ships with it |
 | Scanner opens then closes immediately | Camera permission denied — grant it (Settings → app → Permissions) |
 | "Wrong product scanned ✗" on the right item | The item's on-file barcode differs from the physical one — re-enroll via manual entry |
 | Nothing in Products Without Scan | Everything was scan-verified (expected) — do an override pick (§I) to populate it |
