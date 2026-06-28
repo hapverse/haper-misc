@@ -460,8 +460,9 @@ the warehouse manager (a plain reload can keep a stale permission cache), then c
   Batch Recall, Receive Goods, Warehouses, Suppliers**.
 - ✅ Dashboard shows a **"Receive goods from supplier"** hero button + a **Receive goods**
   chip in *Jump to*.
-- ✅ Sidebar → **Receive Goods** (new item) → opens **Warehouses** with the warehouse
-  auto-selected and the goods-receipt form already open (`/warehouses?receive=1`).
+- ✅ Sidebar → **Receive Goods** (new item, route `/receive-goods`) → opens the warehouse
+  stock view with the warehouse auto-selected and the goods-receipt form already open.
+  Only **Receive Goods** highlights in the sidebar (not Warehouses too).
 - ❌ If any are missing → stale session or stale admin build (see Troubleshooting).
 
 ---
