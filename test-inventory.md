@@ -482,7 +482,7 @@ the warehouse manager (a plain reload can keep a stale permission cache), then c
 | Stock Health shows **everything Overstock**, Healthy 0 | Backend not redeployed — fixed so Overstock needs `maxStock > 0` (§15e) |
 | Stock Health / Item Lookup are empty | This warehouse serves **no stores** (no store's serving-warehouse = this one) |
 | Item search 403s inside **New Transfer** (warehouse mgr) | Known pending — uses the `items.view` catalog endpoint (§15b); super admin works |
-| Warehouse mgr missing Replenishment/Transfers/Recall/Receive Goods in sidebar | Stale browser session (perms cached before the floor fix) or admin build behind — **full logout → login** on the latest admin (§15j) |
+| Warehouse mgr missing Replenishment/Transfers/Recall/Receive Goods in sidebar; clicking *Jump to* bounces back | Admin build behind — `hasPermission()` used to deny **all** permission-gated UI for warehouse roles (only manager/support were checked). Fixed in admin `1969703`; deploy latest admin + hard refresh (⇧⌘R). Note role-gated items (Stock Health, Item Lookup, Warehouses, Suppliers) showed fine even while this bug was live |
 | Order modal shows no "Order Activity" trail | Expected if that order had **no** edits/cancels/refunds/picker short-pick-OOS — it now shows a **"No activity recorded yet"** line. Do an item edit/cancel, or test a picker short-pick, to see rows (or open the **Order Activity** page) |
 
 ---
