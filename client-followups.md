@@ -404,6 +404,28 @@ app builds decode it to null/empty and just don't show the card — no crash (me
 
 ---
 
+## CH-9 · Super-admin notification opens a blank Order Details popup — backend + admin DONE
+**Bug (Issue 4):** a super admin gets store push notifications for **every** store. Clicking one deep-links
+to `/orders?orderId=<mongoId>` and opens the Order Details modal. If the super admin had switched their UI
+into a **different** store (the axios interceptor sends `x-store-id`), `GET /admin/order/:id` was scoped to
+that store → the cross-store order returned **null** → the modal showed a **blank shell** (because
+`normalizeOrder(null)` spread null into a truthy empty object, bypassing the `!order` guard).
+**Plain summary:** a super admin can open any store's order from a notification; a missing order shows an
+error, never a blank popup.
+
+| Client | What to do | Status |
+|---|---|---|
+| **backend (do FIRST)** | `getOrder` + `getOrderAudit` (haper-backend `packages/admin/.../order/controller.js`) now treat **super_admin as global** (not scoped to the selected `x-store-id` store); store/manager/support stay scoped to their own store. Tests in `order-detail-scope.test.js`. | ✅ done (dev) |
+| **admin** | `normalizeOrder(null)` now returns **null** (so a missing order can't render as a blank shell); `OrderDetailsModal` clears `order` on a failed/empty fetch → shows its **"Order data could not be loaded."** state instead of blank. (`src/utils/orders.ts`, `src/pages/Orders/OrderDetailsModal.tsx`.) | ✅ done (dev) |
+| **web / android / ios / picker / delivery** | Not affected (admin-only surface). | — |
+
+**Related (not fixed here, flag if it bites):** the same `x-store-id` scoping means a super admin **acting** on a
+cross-store order (mark-status / assign / edit) can still hit "Order not found" via `markOrderAdmin`/`assignOrder`,
+which look up by `req.store`. The **view** is fixed; if cross-store *actions* are needed, switch the super admin's
+store context to the order's store first, or extend the same super-admin-global rule to those handlers.
+
+---
+
 ## Future changes
 **This file is COMPLETE for inventory-v2** — CH-1…6 cover every shipped backend change (Phases 0–4) with a
 per-client checklist + exact endpoints, and CH-7 covers the one optional P9 item (with its backend prerequisite).

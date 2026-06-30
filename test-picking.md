@@ -249,6 +249,21 @@ On **Order B**, mark one line out of stock:
 6. ✅ **Backstop:** if an order somehow reaches **Complete** already empty (e.g. an order stuck from
    before this fix), Complete runs the same full cancel (status/OTP/fees/refund).
 
+### R. Admin (super admin) clicks the OOS browser notification → order opens  (fix: Issue 4)
+> **Why:** the picker OOS/short-pick/cancel fires a **store push** that super admins also receive.
+> Clicking it deep-links to the order and opens the Order Details popup. Before, if the super admin
+> had **switched into a different store** (the app sends `x-store-id`), the order was scoped to that
+> store, came back empty, and the popup rendered **blank**.
+1. As a **super admin**, switch into **Store A** in the admin UI. Have the picker OOS an item on an
+   order that belongs to **Store B** (so a store notification fires).
+2. Click the **browser notification** → it navigates to `/orders?orderId=<id>` and opens the popup.
+3. ✅ The popup shows the **complete** Store-B order details (status, items, customer, bill) — **not**
+   blank — even though the super admin is currently viewing Store A.
+4. ✅ If the order genuinely can't be loaded (deleted / network error), the popup shows
+   **"Order data could not be loaded."** — never an empty shell.
+5. ✅ **Security unchanged:** a **store admin** still cannot open another store's order (scoped out).
+   (Backend: `getOrder`/`getOrderAudit` are global for super_admin only — `order-detail-scope.test.js`.)
+
 ---
 
 ## Negative / edge cases to confirm
