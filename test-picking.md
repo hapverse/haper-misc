@@ -236,6 +236,9 @@ On **Order B**, mark one line out of stock:
    **Out of stock** (§K).
 2. ✅ The order **auto-cancels immediately** (no need to tap Complete): status → **Cancelled**, the
    **pick task auto-completes** (leaves your queue), and a follow-up **Complete** returns **409**.
+   ✅ **Picker app:** the OOS response carries `cancelled: true` → the app shows
+   **"Order cancelled — all items out of stock"** and drops you into **Picking History** (it does
+   NOT reload the finished task with a stale Complete button).
 3. ✅ **Customer app (Orders → that order):**
    - Status shows **Cancelled** (not "Preparing").
    - **No Delivery OTP** (it's cleared — the order isn't deliverable).
