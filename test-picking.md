@@ -204,6 +204,27 @@ On **Order B**, mark one line out of stock:
    builds without the field decode it to null/empty and simply don't show the card (no crash —
    the field is nullable / always-emitted).
 
+### P. Admin assign + close a packed order — notification integrity  (fix: Issue 2, no push on a failed op)
+> **Why:** after a pick the order is **PACKED**; admin then assigns a rider and later closes it.
+> Previously the customer "success" push fired from the DB write hook the instant `status` was
+> written — and the close runs inside a **transaction**, so a "Delivered 🎉" push went out *before
+> commit*. If the close then failed (it could: the invoice number was written without the
+> transaction's session, conflicting with the order's own lock → **"Failed to close"**), the order
+> rolled back to PACKED but the customer was already (wrongly) notified (bug HP50999049, Issue 2).
+1. Pick + complete an order so it is **PACKED** (§J–§M).
+2. **Assign** a rider (Admin → order → assign). ✅ Status → **ASSIGNED**; rider gets the new-job
+   push; customer gets **"Order Assigned 📦"**. (Assign is non-transactional, so it only ever
+   notifies on a write that actually landed.)
+3. **Close** the order (Admin → mark status **Delivered/CLOSED**). ✅ It **succeeds** (no "Failed to
+   close"); status → **CLOSED**; an **invoice number** (`INV-…`) is assigned; customer gets
+   **"Delivered 🎉"** — fired **after** the commit, exactly once.
+4. ❌ **Failure path (the bug):** if a close/assign **fails** on the admin side, the customer must
+   get **NO** push and the order must stay in its prior status. The push is now queued on the DB
+   session and only flushed **after** `commitTransaction()` succeeds — an aborted transaction emits
+   nothing. (Covered by `packages/admin/__tests__/order-close-notification.test.js`.)
+5. ✅ The same post-commit rule applies to **admin cancel**, **user cancel** (1-min window), and the
+   **payment-abandonment cron** — all transactional status writers.
+
 ---
 
 ## Negative / edge cases to confirm
@@ -231,6 +252,8 @@ On **Order B**, mark one line out of stock:
 | **Customer-visible change** (any payment method) | the **order** has an `adjustments[]` entry (`reason` short_pick/out_of_stock, `originalQty`→`newQty`); the **customer app order details** shows the "Changes while preparing your order" card. This is the ONLY in-app record for COD (no refund entry). |
 | **Undo a picked line** | task line back to PENDING (`pickedQty` 0, `scanVerified`/override cleared); **no** order/refund change |
 | **Complete** | order PICKING → PACKED (or CANCELED if all OOS) |
+| **Close a PACKED order** | succeeds (no "Failed to close"); status CLOSED; `invoiceNumber` (`INV-…`) set **post-commit**; customer "Delivered 🎉" push fires **once, after commit** |
+| **Any failed/rolled-back status op** (close, assign, cancel) | order keeps its prior status **and** the customer gets **no** push — order-status pushes are queued on the txn session and flushed only after a successful commit (`order-event.utils.js`) |
 
 ---
 
@@ -243,6 +266,7 @@ On **Order B**, mark one line out of stock:
 | Undo button does nothing / 404 | Backend **PR #96** not deployed on dev (the reset endpoint) |
 | OOS reason not shown in history | Backend `oosReason` (PR #95) not deployed on the running dev build |
 | Item silently gone from an order, no record | Backend **partial-pick PR** not deployed — order-audit logging for OOS/short-pick ships with it |
+| **"Failed to close"** on a packed order + customer still got "Delivered" | Pre-Issue-2 build: invoice number was written inside the close transaction (no session) → conflict; and the push fired from the DB hook before commit. Fixed — invoice gen + pushes now run **post-commit** (`order-event.utils.js`, `order.handler.js`). |
 | Scanner opens then closes immediately | Camera permission denied — grant it (Settings → app → Permissions) |
 | "Wrong product scanned ✗" on the right item | The item's on-file barcode differs from the physical one — re-enroll via manual entry |
 | Nothing in Products Without Scan | Everything was scan-verified (expected) — do an override pick (§I) to populate it |
