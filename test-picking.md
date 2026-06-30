@@ -176,7 +176,9 @@ On **Order B**, mark one line out of stock:
 2. ✅ Toast "Picking complete — ready for dispatch"; you're taken to **Picking History**
    and the just-completed order is **visible immediately** (no manual tab reload).
 3. ✅ Open it from history → OOS lines still show their **reason** (§K).
-4. ✅ Admin side: order status is **PACKED** (or **CANCELED** if every line went OOS).
+4. ✅ Admin side: order status is **PACKED**. (If **every** line went OOS the order is already
+   **CANCELED** — it auto-cancels the moment the last item is OOS'd, see §Q — so you won't be
+   completing an empty order in the normal flow.)
 
 ### N. Products Without Scan report  (feat: #6)
 1. From the task-list top bar, tap the **audit icon** (Products without scan).
@@ -225,6 +227,28 @@ On **Order B**, mark one line out of stock:
 5. ✅ The same post-commit rule applies to **admin cancel**, **user cancel** (1-min window), and the
    **payment-abandonment cron** — all transactional status writers.
 
+### Q. All items out of stock → the order auto-cancels  (fix: Issue 3)
+> **Why:** before this, OOS'ing the **only** item left the order stranded in **Preparing** with an
+> empty Items list, a live **Delivery OTP**, and a phantom **₹2** (delivery + platform) bill — even
+> though there was nothing to deliver (bug HP70989050). Now an order that loses its **last** item
+> cancels itself the instant that item is marked OOS.
+1. Place an order with a **single** item (or a few). In the picker, mark the last remaining item
+   **Out of stock** (§K).
+2. ✅ The order **auto-cancels immediately** (no need to tap Complete): status → **Cancelled**, the
+   **pick task auto-completes** (leaves your queue), and a follow-up **Complete** returns **409**.
+3. ✅ **Customer app (Orders → that order):**
+   - Status shows **Cancelled** (not "Preparing").
+   - **No Delivery OTP** (it's cleared — the order isn't deliverable).
+   - **Bill is ₹0** — delivery + platform fees are zeroed (not the misleading ₹2).
+   - The **"Changes while preparing your order"** card (§O) shows the item **Removed — Out of stock**.
+4. ✅ **Money:** **COD** → nothing was collected, nothing to refund (bill just goes to ₹0).
+   **Prepaid** → the wallet is refunded **everything**, including the delivery + platform fees (each
+   item's amount was already refunded as its line went OOS; the cancel adds back the leftover fees).
+5. ✅ A **multi-item** order stays **active** (PICKING) while it still has at least one item — it only
+   cancels on the OOS that removes the **last** one.
+6. ✅ **Backstop:** if an order somehow reaches **Complete** already empty (e.g. an order stuck from
+   before this fix), Complete runs the same full cancel (status/OTP/fees/refund).
+
 ---
 
 ## Negative / edge cases to confirm
@@ -251,7 +275,8 @@ On **Order B**, mark one line out of stock:
 | **Order audit trail** | every picker-driven removal/reduction shows in the admin order modal's **Order Activity** section (and as a row in `order_audit_logs`, `actor.roles: ["picker"]` + reason in `metadata`) |
 | **Customer-visible change** (any payment method) | the **order** has an `adjustments[]` entry (`reason` short_pick/out_of_stock, `originalQty`→`newQty`); the **customer app order details** shows the "Changes while preparing your order" card. This is the ONLY in-app record for COD (no refund entry). |
 | **Undo a picked line** | task line back to PENDING (`pickedQty` 0, `scanVerified`/override cleared); **no** order/refund change |
-| **Complete** | order PICKING → PACKED (or CANCELED if all OOS) |
+| **Complete** | order PICKING → PACKED (all-OOS orders are already CANCELED from §Q) |
+| **All items OOS** (Issue 3) | order auto-**CANCELED** on the last OOS; `deliveryOtp` **null**; `price`/`actualOrderValue`/`charges.*` all **0**; pick task COMPLETED; **prepaid** wallet refunded incl. delivery+platform fees; **COD** no refund (`refunds[]` empty) |
 | **Close a PACKED order** | succeeds (no "Failed to close"); status CLOSED; `invoiceNumber` (`INV-…`) set **post-commit**; customer "Delivered 🎉" push fires **once, after commit** |
 | **Any failed/rolled-back status op** (close, assign, cancel) | order keeps its prior status **and** the customer gets **no** push — order-status pushes are queued on the txn session and flushed only after a successful commit (`order-event.utils.js`) |
 
@@ -267,6 +292,7 @@ On **Order B**, mark one line out of stock:
 | OOS reason not shown in history | Backend `oosReason` (PR #95) not deployed on the running dev build |
 | Item silently gone from an order, no record | Backend **partial-pick PR** not deployed — order-audit logging for OOS/short-pick ships with it |
 | **"Failed to close"** on a packed order + customer still got "Delivered" | Pre-Issue-2 build: invoice number was written inside the close transaction (no session) → conflict; and the push fired from the DB hook before commit. Fixed — invoice gen + pushes now run **post-commit** (`order-event.utils.js`, `order.handler.js`). |
+| All-OOS order **stuck in "Preparing"** with an OTP + a ₹2 (fees-only) bill | Pre-Issue-3 build: OOS'ing the last item left the order in PICKING (it only cancelled if the picker tapped Complete, and even then fees/OTP weren't cleared). Fixed — the order now auto-cancels on the last OOS (`cancelEmptiedOrder`). **Already-stuck orders** (e.g. HP70989050) need a one-off resolve: have the picker tap **Complete** (runs the backstop cancel) or cancel from Admin. |
 | Scanner opens then closes immediately | Camera permission denied — grant it (Settings → app → Permissions) |
 | "Wrong product scanned ✗" on the right item | The item's on-file barcode differs from the physical one — re-enroll via manual entry |
 | Nothing in Products Without Scan | Everything was scan-verified (expected) — do an override pick (§I) to populate it |
