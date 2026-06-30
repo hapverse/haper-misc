@@ -377,6 +377,33 @@ unrelated to any warehouse-manager change. Pre-existing, worth a separate look.
 
 ---
 
+## CH-8 · Customer-visible picking quantity changes (`order.adjustments[]`) — backend + android + ios + web DONE
+**Bug:** a picker short-pick / out-of-stock only showed in **Admin → Order Activity**. For a **COD** order
+(no refund entry) the customer app showed the new lower quantity with **no indication it had changed** —
+the user had no visibility (reported on order **HP50999049**). Push notifications exist but are
+fire-and-forget (no in-app inbox), so a missed push left no record.
+**Backend:** ✅ on `dev` — new nullable, always-emitted `adjustments[]` on the order
+(`itemId, name, originalQty, newQty, reason, note, at`). Written by the picking short-pick + OOS paths
+(via `applyItemEdit`'s opt-in `adjustment` param) for **every** payment method — folded into the same
+single atomic order write as the refund. Admin edit path unchanged (doesn't pass `adjustment`).
+Returned by `getOne`/`getAll` automatically (exclusion projection). Tests in `packages/picking`.
+**Plain summary:** the order now carries a durable "what changed during picking" list the customer app reads.
+
+| Client | What to do | Status |
+|---|---|---|
+| **backend (do FIRST)** | `adjustments[]` on orders schema; record in `shared/utils/order-edit.utils.js` (gated by `adjustment` param); pass it from `packages/picking/.../task/controller.js` short-pick + OOS. Nullable/defaulted = Gson-safe. | ✅ done (dev) |
+| **android** | Order model: `adjustments: List<OrderAdjustment>?` (nullable, A1). OrderDetailScreen: "Changes while preparing your order" card (Qty X → Y / Removed + reason), above Wallet refunds. | ✅ done (dev) |
+| **ios** | `OrderAdjustment` struct + `adjustments` on `Order` (decode-safe `?? []`); `adjustmentsCard` in OrderDetailView above the refunds card. Builds clean. | ✅ done (dev) |
+| **web** | `OrderAdjustment` in `types.ts` + `adjustments?` on `Order`; amber "Changes while preparing your order" section in `pages/OrderDetail.tsx` above Wallet refunds. `tsc` clean. | ✅ done (dev) |
+| **admin** | **Not needed** — admin already surfaces these picker changes (richer: before/after, who, when, reason) via the **Order Activity** audit trail: order modal section + `/order-activity` page + order-list history icon (`OrderDetailsModal.tsx`, `OrderActivityPage.tsx`, `orderAudit.ts`). No customer-style card added. | — |
+| **picker / delivery** | Not affected (this is a customer-facing surface). | — |
+
+**Decode-safety:** `adjustments` is always emitted (`default: []`) and declared nullable on clients, so old
+app builds decode it to null/empty and just don't show the card — no crash (memory `android_gson_kotlin_defaults`).
+**Test guide:** `haper-misc/test-picking.md` §O + verification table.
+
+---
+
 ## Future changes
 **This file is COMPLETE for inventory-v2** — CH-1…6 cover every shipped backend change (Phases 0–4) with a
 per-client checklist + exact endpoints, and CH-7 covers the one optional P9 item (with its backend prerequisite).

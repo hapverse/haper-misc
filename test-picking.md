@@ -127,6 +127,9 @@ On **Order A**'s line with quantity ≥ 3 (reveal it first via scan):
    - An **order-audit row** is written (`action: "order.line.short_pick"`, `metadata`:
      itemId/pickedQty/shortQty/refundAmount, `actor.roles: ["picker"]`) so the reduction
      is traceable in the order history — see §K note.
+   - **NEW — customer sees it:** an `adjustments[]` entry is written **on the order**
+     (`reason: "short_pick"`, `originalQty` → `newQty`) for **every** payment method — so the
+     **customer app** shows it, not just admin. Verify in §O.
 5. ❌ Try to step **above** required → the **+** is disabled (and the server rejects >
    required). Quantity **0** isn't possible (min 1 — use Out of stock instead).
 
@@ -157,6 +160,9 @@ On **Order B**, mark one line out of stock:
      display id (`GET /admin/order/audit-trail/:query`).
    Or directly in the `order_audit_logs` collection (by `orderDisplayId`). Note: only rows
    written *after* the audit logging is deployed appear — orders OOS'd before that have no row.
+7. ✅ **NEW — customer sees it:** an `adjustments[]` entry is written **on the order**
+   (`reason: "out_of_stock"`, `newQty: 0` = removed) so the **customer app** shows the removal,
+   not just admin. Verify in §O.
 
 ### L. Undo a picked line  (feat: undo — needs backend PR #96 deployed)
 1. On a **PICKED** line (full or partial), ✅ an **"Undo — move back to to-do"** button
@@ -177,6 +183,26 @@ On **Order B**, mark one line out of stock:
 2. ✅ It lists every line you **picked via override / without a scan** across your **active
    + completed** pickings, each with the order id, qty, and an **Active / Completed** chip.
 3. ✅ If everything was scan-verified, it shows "Every product was scan-verified…".
+
+### O. Customer sees the change in their order  (feat: order adjustments — needs backend adjustments PR + android build with the change)
+> **Why:** before this, a picker short-pick / OOS only showed in **Admin → Order Activity**.
+> For a **COD** order there was **no refund entry**, so the customer app showed the new lower
+> quantity with **no indication it had changed** — they had no visibility (original bug
+> HP50999049). Now the change is recorded on the order itself (`adjustments[]`) for **every**
+> payment method and rendered in the customer app.
+1. Place a **COD** order with an item at qty ≥ 2, then short-pick it (§J) or mark it OOS (§K).
+2. Open the **customer app → Orders → that order's details**.
+3. ✅ A **"Changes while preparing your order"** card appears (above Wallet refunds), listing
+   each changed item with a badge: **"Qty 3 → 1"** for a reduction, **"Removed"** for OOS, plus
+   a plain-language reason ("Reduced — limited stock available" / "Out of stock — removed…").
+4. ✅ **Prepaid** order: the card shows **and** the existing "Wallet refunds" card shows (the
+   refund is the money-back; the adjustments card is the what-changed). COD: only the
+   adjustments card (no money moved).
+5. ✅ A **full** pick (no short/OOS) adds **no** card (nothing changed).
+6. ✅ **Android, iOS, and web** all render this card (same copy + "Qty X → Y" / "Removed" badge).
+   **Admin** doesn't need it — it already shows the change (richer) in **Order Activity**. Old app
+   builds without the field decode it to null/empty and simply don't show the card (no crash —
+   the field is nullable / always-emitted).
 
 ---
 
@@ -202,6 +228,7 @@ On **Order B**, mark one line out of stock:
 | **Partial pick** (COD) | order total reduced; no wallet credit; item stock = 0; `order_audit_logs` has `order.line.short_pick` |
 | **Out of stock** (prepaid) | item removed from order; wallet refunded full line; item stock = 0; line `oosReason` set; `order_audit_logs` has `order.line.out_of_stock` |
 | **Order audit trail** | every picker-driven removal/reduction shows in the admin order modal's **Order Activity** section (and as a row in `order_audit_logs`, `actor.roles: ["picker"]` + reason in `metadata`) |
+| **Customer-visible change** (any payment method) | the **order** has an `adjustments[]` entry (`reason` short_pick/out_of_stock, `originalQty`→`newQty`); the **customer app order details** shows the "Changes while preparing your order" card. This is the ONLY in-app record for COD (no refund entry). |
 | **Undo a picked line** | task line back to PENDING (`pickedQty` 0, `scanVerified`/override cleared); **no** order/refund change |
 | **Complete** | order PICKING → PACKED (or CANCELED if all OOS) |
 
