@@ -128,10 +128,15 @@ This puts stock into the warehouse.
 3. Add a line:
    - **SKU/Barcode** — a code you'll also set as the store item's barcode, e.g. `PB001`.
    - **Name** (e.g. `Peanut Butter 500g`), **Batch no.** (leave blank = auto, or type
-     the supplier's, e.g. `LOT-A`), **Cost / unit**, **Expiry**, **Qty** (e.g. `100`).
+     the supplier's, e.g. `LOT-A`), **Cost / unit (₹) — required, > 0**, **Expiry**,
+     **Qty** (e.g. `100`).
 4. **Receive**.
 
 ✅ Warehouse stock shows `PB001 … Available 100`.
+❌ Leave **Cost / unit** blank (or `0`) on any line → **blocked** with "Enter a cost /
+   unit (₹) greater than 0 for every line" (FE toast; backend also rejects with **400**).
+   Cost is mandatory because it becomes the store's cost price (weighted-average) the
+   moment the lot is transferred (CH-3).
 ✅ Receive the **same SKU + same batch no.** again (e.g. 50) → quantity becomes **150**
    (merged into the lot, no duplicate).
 ✅ Stock table columns: **Available / Reserved / In-transit / Free-to-promise** (CH-4)
@@ -370,7 +375,8 @@ CRUD, **no** Approve/Reject/Fulfil, **no** write-off, and Batch Recall is **trac
 - **Edit catalogue fields on an item as a store admin** → read-only (CH-6).
 - **Warehouse write-off above on-hand** → 400, stock untouched (#3).
 - **Stock Health / Item Lookup into a non-served store** → 403 (scoped to served stores).
-- **Goods-receipt line with ₹0 cost or a past expiry** → warning before save (#10/#11).
+- **Goods-receipt line with ₹0 / blank cost** → **blocked** (mandatory, FE toast + backend 400).
+- **Goods-receipt line with a past expiry** → warning before save (#11).
 - **Warehouse staff** opening New/Edit/Delete warehouse, Approve/Reject/Fulfil, or Write-off →
   the buttons aren't shown (permission-gated, not just role) (#9).
 - **Turn on batch tracking on a warehouse/store that already has stock** (B1) → it **seeds the
@@ -437,9 +443,11 @@ dropdowns list every category/sub-category present, with item counts).
 Replenishment → a PENDING request → **Reject** → you're prompted for a **reason** (and an approve
 note on a partial approval); the requesting store sees that warehouse note on the request.
 
-### 15h. Goods-receipt warnings  (#10/#11)
-On **Receive goods**, a line with **₹0 cost** or a **past-dated expiry** shows a warning before save
-(catches a poisoned weighted-avg cost / already-expired stock).
+### 15h. Goods-receipt: mandatory cost + expiry warning  (#10/#11)
+On **Receive goods**, **Cost / unit (₹) is required and must be > 0** — a blank/₹0 line is
+**blocked** (FE toast + backend 400), because that cost becomes the store's cost price
+(weighted-average) on transfer. A **past-dated expiry** still shows a warning before save
+(already-expired stock) but does not block.
 
 ### 15i. Staff vs manager  (#8/#9)
 - **Warehouse staff** can now **view Warehouses + stock** and **Receive goods** (previously a 403
