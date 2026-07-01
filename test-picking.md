@@ -303,7 +303,7 @@ On **Order B**, mark one line out of stock:
 ## Troubleshooting
 | Symptom | Likely cause |
 |---|---|
-| Order never appears in Available | Store `pickingEnabled` off, order not OPEN, or wrong `storeId`; orders placed *before* picking was enabled need a backfill |
+| Order never appears in Available | Store `pickingEnabled` off, order not OPEN, or wrong `storeId`. A dropped pick task (checkout creates it best-effort) now **self-heals within ~1 min** via the `pick-task-reconcile` cron — any OPEN order on a picking store with no task gets one automatically. If it's still missing after a couple minutes, check `pickingEnabled` + that the cron service is running. |
 | Quantity stepper missing on a line | Picker **PR #4** not merged (partial-pick UI) |
 | "Pick 3 of 5" returns **400** ("must be between 1 and the required quantity") | Backend **partial-pick PR** not deployed on dev (the `pick` endpoint still requires the full qty) |
 | Undo button does nothing / 404 | Backend **PR #96** not deployed on dev (the reset endpoint) |
