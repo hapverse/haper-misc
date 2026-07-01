@@ -426,6 +426,28 @@ store context to the order's store first, or extend the same super-admin-global 
 
 ---
 
+## CH-10 · Editing item quantity on a batch store did nothing (showed stock but OOS) — backend + admin DONE
+**Bug:** on a store with `config.batchesEnabled=true`, an item's `quantity` is a **derived rollup of its batches**
+(`Σ qtyRemaining`, recomputed by the ledger) and orders consume **batches** via FEFO. Editing quantity on the
+**item-edit form** (`PUT /admin/item/:id`, plain `$set quantity`) set a number backed by **no sellable batch**
+→ the item showed stock but was **OOS at order time**, and the next rollup reset it. Stock must go through
+**Stock In** (`PATCH /admin/item/:id/quantity`), which creates a real batch.
+**Plain summary:** on batch stores, the edit-form quantity is now ignored (backend) and locked (admin UI); use Stock In.
+
+| Client | What to do | Status |
+|---|---|---|
+| **backend** | `updateItem` (`packages/admin/.../items/controller.js`) strips `quantity` from the edit when `StoreBatchRepository.isStoreBatchEnabled(storeId)` — non-batch stores unchanged. Tests in `items.test.js`. | ✅ done (dev) |
+| **admin** | `ItemModal` fetches the active store's `config.batchesEnabled` and, when on, renders the Quantity field **read-only** with a hint pointing to **Stock In** (`src/pages/Items/ItemModal.tsx`). Best-effort; backend is the authoritative guard. | ✅ done (dev) |
+| **web / android / ios / picker / delivery** | Not affected (admin-only surface). | — |
+
+**Batch visibility (answer to the follow-up):** store-level batches are shown **only in the Warehouse section** —
+Item Lookup (`/admin/warehouse/:wid/items/:itemId/batches`), Stock Health, and **Batch Recall** (`/recall`) — gated
+by `WAREHOUSE.VIEW_LEDGER`. So **super_admin** and **warehouse_manager** can see batches there; a **store_admin**
+(Items screens only) currently has **no batch viewer**. A store-facing "batches for this item" panel on the item
+detail would close that gap — not built yet.
+
+---
+
 ## Future changes
 **This file is COMPLETE for inventory-v2** — CH-1…6 cover every shipped backend change (Phases 0–4) with a
 per-client checklist + exact endpoints, and CH-7 covers the one optional P9 item (with its backend prerequisite).
