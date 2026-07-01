@@ -266,6 +266,16 @@ First make the link: **Items → the item → set Barcode = `PB001`** (same as t
 5. **Stock Ledger** → a `TRANSFER_OUT` (warehouse, −30) and `TRANSFER_IN` (store, +30),
    both with the **Batch** column populated.
 
+### 8c. Short receive → shrinkage (partial receive)  (CH-3, CH-4)
+On **Receive**, each line has an editable **Received** qty. Enter **less** than dispatched
+(e.g. dispatched 30, receive **28**) → **Receive**.
+✅ Store rises by **28** only; warehouse already lost the full **30** at dispatch (in-transit clears).
+✅ The **2 missing units are shrinkage** — NOT returned to the warehouse and NOT added to the
+   store; reconcile them at the next physical stock-take.
+✅ Transfer closes as **RECEIVED** with the line showing `dispatched 30 / received 28`
+   (highlighted yellow in the Transfers list). The linked request is marked **FULFILLED**.
+✅ The shortfall shows up in the **Transfer Discrepancies** report (§12b).
+
 ---
 
 ## 9. Per-store category On/Off  *(store admin)*  (CH-1)
@@ -338,6 +348,21 @@ After a few **sales** exist in the store (place test orders, or use POS → New 
    **All Stores** → the same product is **merged across stores**.
 3. Sidebar → **Most Sold** → in **All Stores** mode there's a **"Merge same product
    across stores"** toggle.
+
+### 12b. Transfer Discrepancies report — short receipts  *(super admin / warehouse manager / store admin)*
+Sidebar → **Inventory & Warehouse → Transfer Discrepancies**. Read-only; nothing is corrected here.
+1. Do a **short receive** first (§8c) so there's data.
+2. Open the report.
+   ✅ One row per short line: **Transfer · Received date · Warehouse · Store · Item(SKU) ·
+   Dispatched · Received · Short · Cost/unit · Loss ₹ · Dispatched by · Received by**.
+   ✅ **Cost/unit** = the weighted-average of the dispatched lots; **Loss ₹** = short × cost.
+   ✅ Top cards: **short lines**, **total units short**, **estimated loss value**.
+   ✅ **From/To** date filter (on the received date) + **Export CSV**.
+   ✅ A **fully-received** transfer does **not** appear (only shortfalls).
+3. **Scope check:**
+   - **Warehouse manager** → only their warehouse's short receipts.
+   - **Store admin** → only their store's.
+   - **Super admin** → all stores + warehouses (Warehouse/Store columns tell them apart).
 
 ---
 
