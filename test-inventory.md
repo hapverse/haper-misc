@@ -125,14 +125,23 @@ This puts stock into the warehouse.
 
 1. Sidebar → **Warehouses** → select the warehouse → **+ Receive goods**.
 2. (Optional) supplier + invoice number.
-3. Add a line:
-   - **SKU/Barcode** — a code you'll also set as the store item's barcode, e.g. `PB001`.
-   - **Name** (e.g. `Peanut Butter 500g`), **Batch no.** (leave blank = auto, or type
-     the supplier's, e.g. `LOT-A`), **Cost / unit (₹) — required, > 0**, **Expiry**,
-     **Qty** (e.g. `100`).
+3. **Add a product** — use the **"Add a product (search the catalog by name or barcode)"**
+   box. Type e.g. `Peanut Butter` (or a barcode) → pick the product from the dropdown.
+   This **auto-fills** the line's **SKU/Barcode** (= that product's barcode) and **Name**,
+   so the warehouse SKU always matches a real item (the SKU **is** the barcode in Haper —
+   the same value the picker scan-gate and transfers use). You then fill only:
+   - **Batch no.** (leave blank = auto, or type the supplier's, e.g. `LOT-A`),
+     **Cost / unit (₹) — required, > 0**, **Expiry**, **Qty** (e.g. `100`).
+   - *Uncatalogued goods:* you can still **type** SKU/Barcode + Name manually in the grid.
 4. **Receive**.
 
-✅ Warehouse stock shows `PB001 … Available 100`.
+✅ Searching a product by **name or barcode** returns matches; picking one fills
+   **SKU/Barcode + Name** for you. The same product served to several stores appears
+   **once** (deduped by barcode).
+✅ Warehouse stock shows the picked barcode … `Available 100` (SKU column = the barcode).
+❌ Try to pick a product that has **no barcode enrolled** → toast "… has no barcode/SKU
+   yet — enroll one on the item first" and **no line is added** (matches the transfer rule).
+✅ Pick the **same product twice** → toast "… is already on the list" (no duplicate line).
 ❌ Leave **Cost / unit** blank (or `0`) on any line → **blocked** with "Enter a cost /
    unit (₹) greater than 0 for every line" (FE toast; backend also rejects with **400**).
    Cost is mandatory because it becomes the store's cost price (weighted-average) the
