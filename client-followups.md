@@ -193,6 +193,7 @@ store to a product is now "assign it" (creates a qty-0 item). All admin-side —
 - Item edit (`PUT /admin/item/:id`): a genuine display-field change on a materialised item → routed to master (super-admin) or **403** (store admin); per-store fields unchanged. `categoryId` now optional.
 - `items.brand`/`items.weight` no longer required at the schema (default ""); the add validator still requires what it did.
 - **Admin note:** the product master endpoints are **JSON-only** (`images` is an array of URL strings — there's no multipart upload on `/admin/product`). The admin Product Master form therefore edits images as **URLs** (existing masters already carry their migrated S3 URLs); true file-upload for the master is deferred (add an upload route + multipart later if needed). `unit` must be one of the stored values (`unit(s)`/`ml`/`L`/`kg`/`g`). `PATCH /admin/product/:id` returns `syncedItems` (how many store projections it fanned out to).
+- **Single-creation-path follow-up (2026-06-29):** the redundant **Add New Item** button on the Items screen was removed (PR hapverse/haper-admin#73 → `dev`) so products are created **only** via Product Master → Add Product → Assign. The Items screen stays edit-only (per-store price/stock/location/barcode). Backend `POST /admin/item` left intact (no longer reached from the UI) — can be role-locked later. Trade-off accepted: single-store add is now two steps (Add Product → Assign to that store).
 
 ---
 
@@ -373,6 +374,77 @@ FEFO write-off** (txn + FEFO + roll-up) and the **COUNT→MANUAL_ADJUST** reason
 full admin suite has an **intermittent isolation flake** in `health.test.js` — one run showed it 401-ing,
 a re-run was fully green (37 suites / 715 tests) and it passes **16/16 in isolation**; the failing case is
 unrelated to any warehouse-manager change. Pre-existing, worth a separate look.
+
+---
+
+## CH-8 · Customer-visible picking quantity changes (`order.adjustments[]`) — backend + android + ios + web DONE
+**Bug:** a picker short-pick / out-of-stock only showed in **Admin → Order Activity**. For a **COD** order
+(no refund entry) the customer app showed the new lower quantity with **no indication it had changed** —
+the user had no visibility (reported on order **HP50999049**). Push notifications exist but are
+fire-and-forget (no in-app inbox), so a missed push left no record.
+**Backend:** ✅ on `dev` — new nullable, always-emitted `adjustments[]` on the order
+(`itemId, name, originalQty, newQty, reason, note, at`). Written by the picking short-pick + OOS paths
+(via `applyItemEdit`'s opt-in `adjustment` param) for **every** payment method — folded into the same
+single atomic order write as the refund. Admin edit path unchanged (doesn't pass `adjustment`).
+Returned by `getOne`/`getAll` automatically (exclusion projection). Tests in `packages/picking`.
+**Plain summary:** the order now carries a durable "what changed during picking" list the customer app reads.
+
+| Client | What to do | Status |
+|---|---|---|
+| **backend (do FIRST)** | `adjustments[]` on orders schema; record in `shared/utils/order-edit.utils.js` (gated by `adjustment` param); pass it from `packages/picking/.../task/controller.js` short-pick + OOS. Nullable/defaulted = Gson-safe. | ✅ done (dev) |
+| **android** | Order model: `adjustments: List<OrderAdjustment>?` (nullable, A1). OrderDetailScreen: "Changes while preparing your order" card (Qty X → Y / Removed + reason), above Wallet refunds. | ✅ done (dev) |
+| **ios** | `OrderAdjustment` struct + `adjustments` on `Order` (decode-safe `?? []`); `adjustmentsCard` in OrderDetailView above the refunds card. Builds clean. | ✅ done (dev) |
+| **web** | `OrderAdjustment` in `types.ts` + `adjustments?` on `Order`; amber "Changes while preparing your order" section in `pages/OrderDetail.tsx` above Wallet refunds. `tsc` clean. | ✅ done (dev) |
+| **admin** | **Not needed** — admin already surfaces these picker changes (richer: before/after, who, when, reason) via the **Order Activity** audit trail: order modal section + `/order-activity` page + order-list history icon (`OrderDetailsModal.tsx`, `OrderActivityPage.tsx`, `orderAudit.ts`). No customer-style card added. | — |
+| **picker / delivery** | Not affected (this is a customer-facing surface). | — |
+
+**Decode-safety:** `adjustments` is always emitted (`default: []`) and declared nullable on clients, so old
+app builds decode it to null/empty and just don't show the card — no crash (memory `android_gson_kotlin_defaults`).
+**Test guide:** `haper-misc/test-picking.md` §O + verification table.
+
+---
+
+## CH-9 · Super-admin notification opens a blank Order Details popup — backend + admin DONE
+**Bug (Issue 4):** a super admin gets store push notifications for **every** store. Clicking one deep-links
+to `/orders?orderId=<mongoId>` and opens the Order Details modal. If the super admin had switched their UI
+into a **different** store (the axios interceptor sends `x-store-id`), `GET /admin/order/:id` was scoped to
+that store → the cross-store order returned **null** → the modal showed a **blank shell** (because
+`normalizeOrder(null)` spread null into a truthy empty object, bypassing the `!order` guard).
+**Plain summary:** a super admin can open any store's order from a notification; a missing order shows an
+error, never a blank popup.
+
+| Client | What to do | Status |
+|---|---|---|
+| **backend (do FIRST)** | `getOrder` + `getOrderAudit` (haper-backend `packages/admin/.../order/controller.js`) now treat **super_admin as global** (not scoped to the selected `x-store-id` store); store/manager/support stay scoped to their own store. Tests in `order-detail-scope.test.js`. | ✅ done (dev) |
+| **admin** | `normalizeOrder(null)` now returns **null** (so a missing order can't render as a blank shell); `OrderDetailsModal` clears `order` on a failed/empty fetch → shows its **"Order data could not be loaded."** state instead of blank. (`src/utils/orders.ts`, `src/pages/Orders/OrderDetailsModal.tsx`.) | ✅ done (dev) |
+| **web / android / ios / picker / delivery** | Not affected (admin-only surface). | — |
+
+**Related (not fixed here, flag if it bites):** the same `x-store-id` scoping means a super admin **acting** on a
+cross-store order (mark-status / assign / edit) can still hit "Order not found" via `markOrderAdmin`/`assignOrder`,
+which look up by `req.store`. The **view** is fixed; if cross-store *actions* are needed, switch the super admin's
+store context to the order's store first, or extend the same super-admin-global rule to those handlers.
+
+---
+
+## CH-10 · Editing item quantity on a batch store did nothing (showed stock but OOS) — backend + admin DONE
+**Bug:** on a store with `config.batchesEnabled=true`, an item's `quantity` is a **derived rollup of its batches**
+(`Σ qtyRemaining`, recomputed by the ledger) and orders consume **batches** via FEFO. Editing quantity on the
+**item-edit form** (`PUT /admin/item/:id`, plain `$set quantity`) set a number backed by **no sellable batch**
+→ the item showed stock but was **OOS at order time**, and the next rollup reset it. Stock must go through
+**Stock In** (`PATCH /admin/item/:id/quantity`), which creates a real batch.
+**Plain summary:** on batch stores, the edit-form quantity is now ignored (backend) and locked (admin UI); use Stock In.
+
+| Client | What to do | Status |
+|---|---|---|
+| **backend** | `updateItem` (`packages/admin/.../items/controller.js`) strips `quantity` from the edit when `StoreBatchRepository.isStoreBatchEnabled(storeId)` — non-batch stores unchanged. Tests in `items.test.js`. | ✅ done (dev) |
+| **admin** | `ItemModal` fetches the active store's `config.batchesEnabled` and, when on, renders the Quantity field **read-only** with a hint pointing to **Stock In** (`src/pages/Items/ItemModal.tsx`). Best-effort; backend is the authoritative guard. | ✅ done (dev) |
+| **web / android / ios / picker / delivery** | Not affected (admin-only surface). | — |
+
+**Batch visibility (answer to the follow-up):** store-level batches are shown **only in the Warehouse section** —
+Item Lookup (`/admin/warehouse/:wid/items/:itemId/batches`), Stock Health, and **Batch Recall** (`/recall`) — gated
+by `WAREHOUSE.VIEW_LEDGER`. So **super_admin** and **warehouse_manager** can see batches there; a **store_admin**
+(Items screens only) currently has **no batch viewer**. A store-facing "batches for this item" panel on the item
+detail would close that gap — not built yet.
 
 ---
 

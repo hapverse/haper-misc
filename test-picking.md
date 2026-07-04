@@ -15,9 +15,13 @@ change it exercises.
 
 1. **Backend on dev** with the picking improvements deployed:
    - `oosReason` persistence — haper-backend **PR #95** (merged).
-   - **undo (reset) + partial-pick endpoints** — haper-backend **PR #96** (merged; the dev
-     box must be **deployed** for §J / §L to work). If a step below "does nothing", the dev
-     box is a build behind.
+   - **undo (reset) endpoint** — haper-backend **PR #96** (merged; the dev box must be
+     **deployed** for §L to work).
+   - **partial-pick (short-pick) endpoint + order-audit logging** — haper-backend **new PR**
+     (the `pick` endpoint now accepts a quantity < required and reduces/refunds the line;
+     OOS + short-pick now write an `order_audit_logs` row). Needed for §J and the §K audit
+     check. If "Pick 3 of 5" returns 400 on dev, this PR isn't deployed yet.
+   - If a step below "does nothing", the dev box is a build behind.
    - Health check: `GET https://dapi.haper.in/picking/health` → `200 {"ok":true}`.
    - **Picker-app PRs:** scan-gate / OOS / scanner / scan-anything / urgency = **#1 / #2**
      (merged); **undo** = **#3** (merged); **partial pick (quantity stepper)** = **#4**
@@ -26,8 +30,26 @@ change it exercises.
    `dapi.haper.in`), installed on a **real Android device or an emulator with a camera**.
    Build: `cd haper-picker && ./gradlew assembleDebug` → `app/build/outputs/apk/debug/`.
 3. **A store with picking ON** — `config.pickingEnabled = true`. A super admin sets this
-   (Stores → Edit), or it's set in the DB. Without it **no pick task is ever created**
-   and the order never reaches the queue. (On dev, **Haper Mart** is already enabled.)
+   in the admin under **Config → Settings → Store Controls → Picker Workflow → "Enable
+   picking"**, or it's set in the DB. Without it **no pick task is ever created** and the
+   order never reaches the queue. (On dev, **Haper Mart** is already enabled.)
+
+   > **How to save the toggle (important — this is a batch form, not an instant toggle).**
+   > The "Enable picking" switch shares **one** "Save Store Settings" button with the
+   > pricing and delivery-incentive fields in the same panel. Flipping the switch alone
+   > does **not** call the API and does **not** persist — you **must click "Save Store
+   > Settings"**. Confirming it saved:
+   > - After you flip the switch, the footer shows an amber **"● Unsaved changes — click
+   >   Save Store Settings to apply"** and the Save button becomes active (it's greyed out
+   >   until you actually change something).
+   > - Click Save → success toast **"Store settings saved"**, footer returns to **"All
+   >   changes saved."** Refresh the page → the switch stays **ON**.
+   > - ❌ If you're a **super admin with no store selected**, Save fails with a red
+   >   **"Failed to save store settings"** toast (the store config PUT needs a store in
+   >   context). Pick a store first, then Save.
+   > - This is *Issue 6 ("Enable Picking toggle not working")*: the report was flipping the
+   >   switch and refreshing **without** clicking Save — expected behavior, now made obvious
+   >   by the Unsaved-changes indicator + disabled-until-changed Save button.
 4. **A picker account** assigned to that store (the `pickers` collection: `email`/
    `username` + `storeId` = the store). On dev: `raunakbbs@gmail.com` → Haper Mart.
 5. **Seed pickable orders** in that store (place via the customer app or POS), so a pick
@@ -58,6 +80,21 @@ change it exercises.
    pick task's `createdAt`).
 2. ✅ Past **10 minutes** it turns **red + bold** (pick the oldest first). "just now" under
    a minute; "1h 5m" format past an hour.
+
+### B2. New-order push notification  (feat: picker new-task push)
+Pick tasks are a **shared store pull-queue**, so a new order pings **every** picker of that store.
+1. Log the picker in at least once (this registers the device token — `POST picking/profile/fcm-token`).
+2. Put the app in the **background**. On the customer side, place a **new order** at this
+   (picking-enabled) store so a fresh pick task is created.
+3. ✅ The picker device gets a push: **"New order to pick 🧺 — Order #HP… is ready to pick."**
+   (Android channel **"picker_orders"**, high importance — sound + vibrate.)
+4. ✅ Tapping it opens the picker app on the **Available** queue with the new task.
+5. ✅ **Only one** push per order (fired on task creation, not on retries). A second identical
+   order to the same store pings again; re-processing the *same* order does **not** re-ping.
+6. ✅ If a picker turned **newTask** off in prefs, they're skipped; others still get it.
+- ❌ Non-picking store (picking disabled) → no task, no push.
+- Note: notification is **fire-and-forget** — if FCM is down the order/task still creates fine.
+  (Covered by `packages/picking/__tests__/auto-create.test.js`.)
 
 ### C. Claim an order  (feat: existing flow)
 1. Open **Order A** → **Start picking**.
@@ -108,7 +145,7 @@ Tap **Scan to verify** (or **Scan to register barcode**):
 2. ✅ The line is **picked but marked un-scanned**; the chip reads **"Picked (no scan)"**.
 3. ✅ It will appear in **Products Without Scan** (§N).
 
-### J. Partial pick (short stock)  (feat: partial pick — needs picker PR #4 + backend PR #96 deployed)
+### J. Partial pick (short stock)  (feat: partial pick — needs picker PR #4 + backend partial-pick PR deployed)
 On **Order A**'s line with quantity ≥ 3 (reveal it first via scan):
 1. ✅ A **quantity stepper** (−/+) shows `qty / required`, defaulting to the full quantity
    (only when required > 1).
@@ -120,8 +157,19 @@ On **Order A**'s line with quantity ≥ 3 (reveal it first via scan):
      price); `refundedAmount` + `hasPartialRefund` set. (COD order: no wallet credit — the
      **total is reduced**.)
    - The item's **stock is forced to 0** (the picker took all that was on the shelf).
+   - An **order-audit row** is written (`action: "order.line.short_pick"`, `metadata`:
+     itemId/pickedQty/shortQty/refundAmount, `actor.roles: ["picker"]`) so the reduction
+     is traceable in the order history — see §K note.
+   - **NEW — customer sees it:** an `adjustments[]` entry is written **on the order**
+     (`reason: "short_pick"`, `originalQty` → `newQty`) for **every** payment method — so the
+     **customer app** shows it, not just admin. Verify in §O.
 5. ❌ Try to step **above** required → the **+** is disabled (and the server rejects >
    required). Quantity **0** isn't possible (min 1 — use Out of stock instead).
+
+> ⚠️ **Until the backend partial-pick PR is deployed on dev**, stepping below the required
+> quantity returns **400** ("Picked quantity must be between 1 and the required quantity").
+> The picker UI shipped first (picker PR #4); the backend that *accepts* a short quantity is
+> the new partial-pick PR. If "Pick 3 of 5" errors on dev, the backend box is a build behind.
 
 ### K. Out of stock + reason  (feat: #3/#4/#5/#9)
 On **Order B**, mark one line out of stock:
@@ -133,6 +181,21 @@ On **Order B**, mark one line out of stock:
    a mixed order) and shows **"Reason: <chosen>"**; chip reads **"Out of stock"**.
 5. ✅ Backend: for a **prepaid** order the OOS item is **removed + refunded**; for COD the
    total drops. The reason is persisted (`oosReason`).
+6. ✅ **Audit trail (new):** an **order-audit row** is written
+   (`action: "order.line.out_of_stock"`, `metadata.oosReason` = the chosen reason,
+   `actor.roles: ["picker"]`). Previously a picker-removed line vanished from the order with
+   no record — now the removal/short-pick is logged on the order itself, not just the pick
+   task. **Three ways to view it in admin** (all show it in chronological order):
+   - **Order modal → "Order Activity"** section (lists action, reason, who, when) + an
+     **"Open full page ↗"** link.
+   - **Order list → the history (⟳) icon** next to the eye icon on each row.
+   - **Sidebar → "Order Activity"** page (Sales & Orders): search any order by id / `HP…`
+     display id (`GET /admin/order/audit-trail/:query`).
+   Or directly in the `order_audit_logs` collection (by `orderDisplayId`). Note: only rows
+   written *after* the audit logging is deployed appear — orders OOS'd before that have no row.
+7. ✅ **NEW — customer sees it:** an `adjustments[]` entry is written **on the order**
+   (`reason: "out_of_stock"`, `newQty: 0` = removed) so the **customer app** shows the removal,
+   not just admin. Verify in §O.
 
 ### L. Undo a picked line  (feat: undo — needs backend PR #96 deployed)
 1. On a **PICKED** line (full or partial), ✅ an **"Undo — move back to to-do"** button
@@ -146,13 +209,118 @@ On **Order B**, mark one line out of stock:
 2. ✅ Toast "Picking complete — ready for dispatch"; you're taken to **Picking History**
    and the just-completed order is **visible immediately** (no manual tab reload).
 3. ✅ Open it from history → OOS lines still show their **reason** (§K).
-4. ✅ Admin side: order status is **PACKED** (or **CANCELED** if every line went OOS).
+4. ✅ Admin side: order status is **PACKED**. (If **every** line went OOS the order is already
+   **CANCELED** — it auto-cancels the moment the last item is OOS'd, see §Q — so you won't be
+   completing an empty order in the normal flow.)
 
 ### N. Products Without Scan report  (feat: #6)
 1. From the task-list top bar, tap the **audit icon** (Products without scan).
 2. ✅ It lists every line you **picked via override / without a scan** across your **active
    + completed** pickings, each with the order id, qty, and an **Active / Completed** chip.
 3. ✅ If everything was scan-verified, it shows "Every product was scan-verified…".
+
+### O. Customer sees the change in their order  (feat: order adjustments — needs backend adjustments PR + android build with the change)
+> **Why:** before this, a picker short-pick / OOS only showed in **Admin → Order Activity**.
+> For a **COD** order there was **no refund entry**, so the customer app showed the new lower
+> quantity with **no indication it had changed** — they had no visibility (original bug
+> HP50999049). Now the change is recorded on the order itself (`adjustments[]`) for **every**
+> payment method and rendered in the customer app.
+1. Place a **COD** order with an item at qty ≥ 2, then short-pick it (§J) or mark it OOS (§K).
+2. Open the **customer app → Orders → that order's details**.
+3. ✅ A **"Changes while preparing your order"** card appears (above Wallet refunds), listing
+   each changed item with a badge: **"Qty 3 → 1"** for a reduction, **"Removed"** for OOS, plus
+   a plain-language reason ("Reduced — limited stock available" / "Out of stock — removed…").
+4. ✅ **Prepaid** order: the card shows **and** the existing "Wallet refunds" card shows (the
+   refund is the money-back; the adjustments card is the what-changed). COD: only the
+   adjustments card (no money moved).
+5. ✅ A **full** pick (no short/OOS) adds **no** card (nothing changed).
+6. ✅ **Android, iOS, and web** all render this card (same copy + "Qty X → Y" / "Removed" badge).
+   **Admin** doesn't need it — it already shows the change (richer) in **Order Activity**. Old app
+   builds without the field decode it to null/empty and simply don't show the card (no crash —
+   the field is nullable / always-emitted).
+
+### P. Admin assign + close a packed order — notification integrity  (fix: Issue 2, no push on a failed op)
+> **Why:** after a pick the order is **PACKED**; admin then assigns a rider and later closes it.
+> Previously the customer "success" push fired from the DB write hook the instant `status` was
+> written — and the close runs inside a **transaction**, so a "Delivered 🎉" push went out *before
+> commit*. If the close then failed (it could: the invoice number was written without the
+> transaction's session, conflicting with the order's own lock → **"Failed to close"**), the order
+> rolled back to PACKED but the customer was already (wrongly) notified (bug HP50999049, Issue 2).
+1. Pick + complete an order so it is **PACKED** (§J–§M).
+2. **Assign** a rider (Admin → order → assign). ✅ Status → **ASSIGNED**; rider gets the new-job
+   push; customer gets **"Order Assigned 📦"**. (Assign is non-transactional, so it only ever
+   notifies on a write that actually landed.)
+3. **Close** the order (Admin → mark status **Delivered/CLOSED**). ✅ It **succeeds** (no "Failed to
+   close"); status → **CLOSED**; an **invoice number** (`INV-…`) is assigned; customer gets
+   **"Delivered 🎉"** — fired **after** the commit, exactly once.
+4. ❌ **Failure path (the bug):** if a close/assign **fails** on the admin side, the customer must
+   get **NO** push and the order must stay in its prior status. The push is now queued on the DB
+   session and only flushed **after** `commitTransaction()` succeeds — an aborted transaction emits
+   nothing. (Covered by `packages/admin/__tests__/order-close-notification.test.js`.)
+5. ✅ The same post-commit rule applies to **admin cancel**, **user cancel** (1-min window), and the
+   **payment-abandonment cron** — all transactional status writers.
+
+### Q. All items out of stock → the order auto-cancels  (fix: Issue 3)
+> **Why:** before this, OOS'ing the **only** item left the order stranded in **Preparing** with an
+> empty Items list, a live **Delivery OTP**, and a phantom **₹2** (delivery + platform) bill — even
+> though there was nothing to deliver (bug HP70989050). Now an order that loses its **last** item
+> cancels itself the instant that item is marked OOS.
+1. Place an order with a **single** item (or a few). In the picker, mark the last remaining item
+   **Out of stock** (§K).
+2. ✅ The order **auto-cancels immediately** (no need to tap Complete): status → **Cancelled**, the
+   **pick task auto-completes** (leaves your queue), and a follow-up **Complete** returns **409**.
+   ✅ **Picker app:** the OOS response carries `cancelled: true` → the app shows
+   **"Order cancelled — all items out of stock"** and drops you into **Picking History** (it does
+   NOT reload the finished task with a stale Complete button).
+3. ✅ **Customer app (Orders → that order):**
+   - Status shows **Cancelled** (not "Preparing").
+   - **No Delivery OTP** (it's cleared — the order isn't deliverable).
+   - **Bill is ₹0** — delivery + platform fees are zeroed (not the misleading ₹2).
+   - The **"Changes while preparing your order"** card (§O) shows the item **Removed — Out of stock**.
+4. ✅ **Money:** **COD** → nothing was collected, nothing to refund (bill just goes to ₹0).
+   **Prepaid** → the wallet is refunded **everything**, including the delivery + platform fees (each
+   item's amount was already refunded as its line went OOS; the cancel adds back the leftover fees).
+5. ✅ A **multi-item** order stays **active** (PICKING) while it still has at least one item — it only
+   cancels on the OOS that removes the **last** one.
+6. ✅ **Backstop:** if an order somehow reaches **Complete** already empty (e.g. an order stuck from
+   before this fix), Complete runs the same full cancel (status/OTP/fees/refund).
+
+### R. Admin (super admin) clicks the OOS browser notification → order opens  (fix: Issue 4)
+> **Why:** the picker OOS/short-pick/cancel fires a **store push** that super admins also receive.
+> Clicking it deep-links to the order and opens the Order Details popup. Before, if the super admin
+> had **switched into a different store** (the app sends `x-store-id`), the order was scoped to that
+> store, came back empty, and the popup rendered **blank**.
+1. As a **super admin**, switch into **Store A** in the admin UI. Have the picker OOS an item on an
+   order that belongs to **Store B** (so a store notification fires).
+2. Click the **browser notification** → it navigates to `/orders?orderId=<id>` and opens the popup.
+3. ✅ The popup shows the **complete** Store-B order details (status, items, customer, bill) — **not**
+   blank — even though the super admin is currently viewing Store A.
+4. ✅ If the order genuinely can't be loaded (deleted / network error), the popup shows
+   **"Order data could not be loaded."** — never an empty shell.
+5. ✅ **Security unchanged:** a **store admin** still cannot open another store's order (scoped out).
+   (Backend: `getOrder`/`getOrderAudit` are global for super_admin only — `order-detail-scope.test.js`.)
+
+### S. A cancelled order leaves the picker queue  (fix: stranded pick task)
+> **Why:** a pick task used to live **only** off its own status — the queue never re-checked the
+> order. So when an order was **cancelled** (by the customer, or an admin) while it was still
+> waiting to be picked, its task stayed **PENDING** and the order kept showing in **Available**
+> forever. Tapping it just bounced back ("not available") and it reappeared — a permanent ghost
+> (this is exactly what happened to **HP55349056**). Now cancelling an order also cancels its pick
+> task (via the `order-status-changed` event → `cancelPickTaskForUnpickableOrder`), a 1-min cron
+> sweeps any that slip through, and claiming a ghost self-cleans it.
+1. Seed a fresh pickable order on the picking store; confirm it appears in **Available** (a PENDING
+   task exists).
+2. **Cancel that order** — either from the **customer app** (within the 1-min cancel window) or from
+   **Admin → set status → Cancelled**.
+3. ✅ Within a moment the order **disappears from Available** (refresh the queue). The pick task is
+   now **CANCELLED** in the DB (`pick-tasks`, `status: 3`) — it is **not** re-created by the cron.
+4. ✅ **Self-clean fallback:** if a ghost is already sitting in Available (order already cancelled),
+   **tapping it to claim** returns **"This order was cancelled and is no longer available."** and it
+   **leaves the queue** (does not bounce back).
+5. ✅ **Reopen works too:** in Admin, **reopen** a cancelled order back to **OPEN** (Confirmed). It
+   **reappears in Available** with a fresh task (the cancelled task is **reactivated** to PENDING,
+   not stranded) and the picker gets a new-task push.
+6. ❌ A **legitimately OPEN** order is never removed by any of this — only cancelled/failed orders.
 
 ---
 
@@ -174,21 +342,34 @@ On **Order B**, mark one line out of stock:
 ## Backend verification (admin panel / DB) — spot checks
 | After… | Check |
 |---|---|
-| **Partial pick** (prepaid) | wallet credited the shortfall; order line qty reduced; `refundedAmount`/`hasPartialRefund` set; item stock = 0 |
-| **Partial pick** (COD) | order total reduced; no wallet credit; item stock = 0 |
-| **Out of stock** (prepaid) | item removed from order; wallet refunded full line; item stock = 0; line `oosReason` set |
+| **Partial pick** (prepaid) | wallet credited the shortfall; order line qty reduced; `refundedAmount`/`hasPartialRefund` set; item stock = 0; `order_audit_logs` has `order.line.short_pick` |
+| **Partial pick** (COD) | order total reduced; no wallet credit; item stock = 0; `order_audit_logs` has `order.line.short_pick` |
+| **Out of stock** (prepaid) | item removed from order; wallet refunded full line; item stock = 0; line `oosReason` set; `order_audit_logs` has `order.line.out_of_stock` |
+| **Order audit trail** | every picker-driven removal/reduction shows in the admin order modal's **Order Activity** section (and as a row in `order_audit_logs`, `actor.roles: ["picker"]` + reason in `metadata`) |
+| **Customer-visible change** (any payment method) | the **order** has an `adjustments[]` entry (`reason` short_pick/out_of_stock, `originalQty`→`newQty`); the **customer app order details** shows the "Changes while preparing your order" card. This is the ONLY in-app record for COD (no refund entry). |
 | **Undo a picked line** | task line back to PENDING (`pickedQty` 0, `scanVerified`/override cleared); **no** order/refund change |
-| **Complete** | order PICKING → PACKED (or CANCELED if all OOS) |
+| **Complete** | order PICKING → PACKED (all-OOS orders are already CANCELED from §Q) |
+| **All items OOS** (Issue 3) | order auto-**CANCELED** on the last OOS; `deliveryOtp` **null**; `price`/`actualOrderValue`/`charges.*` all **0**; pick task COMPLETED; **prepaid** wallet refunded incl. delivery+platform fees; **COD** no refund (`refunds[]` empty) |
+| **Cancel an order waiting in the queue** (customer or admin) | its pick task flips **PENDING → CANCELLED** (`pick-tasks`, `status: 3`); the order **leaves Available**; the cron does **not** re-create it. Primary path = `order-status-changed` event; safety net = `pick-task-reconcile` cron (cancels any still-open task whose order is no longer OPEN/PICKING) |
+| **Reopen a cancelled order to OPEN** | the same task is **reactivated** to PENDING (`pickerId`/`claimedAt`/`completedAt` cleared, fresh line snapshot) — **not** a second task (unique `orderId`); order reappears in Available |
+| **Claim a ghost** (task PENDING but order already cancelled) | claim returns **409 "This order was cancelled and is no longer available."** and the task is **CANCELLED** (self-clean), not released back to the queue |
+| **Close a PACKED order** | succeeds (no "Failed to close"); status CLOSED; `invoiceNumber` (`INV-…`) set **post-commit**; customer "Delivered 🎉" push fires **once, after commit** |
+| **Any failed/rolled-back status op** (close, assign, cancel) | order keeps its prior status **and** the customer gets **no** push — order-status pushes are queued on the txn session and flushed only after a successful commit (`order-event.utils.js`) |
 
 ---
 
 ## Troubleshooting
 | Symptom | Likely cause |
 |---|---|
-| Order never appears in Available | Store `pickingEnabled` off, order not OPEN, or wrong `storeId`; orders placed *before* picking was enabled need a backfill |
+| Order never appears in Available | Store `pickingEnabled` off, order not OPEN, or wrong `storeId`. A dropped pick task (checkout creates it best-effort) now **self-heals within ~1 min** via the `pick-task-reconcile` cron — any OPEN order on a picking store with no task gets one automatically. If it's still missing after a couple minutes, check `pickingEnabled` + that the cron service is running. |
+| **Cancelled order still showing in Available** (taps bounce back "not available") | Pre-fix build: cancelling an order didn't cancel its pick task, so the PENDING task lingered forever (e.g. **HP55349056**). Fixed — cancel now cancels the task (`order-status-changed` → `cancelPickTaskForUnpickableOrder`), the `pick-task-reconcile` cron sweeps stragglers, and claiming a ghost self-cleans it. Already-stuck ghosts clear on the next cron run **or** the moment a picker taps them. |
 | Quantity stepper missing on a line | Picker **PR #4** not merged (partial-pick UI) |
+| "Pick 3 of 5" returns **400** ("must be between 1 and the required quantity") | Backend **partial-pick PR** not deployed on dev (the `pick` endpoint still requires the full qty) |
 | Undo button does nothing / 404 | Backend **PR #96** not deployed on dev (the reset endpoint) |
 | OOS reason not shown in history | Backend `oosReason` (PR #95) not deployed on the running dev build |
+| Item silently gone from an order, no record | Backend **partial-pick PR** not deployed — order-audit logging for OOS/short-pick ships with it |
+| **"Failed to close"** on a packed order + customer still got "Delivered" | Pre-Issue-2 build: invoice number was written inside the close transaction (no session) → conflict; and the push fired from the DB hook before commit. Fixed — invoice gen + pushes now run **post-commit** (`order-event.utils.js`, `order.handler.js`). |
+| All-OOS order **stuck in "Preparing"** with an OTP + a ₹2 (fees-only) bill | Pre-Issue-3 build: OOS'ing the last item left the order in PICKING (it only cancelled if the picker tapped Complete, and even then fees/OTP weren't cleared). Fixed — the order now auto-cancels on the last OOS (`cancelEmptiedOrder`). **Already-stuck orders** (e.g. HP70989050) need a one-off resolve: have the picker tap **Complete** (runs the backstop cancel) or cancel from Admin. |
 | Scanner opens then closes immediately | Camera permission denied — grant it (Settings → app → Permissions) |
 | "Wrong product scanned ✗" on the right item | The item's on-file barcode differs from the physical one — re-enroll via manual entry |
 | Nothing in Products Without Scan | Everything was scan-verified (expected) — do an override pick (§I) to populate it |

@@ -128,10 +128,15 @@ This puts stock into the warehouse.
 3. Add a line:
    - **SKU/Barcode** — a code you'll also set as the store item's barcode, e.g. `PB001`.
    - **Name** (e.g. `Peanut Butter 500g`), **Batch no.** (leave blank = auto, or type
-     the supplier's, e.g. `LOT-A`), **Cost / unit**, **Expiry**, **Qty** (e.g. `100`).
+     the supplier's, e.g. `LOT-A`), **Cost / unit (₹) — required, > 0**, **Expiry**,
+     **Qty** (e.g. `100`).
 4. **Receive**.
 
 ✅ Warehouse stock shows `PB001 … Available 100`.
+❌ Leave **Cost / unit** blank (or `0`) on any line → **blocked** with "Enter a cost /
+   unit (₹) greater than 0 for every line" (FE toast; backend also rejects with **400**).
+   Cost is mandatory because it becomes the store's cost price (weighted-average) the
+   moment the lot is transferred (CH-3).
 ✅ Receive the **same SKU + same batch no.** again (e.g. 50) → quantity becomes **150**
    (merged into the lot, no duplicate).
 ✅ Stock table columns: **Available / Reserved / In-transit / Free-to-promise** (CH-4)
@@ -261,6 +266,16 @@ First make the link: **Items → the item → set Barcode = `PB001`** (same as t
 5. **Stock Ledger** → a `TRANSFER_OUT` (warehouse, −30) and `TRANSFER_IN` (store, +30),
    both with the **Batch** column populated.
 
+### 8c. Short receive → shrinkage (partial receive)  (CH-3, CH-4)
+On **Receive**, each line has an editable **Received** qty. Enter **less** than dispatched
+(e.g. dispatched 30, receive **28**) → **Receive**.
+✅ Store rises by **28** only; warehouse already lost the full **30** at dispatch (in-transit clears).
+✅ The **2 missing units are shrinkage** — NOT returned to the warehouse and NOT added to the
+   store; reconcile them at the next physical stock-take.
+✅ Transfer closes as **RECEIVED** with the line showing `dispatched 30 / received 28`
+   (highlighted yellow in the Transfers list). The linked request is marked **FULFILLED**.
+✅ The shortfall shows up in the **Transfer Discrepancies** report (§12b).
+
 ---
 
 ## 9. Per-store category On/Off  *(store admin)*  (CH-1)
@@ -334,6 +349,21 @@ After a few **sales** exist in the store (place test orders, or use POS → New 
 3. Sidebar → **Most Sold** → in **All Stores** mode there's a **"Merge same product
    across stores"** toggle.
 
+### 12b. Transfer Discrepancies report — short receipts  *(super admin / warehouse manager / store admin)*
+Sidebar → **Inventory & Warehouse → Transfer Discrepancies**. Read-only; nothing is corrected here.
+1. Do a **short receive** first (§8c) so there's data.
+2. Open the report.
+   ✅ One row per short line: **Transfer · Received date · Warehouse · Store · Item(SKU) ·
+   Dispatched · Received · Short · Cost/unit · Loss ₹ · Dispatched by · Received by**.
+   ✅ **Cost/unit** = the weighted-average of the dispatched lots; **Loss ₹** = short × cost.
+   ✅ Top cards: **short lines**, **total units short**, **estimated loss value**.
+   ✅ **From/To** date filter (on the received date) + **Export CSV**.
+   ✅ A **fully-received** transfer does **not** appear (only shortfalls).
+3. **Scope check:**
+   - **Warehouse manager** → only their warehouse's short receipts.
+   - **Store admin** → only their store's.
+   - **Super admin** → all stores + warehouses (Warehouse/Store columns tell them apart).
+
 ---
 
 ## 13. Role-separation checks
@@ -370,7 +400,8 @@ CRUD, **no** Approve/Reject/Fulfil, **no** write-off, and Batch Recall is **trac
 - **Edit catalogue fields on an item as a store admin** → read-only (CH-6).
 - **Warehouse write-off above on-hand** → 400, stock untouched (#3).
 - **Stock Health / Item Lookup into a non-served store** → 403 (scoped to served stores).
-- **Goods-receipt line with ₹0 cost or a past expiry** → warning before save (#10/#11).
+- **Goods-receipt line with ₹0 / blank cost** → **blocked** (mandatory, FE toast + backend 400).
+- **Goods-receipt line with a past expiry** → warning before save (#11).
 - **Warehouse staff** opening New/Edit/Delete warehouse, Approve/Reject/Fulfil, or Write-off →
   the buttons aren't shown (permission-gated, not just role) (#9).
 - **Turn on batch tracking on a warehouse/store that already has stock** (B1) → it **seeds the
@@ -437,9 +468,11 @@ dropdowns list every category/sub-category present, with item counts).
 Replenishment → a PENDING request → **Reject** → you're prompted for a **reason** (and an approve
 note on a partial approval); the requesting store sees that warehouse note on the request.
 
-### 15h. Goods-receipt warnings  (#10/#11)
-On **Receive goods**, a line with **₹0 cost** or a **past-dated expiry** shows a warning before save
-(catches a poisoned weighted-avg cost / already-expired stock).
+### 15h. Goods-receipt: mandatory cost + expiry warning  (#10/#11)
+On **Receive goods**, **Cost / unit (₹) is required and must be > 0** — a blank/₹0 line is
+**blocked** (FE toast + backend 400), because that cost becomes the store's cost price
+(weighted-average) on transfer. A **past-dated expiry** still shows a warning before save
+(already-expired stock) but does not block.
 
 ### 15i. Staff vs manager  (#8/#9)
 - **Warehouse staff** can now **view Warehouses + stock** and **Receive goods** (previously a 403
@@ -447,6 +480,23 @@ On **Receive goods**, a line with **₹0 cost** or a **past-dated expiry** shows
   Approve/Reject/Fulfil, **no** Write-off (buttons hidden, gated by permission), Batch Recall
   **trace-only**.
 - **Warehouse manager** has the full set above.
+
+### 15j. Warehouse manager sees ALL their options (permission floor + discoverability)
+The manager's capabilities now come from the **role**, not a snapshot saved when the
+account was created — so an older account that pre-dates a permission (e.g.
+`warehouse.receive_goods`) gets it automatically on next login, **no DB change**
+(backend `resolveEffectivePermissions`, haper-backend #98).
+
+After deploying the latest dev backend **and** admin, **fully log out and log back in** as
+the warehouse manager (a plain reload can keep a stale permission cache), then check:
+- ✅ Sidebar shows: **Stock Health, Item Lookup, Replenishment, Transfers, Stock Ledger,
+  Batch Recall, Receive Goods, Warehouses, Suppliers**.
+- ✅ Dashboard shows a **"Receive goods from supplier"** hero button + a **Receive goods**
+  chip in *Jump to*.
+- ✅ Sidebar → **Receive Goods** (new item, route `/receive-goods`) → opens the warehouse
+  stock view with the warehouse auto-selected and the goods-receipt form already open.
+  Only **Receive Goods** highlights in the sidebar (not Warehouses too).
+- ❌ If any are missing → stale session or stale admin build (see Troubleshooting).
 
 ---
 
@@ -466,6 +516,8 @@ On **Receive goods**, a line with **₹0 cost** or a **past-dated expiry** shows
 | Stock Health shows **everything Overstock**, Healthy 0 | Backend not redeployed — fixed so Overstock needs `maxStock > 0` (§15e) |
 | Stock Health / Item Lookup are empty | This warehouse serves **no stores** (no store's serving-warehouse = this one) |
 | Item search 403s inside **New Transfer** (warehouse mgr) | Known pending — uses the `items.view` catalog endpoint (§15b); super admin works |
+| Warehouse mgr missing Replenishment/Transfers/Recall/Receive Goods in sidebar; clicking *Jump to* bounces back | Admin build behind — `hasPermission()` used to deny **all** permission-gated UI for warehouse roles (only manager/support were checked). Fixed in admin `1969703`; deploy latest admin + hard refresh (⇧⌘R). Note role-gated items (Stock Health, Item Lookup, Warehouses, Suppliers) showed fine even while this bug was live |
+| Order modal shows no "Order Activity" trail | Expected if that order had **no** edits/cancels/refunds/picker short-pick-OOS — it now shows a **"No activity recorded yet"** line. Do an item edit/cancel, or test a picker short-pick, to see rows (or open the **Order Activity** page) |
 
 ---
 
