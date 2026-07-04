@@ -300,6 +300,28 @@ On **Order B**, mark one line out of stock:
 5. ✅ **Security unchanged:** a **store admin** still cannot open another store's order (scoped out).
    (Backend: `getOrder`/`getOrderAudit` are global for super_admin only — `order-detail-scope.test.js`.)
 
+### S. A cancelled order leaves the picker queue  (fix: stranded pick task)
+> **Why:** a pick task used to live **only** off its own status — the queue never re-checked the
+> order. So when an order was **cancelled** (by the customer, or an admin) while it was still
+> waiting to be picked, its task stayed **PENDING** and the order kept showing in **Available**
+> forever. Tapping it just bounced back ("not available") and it reappeared — a permanent ghost
+> (this is exactly what happened to **HP55349056**). Now cancelling an order also cancels its pick
+> task (via the `order-status-changed` event → `cancelPickTaskForUnpickableOrder`), a 1-min cron
+> sweeps any that slip through, and claiming a ghost self-cleans it.
+1. Seed a fresh pickable order on the picking store; confirm it appears in **Available** (a PENDING
+   task exists).
+2. **Cancel that order** — either from the **customer app** (within the 1-min cancel window) or from
+   **Admin → set status → Cancelled**.
+3. ✅ Within a moment the order **disappears from Available** (refresh the queue). The pick task is
+   now **CANCELLED** in the DB (`pick-tasks`, `status: 3`) — it is **not** re-created by the cron.
+4. ✅ **Self-clean fallback:** if a ghost is already sitting in Available (order already cancelled),
+   **tapping it to claim** returns **"This order was cancelled and is no longer available."** and it
+   **leaves the queue** (does not bounce back).
+5. ✅ **Reopen works too:** in Admin, **reopen** a cancelled order back to **OPEN** (Confirmed). It
+   **reappears in Available** with a fresh task (the cancelled task is **reactivated** to PENDING,
+   not stranded) and the picker gets a new-task push.
+6. ❌ A **legitimately OPEN** order is never removed by any of this — only cancelled/failed orders.
+
 ---
 
 ## Negative / edge cases to confirm
@@ -328,6 +350,9 @@ On **Order B**, mark one line out of stock:
 | **Undo a picked line** | task line back to PENDING (`pickedQty` 0, `scanVerified`/override cleared); **no** order/refund change |
 | **Complete** | order PICKING → PACKED (all-OOS orders are already CANCELED from §Q) |
 | **All items OOS** (Issue 3) | order auto-**CANCELED** on the last OOS; `deliveryOtp` **null**; `price`/`actualOrderValue`/`charges.*` all **0**; pick task COMPLETED; **prepaid** wallet refunded incl. delivery+platform fees; **COD** no refund (`refunds[]` empty) |
+| **Cancel an order waiting in the queue** (customer or admin) | its pick task flips **PENDING → CANCELLED** (`pick-tasks`, `status: 3`); the order **leaves Available**; the cron does **not** re-create it. Primary path = `order-status-changed` event; safety net = `pick-task-reconcile` cron (cancels any still-open task whose order is no longer OPEN/PICKING) |
+| **Reopen a cancelled order to OPEN** | the same task is **reactivated** to PENDING (`pickerId`/`claimedAt`/`completedAt` cleared, fresh line snapshot) — **not** a second task (unique `orderId`); order reappears in Available |
+| **Claim a ghost** (task PENDING but order already cancelled) | claim returns **409 "This order was cancelled and is no longer available."** and the task is **CANCELLED** (self-clean), not released back to the queue |
 | **Close a PACKED order** | succeeds (no "Failed to close"); status CLOSED; `invoiceNumber` (`INV-…`) set **post-commit**; customer "Delivered 🎉" push fires **once, after commit** |
 | **Any failed/rolled-back status op** (close, assign, cancel) | order keeps its prior status **and** the customer gets **no** push — order-status pushes are queued on the txn session and flushed only after a successful commit (`order-event.utils.js`) |
 
@@ -337,6 +362,7 @@ On **Order B**, mark one line out of stock:
 | Symptom | Likely cause |
 |---|---|
 | Order never appears in Available | Store `pickingEnabled` off, order not OPEN, or wrong `storeId`. A dropped pick task (checkout creates it best-effort) now **self-heals within ~1 min** via the `pick-task-reconcile` cron — any OPEN order on a picking store with no task gets one automatically. If it's still missing after a couple minutes, check `pickingEnabled` + that the cron service is running. |
+| **Cancelled order still showing in Available** (taps bounce back "not available") | Pre-fix build: cancelling an order didn't cancel its pick task, so the PENDING task lingered forever (e.g. **HP55349056**). Fixed — cancel now cancels the task (`order-status-changed` → `cancelPickTaskForUnpickableOrder`), the `pick-task-reconcile` cron sweeps stragglers, and claiming a ghost self-cleans it. Already-stuck ghosts clear on the next cron run **or** the moment a picker taps them. |
 | Quantity stepper missing on a line | Picker **PR #4** not merged (partial-pick UI) |
 | "Pick 3 of 5" returns **400** ("must be between 1 and the required quantity") | Backend **partial-pick PR** not deployed on dev (the `pick` endpoint still requires the full qty) |
 | Undo button does nothing / 404 | Backend **PR #96** not deployed on dev (the reset endpoint) |
