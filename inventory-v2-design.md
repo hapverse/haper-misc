@@ -358,7 +358,7 @@ A person at 2+ stores = one record per store (login resolves store on collision)
   (backend `d87c0b9`, this doc in haper-misc). **PR into `dev` not yet opened** (user opens/merges).
 - **Prod migration:** ⏳ PENDING (not yet applied). Entry runner runs the steps **in order**, integrity report is a **gate**:
   - `npm run migrate`        → DRY RUN (previews all steps, writes nothing)
-  - `npm run migrate:apply`  → applies in order: **integrity gate → `migrate-categories-global` → `backfill-item-cost-price`**
+  - `npm run migrate:apply`  → applies in order: **integrity gate → `migrate-item-indexes` (global iId/barcode → per-store; REQUIRED or store-clone/assign silently fails) → `migrate-categories-global` → `backfill-item-cost-price` → …**
   - **Dev:** wipe + reseed `categories`/`sub-categories` instead (disposable) — migration optional there.
   - Run details / per-step docs: `haper-backend/scripts/migrations/README.md`.
 - **Old one-time migrations applied in prod & removed from repo** (recoverable via git history):
