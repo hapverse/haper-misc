@@ -103,6 +103,13 @@ Sidebar → **Warehouse Staff** → **+ New staff** → pick role (Warehouse Man
 full warehouse control; Warehouse Staff = receive + transfers) + the warehouse +
 name/email/password. Log in as them later → they see only the warehouse screens.
 
+✅ **Change password (super admin):** on the staff row → **Change password** → enter a new
+   one (min 6) → **Update password**. Log in as that manager/staff with the **new** password
+   → works; the **old** password no longer works. (The password is stored hashed, never shown.)
+❌ A password shorter than 6 chars → blocked (FE toast + backend **400**).
+❌ A **store admin** (or anyone not super admin) has no Warehouse Staff page and the API
+   rejects the change with **403** — only super admin manages these accounts.
+
 ### 1c. (Recommended) Turn on batch tracking — to exercise FEFO / lots / recall  (B1)  *(super admin)*
 While editing the warehouse (or on create), tick **"Batch tracking (FEFO + per-lot
 cost/expiry)"** → Save. ✅ Enabling **seeds existing stock**, so the response notes how
