@@ -270,14 +270,23 @@ First make the link: **Items → the item → set Barcode = `PB001`** (same as t
 3. **Dispatch** the transfer.
    ✅ Warehouse **Available** drops by 30; **store item quantity is unchanged** (golden rule).
    ✅ Expand the transfer → each line shows **Batches (shipped)** (the lots that went out) (CH-3).
-4. **Receive** the transfer.
-   ✅ Store item quantity rises by 30; the lot's real cost + expiry flow into the store.
+4. **Receive** the transfer. The receive modal now has a **"Scan barcode"** box per line —
+   you **must scan / type a barcode that matches the line's SKU** for every item that
+   arrived. **"Confirm receipt" stays disabled** until each arrived line shows **✓ match**;
+   a wrong code shows **✗ mismatch**. (The SKU **is** the barcode, so this is the same value
+   from the warehouse receipt / transfer.)
+   ✅ Scan `PB001` → line shows **✓ match** → **Confirm receipt** enables → store item rises
+      by 30; the lot's real cost + expiry flow into the store.
+   ❌ Scan a **wrong** barcode (e.g. `PB999`) → **✗ mismatch**, button stays disabled. If you
+      force it via the API, the backend rejects with **400** `Barcode mismatch …` and **no
+      stock moves** (transfer stays DISPATCHED).
 5. **Stock Ledger** → a `TRANSFER_OUT` (warehouse, −30) and `TRANSFER_IN` (store, +30),
    both with the **Batch** column populated.
 
 ### 8c. Short receive → shrinkage (partial receive)  (CH-3, CH-4)
 On **Receive**, each line has an editable **Received** qty. Enter **less** than dispatched
-(e.g. dispatched 30, receive **28**) → **Receive**.
+(e.g. dispatched 30, receive **28**) → scan the matching **barcode** → **Receive**.
+✅ A line received as **0** (nothing arrived) needs **no** barcode scan — it's skipped.
 ✅ Store rises by **28** only; warehouse already lost the full **30** at dispatch (in-transit clears).
 ✅ The **2 missing units are shrinkage** — NOT returned to the warehouse and NOT added to the
    store; reconcile them at the next physical stock-take.
