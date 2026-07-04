@@ -30,8 +30,26 @@ change it exercises.
    `dapi.haper.in`), installed on a **real Android device or an emulator with a camera**.
    Build: `cd haper-picker && ./gradlew assembleDebug` → `app/build/outputs/apk/debug/`.
 3. **A store with picking ON** — `config.pickingEnabled = true`. A super admin sets this
-   (Stores → Edit), or it's set in the DB. Without it **no pick task is ever created**
-   and the order never reaches the queue. (On dev, **Haper Mart** is already enabled.)
+   in the admin under **Config → Settings → Store Controls → Picker Workflow → "Enable
+   picking"**, or it's set in the DB. Without it **no pick task is ever created** and the
+   order never reaches the queue. (On dev, **Haper Mart** is already enabled.)
+
+   > **How to save the toggle (important — this is a batch form, not an instant toggle).**
+   > The "Enable picking" switch shares **one** "Save Store Settings" button with the
+   > pricing and delivery-incentive fields in the same panel. Flipping the switch alone
+   > does **not** call the API and does **not** persist — you **must click "Save Store
+   > Settings"**. Confirming it saved:
+   > - After you flip the switch, the footer shows an amber **"● Unsaved changes — click
+   >   Save Store Settings to apply"** and the Save button becomes active (it's greyed out
+   >   until you actually change something).
+   > - Click Save → success toast **"Store settings saved"**, footer returns to **"All
+   >   changes saved."** Refresh the page → the switch stays **ON**.
+   > - ❌ If you're a **super admin with no store selected**, Save fails with a red
+   >   **"Failed to save store settings"** toast (the store config PUT needs a store in
+   >   context). Pick a store first, then Save.
+   > - This is *Issue 6 ("Enable Picking toggle not working")*: the report was flipping the
+   >   switch and refreshing **without** clicking Save — expected behavior, now made obvious
+   >   by the Unsaved-changes indicator + disabled-until-changed Save button.
 4. **A picker account** assigned to that store (the `pickers` collection: `email`/
    `username` + `storeId` = the store). On dev: `raunakbbs@gmail.com` → Haper Mart.
 5. **Seed pickable orders** in that store (place via the customer app or POS), so a pick
