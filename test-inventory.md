@@ -305,6 +305,11 @@ Log in as the **store admin** from step 6.
 **Request  *(store admin)*:**
 1. Store-switcher = the store. Sidebar → **Replenishment** → **+ Request stock** →
    search the item → **Requested qty** `40` → **Raise request**. ✅ Status **PENDING**.
+   ✅ Click the request's **Items** cell (▸) to expand it: the per-line table now shows
+   **Wh avail** and **Free** (= warehouse available − reserved) for each requested item —
+   same numbers as the Approve modal, fetched once when the row is first opened. A line
+   whose **Free** can't cover the requested qty shows **Free in red** (0 also red).
+   Requests with no serving warehouse yet, or a SKU not stocked, show **"—"**.
 
 **Approve  *(super admin / warehouse)*:**
 2. Open the request → **Approve**. The modal shows per line: **Avail**, **Reserved**,
