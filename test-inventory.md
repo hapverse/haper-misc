@@ -106,6 +106,11 @@ name/email/password. Log in as them later → they see only the warehouse screen
 ✅ **Change password (super admin):** on the staff row → **Change password** → enter a new
    one (min 6) → **Update password**. Log in as that manager/staff with the **new** password
    → works; the **old** password no longer works. (The password is stored hashed, never shown.)
+✅ **Suggest / Copy:** under any password field (warehouse staff, **store admin**, **delivery
+   boy** — create *and* reset) there's a **🎲 Suggest** button that fills a strong password
+   (alphanumeric + `.@#-_`, ambiguous chars like l/1/O/0 avoided) and reveals it, plus a
+   **📋 Copy** button that copies it to the clipboard so you can hand it over. Suggested
+   passwords always satisfy the min-6 rule.
 ❌ A password shorter than 6 chars → blocked (FE toast + backend **400**).
 ❌ A **store admin** (or anyone not super admin) has no Warehouse Staff page and the API
    rejects the change with **403** — only super admin manages these accounts.
