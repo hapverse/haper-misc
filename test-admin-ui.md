@@ -8,13 +8,17 @@ Each item says **what to do** and **what to expect** (✅ good / ❌ should not 
 
 ## Issue 7 — Mouse wheel must not change number-input values
 
-> **Why:** a focused `<input type="number">` treats the mouse wheel as an
-> increment/decrement control (browser default). So if you typed a value, left
-> the cursor in the field, and scrolled the page, the number silently changed —
-> e.g. an Item Quantity of `50` becoming `47` after a scroll, unnoticed. Fixed
-> globally: a single document-level wheel guard blurs the focused number input
-> the instant a wheel scroll starts, so the wheel only scrolls the page.
-> (`haper-admin/src/utils/numberInputScrollGuard.ts`, installed once in `main.tsx`.)
+> **Why:** a `<input type="number">` can have its value changed accidentally two
+> ways: (a) the mouse **wheel** while focused (browser default), and (b) clicking
+> the tiny **up/down spinner arrows**. Both nudge the value silently — e.g. an
+> Item Quantity of `50` becoming `47`. Fixed globally, app-wide:
+> - **Wheel:** a single document-level guard blurs the focused number input the
+>   instant a wheel scroll starts, so the wheel only scrolls the page
+>   (`haper-admin/src/utils/numberInputScrollGuard.ts`, installed in `main.tsx`).
+> - **Spinner arrows:** hidden via global CSS (`index.css`, `appearance: textfield`
+>   + `::-webkit-*-spin-button { -webkit-appearance: none }`) — there are no arrows
+>   to click, and it also stops the spinner clipping narrow fields (e.g. Receive
+>   Goods → Cost / piece). Typing + keyboard still work normally.
 
 Test on **any** numeric field. Good coverage spots:
 - **Items → Add/Edit item → Quantity** (the reported field).
@@ -29,10 +33,12 @@ Steps:
 3. ✅ The value **stays `50`** — it does not increment/decrement.
 4. ✅ The **page still scrolls** normally (the field just loses focus on the first
    scroll notch). Click back into it to keep editing.
-5. ✅ **Typing, arrow keys, and the field's own up/down spinners still work** — only
-   the *wheel* is disabled, nothing else.
-6. ✅ Text fields, dropdowns, and date fields are unaffected (they never had this).
-7. ❌ At no point does scrolling over/inside a focused number field change its value.
+5. ✅ There are **no up/down arrows** on the field anymore — nothing to click that
+   would change the value.
+6. ✅ **Typing and keyboard** still work normally — only wheel + spinner are gone.
+7. ✅ Text fields, dropdowns, and date fields are unaffected (they never had this).
+8. ❌ At no point does scrolling over — or clicking within — a focused number field
+   change its value on its own.
 
 > Regression check: this is a passive, blur-only guard — it never calls
 > `preventDefault`, so it can't block page scrolling anywhere. Covered by
