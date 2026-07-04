@@ -63,6 +63,21 @@ change it exercises.
 2. ✅ Past **10 minutes** it turns **red + bold** (pick the oldest first). "just now" under
    a minute; "1h 5m" format past an hour.
 
+### B2. New-order push notification  (feat: picker new-task push)
+Pick tasks are a **shared store pull-queue**, so a new order pings **every** picker of that store.
+1. Log the picker in at least once (this registers the device token — `POST picking/profile/fcm-token`).
+2. Put the app in the **background**. On the customer side, place a **new order** at this
+   (picking-enabled) store so a fresh pick task is created.
+3. ✅ The picker device gets a push: **"New order to pick 🧺 — Order #HP… is ready to pick."**
+   (Android channel **"picker_orders"**, high importance — sound + vibrate.)
+4. ✅ Tapping it opens the picker app on the **Available** queue with the new task.
+5. ✅ **Only one** push per order (fired on task creation, not on retries). A second identical
+   order to the same store pings again; re-processing the *same* order does **not** re-ping.
+6. ✅ If a picker turned **newTask** off in prefs, they're skipped; others still get it.
+- ❌ Non-picking store (picking disabled) → no task, no push.
+- Note: notification is **fire-and-forget** — if FCM is down the order/task still creates fine.
+  (Covered by `packages/picking/__tests__/auto-create.test.js`.)
+
 ### C. Claim an order  (feat: existing flow)
 1. Open **Order A** → **Start picking**.
 2. ✅ It moves to **My Pickings**; the bottom bar shows "N item(s) left to pick".
