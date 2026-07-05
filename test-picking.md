@@ -119,13 +119,17 @@ Tap **Scan to verify** (or **Scan to register barcode**):
 5. ✅ On a successful decode: a **beep + haptic**, then it returns to the line.
 6. ❌ Back / Cancel returns without changing the line.
 
-### F. Scan to verify / mismatch / enroll  (feat: existing + error tone)
+### F. Scan to verify / mismatch / no-barcode  (feat: existing + error tone; CH-12)
 1. Scan the **correct** barcode → ✅ toast **"Product verified ✓"**; the card now **reveals
    name/image/qty** and a **"Pick N"** button.
 2. Scan a **wrong** barcode on a barcoded line → ✅ **"Wrong product scanned ✗"** (distinct
    error tone), line stays unverified.
-3. On the **no-barcode** item, scan any code → ✅ **"Barcode registered ✓"** (enrolled
-   inline); the line reveals and is pickable.
+3. On the **no-barcode** item, scan any code → **CHANGED (CH-12):** the picker **no longer
+   enrolls** it. Backend returns `result: "no_barcode"`; the app should show **"No barcode on
+   file — ask the warehouse to set it. Pick without a scan."** The line stays unverified — pick
+   it via **"Confirm without scan (override)"**. Barcode is now set only in **Product Master** by
+   a super admin / warehouse manager (usually at goods-receipt). *(App message pending — see
+   client-followups CH-12; until the picker app ships it, the scan just won't verify.)*
 
 ### G. Scan-anything (continuous) mode  (feat: scan-anything)
 1. From the order's top bar, tap the **scan icon** ("Scan order items").

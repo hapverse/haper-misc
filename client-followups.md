@@ -473,6 +473,30 @@ they don't serve, or create another manager.
 
 ---
 
+## CH-12 · Barcode is master-owned (product identity) — super admin + warehouse manager only — backend + admin DONE; picker app PENDING
+**Backend + admin:** ✅ on `dev`. **Picker app:** ⏳ one client change left (below).
+**Why:** barcode is the cross-store identity — the **warehouse SKU** + the **picker scan key** + the
+transfer link. When it was a freely-editable **per-store** field, a store admin or picker could set a
+value that didn't match the physical product (or diverged across stores) → the warehouse couldn't map
+stock to replenish, and the picker's scan never matched. Now there's **one barcode per product**, owned
+by the master, set only by the two roles that handle product identity (HQ) + physical goods (warehouse).
+**Plain summary:** barcode is now set ONLY in Product Master by **super admin or warehouse manager**, and
+**fans out to every store's item**. Read-only everywhere else; the picker no longer enrolls.
+
+| Client | What to do | Status |
+|---|---|---|
+| **backend** | **NEW** `PATCH /admin/product/:id/barcode` (super_admin + warehouse_manager) → sets the master barcode + **updateMany** all items with that `iId` + uniqueness guard (no other product/item may use it). Item edit (`PUT /admin/item/:id`) **drops `barcode`** from editable fields (ignored). Generic master edit (`PATCH /admin/product/:id`) **strips barcode** (only the fan-out endpoint changes it). Admin shelf-walk `enroll-barcode`/`clear-barcode` → **super-admin-only** + fan out to master + siblings. **Picker `verify`** no longer enrolls a missing barcode — returns `result: "no_barcode"`. Tests: `product-barcode.test.js` (8), `picking-lifecycle.test.js` updated. Migration `reconcile-product-barcodes.js` (dry-run) normalises legacy divergence + flags conflicts. | ✅ done (dev) |
+| **admin** | ItemModal: **Barcode read-only** (+ "managed in Product Master" hint); helper text updated. ProductModal: barcode editable on **create**, read-only on **edit**. Product Master list: new **"Barcode"** action (super admin + warehouse manager) → `BarcodeModal` → `productApi.setBarcode` (fans out). `tsc` clean, vitest green. | ✅ done (dev) |
+| **picker (app)** | **⏳ TODO:** the `verify` scan of an item with **no barcode** now returns `result: "no_barcode"` (was `"enrolled"`). The Kotlin app must show **"No barcode on file — ask the warehouse to set it. Pick without a scan."** instead of the old "Barcode registered ✓", and NOT treat it as verified (the picker uses "confirm without scan" to pick). Backend already enforces it; this is UX only. | ⏳ to do |
+| **web / ios / delivery** | Not affected (barcode is admin/picker-internal; customer JSON unchanged). | — |
+
+**Operational note:** the barcode must be set **before** a product is picked — the natural owner is the
+**warehouse manager at goods-receipt** (physical product + scanner). If a product reaches a store with no
+barcode, the picker can only "confirm without scan" until a super admin / warehouse manager sets it.
+**Test guide:** `haper-misc/test-picking.md` §F (enroll step changed) + a Product-Master barcode step in `test-inventory.md`.
+
+---
+
 ## Future changes
 **This file is COMPLETE for inventory-v2** — CH-1…6 cover every shipped backend change (Phases 0–4) with a
 per-client checklist + exact endpoints, and CH-7 covers the one optional P9 item (with its backend prerequisite).
