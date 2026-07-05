@@ -66,7 +66,8 @@ on a **transfer Receive**, or on a **sale**. Creating or dispatching a transfer 
 |---|---|---|---|---|
 | Categories / sub-categories **CRUD** (CH-1) | ✅ | ❌ (on/off only) | ❌ | ❌ |
 | Per-store category **On/Off** (CH-1) | ✅ (in a store) | ✅ | ❌ | ❌ |
-| **Product Master** + Assign (CH-6) | ✅ | ❌ | ❌ | ❌ |
+| **Product Master**: view + create + Assign (CH-6 / **CH-11**) | ✅ (all stores) | ❌ | ✅ (create + assign to **served** stores only; **no** edit/discontinue) | ❌ |
+| **Warehouse Staff** accounts (**CH-11**) | ✅ (any warehouse) | ❌ | ✅ (own warehouse **staff** only; never a manager) | ❌ |
 | Item per-store fields (price/stock/barcode) | ✅ | ✅ | — | — |
 | Item catalogue fields (name/brand/GST…) (CH-6) | ✅ (all stores) | ❌ (read-only) | — | — |
 | **Warehouse dashboard** (home, real counts) — #1 | ✅ | ❌ | ✅ | ✅ |
@@ -416,8 +417,10 @@ fields warns it **updates every store**.
 **Warehouse manager** should see (no store switcher): **Dashboard** (warehouse cockpit),
 **Stock Health**, **Item Lookup**, **Warehouses** (stock + write-off + reorder policy),
 **Suppliers**, **Transfers** (create/dispatch/cancel), **Replenishment** (approve/reject/fulfil),
-**Stock Ledger**, **Batch Recall** — and **nothing** store-side (no Items/Categories/Product
-Master/Orders/Analytics/Stores). **Warehouse staff**: the same minus the manage-only actions —
+**Stock Ledger**, **Batch Recall**, plus **Product Master** (create + assign to their served
+stores — no edit/discontinue) and **Warehouse Staff** (their own warehouse's staff) — see §15k —
+and **nothing else** store-side (no Items/Categories/Orders/Analytics/Stores). **Warehouse staff**:
+the same minus the manage-only actions —
 they can **view** warehouses/stock + **receive** + do transfers, but get **no** warehouse
 CRUD, **no** Approve/Reject/Fulfil, **no** write-off, and Batch Recall is **trace-only** (full §15).
 
@@ -532,6 +535,42 @@ the warehouse manager (a plain reload can keep a stale permission cache), then c
   stock view with the warehouse auto-selected and the goods-receipt form already open.
   Only **Receive Goods** highlights in the sidebar (not Warehouses too).
 - ❌ If any are missing → stale session or stale admin build (see Troubleshooting).
+
+### 15k. Warehouse manager: Product Master + Warehouse Staff  (CH-11)
+A warehouse manager can now catalogue the goods they receive and staff their own warehouse —
+without a super admin. Log in as a **warehouse manager** (no store switcher).
+
+**Product Master (create + assign to served stores):**
+- ✅ Sidebar → **Product Master** is now visible. Open it → the list loads.
+- ✅ **+ New product** works — create a product (name/unit/barcode/image). Use this to catalogue a
+  barcode you received into the warehouse but that isn't a product yet (the "orphan barcode" case).
+- ✅ On a product row, **Assign** is shown; **Edit** and **Discontinue/Activate** are **hidden**
+  (those fan out to every store — super-admin only; the backend also 403s them).
+- ✅ In **Assign**, the store list shows **only the stores this warehouse serves** (fetched from
+  `GET /admin/warehouse/:id/stores`). The segmented button reads **"All my stores"** (not "All stores").
+  - ❌ There's no way to pick a store the warehouse doesn't serve; if forced via the API, the backend
+    returns **403** "You can only assign products to stores your warehouse serves."
+  - ✅ **"All my stores"** assigns to exactly the served stores (a store served by another warehouse
+    is NOT touched).
+  - ✅ The manager still sets **price / selling price / low-qty** at assign (same as the super-admin flow).
+- ✅ Super admin is unchanged — sees Edit/Discontinue, and Assign "All stores" still means **every** store.
+
+**Warehouse Staff (own warehouse, staff only):**
+- ✅ Sidebar → **Warehouse Staff** is now visible. The list shows **only the STAFF of this manager's
+  warehouse** (no managers, no other warehouse's staff).
+- ✅ **+ New staff** → the **Role** field is locked to **Warehouse Staff** (no "Manager" option) and the
+  **Warehouse** field is locked to the manager's own warehouse. Create works.
+  - ❌ Forcing `role: warehouse_manager` via the API → **403** "A warehouse manager can only create
+    warehouse staff, not a manager." Forcing another `warehouseId` → **403** "You can only add staff to
+    your own warehouse."
+- ✅ **Change password** + **Deactivate/Activate** work for the manager's own staff.
+  - ❌ Editing/deactivating a staffer of **another** warehouse, or **any manager** → **403**.
+  - ❌ A warehouse manager cannot change a staffer's raw **permissions** (super-admin only) → **403**.
+- ✅ Super admin still manages **all** warehouse accounts (managers + staff, any warehouse) as before.
+
+> Backend guards are authoritative (`packages/admin/src/routes/product/*` +
+> `packages/admin/src/routes/warehouse-staff/*`); the UI locks are convenience only. Tests:
+> `product-assign-warehouse-scope.test.js`, `warehouse-staff-manager-scope.test.js`.
 
 ---
 

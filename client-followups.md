@@ -448,6 +448,31 @@ detail would close that gap — not built yet.
 
 ---
 
+## CH-11 · Warehouse manager gets Product Master (create + assign-to-served-stores) + own-warehouse Staff — backend + admin DONE
+**Backend + admin:** ✅ on `dev` (haper-backend + haper-admin).
+**Why:** a warehouse manager is the one who physically receives new goods, so they hit the
+"received a barcode that isn't a catalogued product yet" gap. They previously had **no** Product
+Master access (super-admin-only), and couldn't staff their own warehouse (super-admin-only). This
+gives them just enough — **create** a product + **assign it to the stores their warehouse serves**,
+and manage **their own warehouse's staff** — without opening company-wide powers.
+**Plain summary:** warehouse managers can now catalogue + onboard products to their served stores,
+and add/manage their own warehouse's staff; they still can't edit shared products, price nothing
+they don't serve, or create another manager.
+
+| Client | What to do | Status |
+|---|---|---|
+| **backend** | `product` routes: View + Create + Assign + upload-image now allow **super_admin OR warehouse_manager** (Edit/Discontinue stay super-admin). `product/controller.assign` fences a warehouse caller to `StoreRepository.getServedStores(their warehouse)` — `"ALL"` collapses to served stores, an unserved store → **403**; super admin unchanged. `warehouse-staff` routes now allow **warehouse_manager**; the controller fences them to **STAFF of their OWN warehouse** (create forces role=staff + own warehouse; list/update/remove reject a manager target, another warehouse, or a permissions/warehouse-move edit → 403). Tests: `product-assign-warehouse-scope.test.js`, `warehouse-staff-manager-scope.test.js` (admin jest green). | ✅ done (dev) |
+| **admin** | Sidebar: **Product Master** + **Warehouse Staff** now visible to warehouse_manager (`useMenu.ts` `requireAnyRole`); routes moved to a `['super_admin','warehouse_manager']` group (`App.tsx`). **ProductsList**: Edit + Discontinue hidden for non-super-admins (Create + Assign shown). **AssignModal**: for a warehouse manager the store picker loads **served stores** (`inventoryApi.listServedStores`) and the segment reads **"All my stores"**. **WarehouseStaffPage**: Role locked to **Staff**, Warehouse locked to **own**, list is backend-scoped. `tsc -b` + eslint clean; vitest green (`AssignModal.test.tsx` incl. a manager case). | ✅ done (dev) |
+| **web / android / ios / picker / delivery** | Not affected (admin-only surface; no customer JSON change). | — |
+
+**Backend notes (CH-11):**
+- `POST /admin/product`, `POST /admin/product/:id/assign`, `POST /admin/product/upload-image`, `GET /admin/product(/:id)` — now super_admin **or** warehouse_manager. `PATCH /admin/product/:id` + `/status` stay super-admin-only.
+- Assign fence: warehouse caller → served-store intersection (`"ALL"` = served only). Super admin → unrestricted.
+- `warehouse-staff` (`GET/POST/PATCH/DELETE`) — warehouse_manager scoped to own-warehouse **staff**; role/warehouse forced; permissions + warehouse-move edits are super-admin-only.
+- **Test guide:** `haper-misc/test-inventory.md` §15k (+ role-capabilities table).
+
+---
+
 ## Future changes
 **This file is COMPLETE for inventory-v2** — CH-1…6 cover every shipped backend change (Phases 0–4) with a
 per-client checklist + exact endpoints, and CH-7 covers the one optional P9 item (with its backend prerequisite).
