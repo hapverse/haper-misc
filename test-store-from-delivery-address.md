@@ -151,6 +151,13 @@ the store from the SELECTED delivery (default) address, GPS only as first-run fa
      (`HomeViewModel.clearAll` → `clearDeliveryLocation`). The old hardcoded **Delhi
      (28.7041,77.1025)** default is gone — the last-resort seed is now **Chhapra (25.7811,84.7274)**
      to match Android/web (same product-decision note applies).
+  4. **Categories no-store empty state** (`Views/CategoryView.swift`, dev `ae3fc50`; mirrors
+     Android `CategoryScreen.kt` 37cec37): when categories are empty AND `selectedStore == nil`
+     AND not loading, the browse-by-aisle screen shows "No store selected — Set your delivery
+     location to browse products" + a button that opens the address picker (instead of the
+     misleading "Select a Category" prompt over an empty sidebar). A spinner shows ONLY while
+     resolving/loading. (iOS never hard-hung like Android — its item spinner was nested under a
+     selected category — but the no-store dead-end is now handled gracefully.)
 
 Still to do: on-device/GPS runtime verification (Android + iOS), and a web map picker.
 
@@ -217,6 +224,10 @@ Still to do: on-device/GPS runtime verification (Android + iOS), and a web map p
    server default, no hardcoded-Delhi reset.
 5. **Logout clears it:** log out → log in as a different user → **Expect:** the previous user's
    delivery location is gone (resolves from the new user's default).
+6. **Categories no-store state:** with no resolved store, open the **Categories** tab →
+   **Expect:** "No store selected — Set your delivery location to browse products" + a button
+   that opens the address picker (NOT a "Select a Category" prompt over an empty sidebar, and NOT
+   an endless spinner). Pick a served address → categories load.
 
 ### Edge cases
 - Address with **no coordinates** (85% of legacy rows): guard is skipped (fail-open); the
