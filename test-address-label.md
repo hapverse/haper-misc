@@ -31,7 +31,16 @@ before shipping/using the labelled app build.**
   **Other** reveals a custom text field (max 30). Tapping the selected chip again clears it.
   Initialised from `address.label` (a custom value maps to the Other chip). `performSave`
   computes the final string and passes `label`.
-- `AddressListScreen`: shows the label as a small bold primary line above the name.
+- `AddressListScreen`: shows the label as a small bold primary line above the name; the
+  card's leading icon reflects the label (Home → house, Work → briefcase, else → location
+  pin). The per-address action was renamed **"Set Default" → "Deliver Here"**, and on success
+  (the address becomes default) it **navigates to Home** to shop that address's store
+  (`onDelivered` → Home tab).
+
+### ✅ Deliver Here (address list)
+1. On an address that isn't the default, tap **Deliver Here**.
+2. **Expect:** the app goes to **Home** and the header resolves that address's store
+   ("Delivering to <label> · …"), or the not-serviceable screen if nothing serves it.
 
 ## Manual test steps (after backend deploy + new APK)
 ### ✅ Add with a label
