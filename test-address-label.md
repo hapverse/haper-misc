@@ -2,7 +2,7 @@
 
 **Area:** User app → Add/Edit Address → "Save as" chips; Address list card shows the label.
 **Backend:** `addresses.schema` `label`; `POST/PATCH /user/address` validators (packages/user).
-**Apps:** Android + web (done); iOS TODO.
+**Apps:** Android + web + iOS (done).
 
 ## What it does
 Each address can carry an optional nickname: **Home**, **Work**, or **Other** (typed custom
@@ -57,6 +57,34 @@ before shipping/using the labelled app build.**
   **"Your order will be delivered here"**.
 - `pages/Checkout.tsx`: address-select cards use the label-based icon + label text.
 
+## iOS — DONE (haper-ios, dev `8359260`; xcodebuild iphonesimulator BUILD SUCCEEDED; NOT device-verified)
+- `Models/AddressModels.swift`: `label` on `AddressModel` (nullable, CodingKey `label`).
+- `ViewModels/AddressViewModel.addAddress/updateAddress`: new `label: String? = nil` param;
+  sent in the body only when non-empty (so unlabeled saves work against any backend, like
+  Android's Gson-drops-null behaviour).
+- `Views/AddEditAddressView.swift`: **PIN code is now the first section**; a "Save as
+  (optional)" **Home / Work / Other** chip row (`LabelChip`); Other reveals a max-30 text
+  field; tapping the selected chip again clears it; edit re-derives the chip from the saved
+  label (custom → Other) in `setupForm`; `saveAddress` passes the resolved label.
+- `Views/AddressListView.swift`: label shown as a small bold primary line above the name;
+  leading icon reflects the label (Home → `house.fill`, Work → `briefcase.fill`, else →
+  `mappin.circle.fill`). Non-default action renamed **"Set Default" → "Deliver Here"** and on
+  success jumps to the **Home tab** (`homeVM.selectedTab = 0` + dismiss). Default row shows a
+  **"Delivering here"** check badge + **"Your order will be delivered here"**.
+- `Components/HomeComponents.swift` (`LocationHeaderView`): state-aware header shows
+  "Delivering to <label> · <area>" from the default address.
+
+### iOS manual steps (after backend deploy, on a simulator/device)
+1. Add Address → PIN field appears first → tap **Work** → fill → Save → **Expect:** card shows
+   "Work" with a briefcase icon.
+2. Add Address → **Other** → type "Parents" (capped at 30) → Save → **Expect:** card shows
+   "Parents" with a pin icon.
+3. Edit a legacy (unlabeled) address → tap **Home** → Save → **Expect:** shows "Home".
+4. Deselect a chip on a labelled address → Save → **Expect:** label omitted (unchanged/legacy).
+5. On a non-default address tap **Deliver Here** → **Expect:** jumps to Home; header shows
+   "Delivering to <label> · <area>" (or not-serviceable if nothing serves it); default card
+   shows the "Delivering here" badge.
+
 ### Web manual steps (after backend deploy)
 1. Add Address → PIN code appears first → tap **Work** → fill → Save → **Expect:** card shows
    "Work" with a briefcase icon.
@@ -99,5 +127,6 @@ before shipping/using the labelled app build.**
 - Web: done on dev (`ce0a28a`) — the form sends `label` only when a chip is picked, so it is
   safe against a backend without the validator, but deploy the backend first before users pick
   a label (else 403).
-- **TODO:** mirror to iOS (add the "Save as" chips + send `label`); update
-  `haper-misc/client-followups.md`.
+- iOS: done on dev (`8359260`) — like the app builds, it sends `label` only when a chip is
+  picked (safe against a backend without the validator; deploy the backend first before users
+  pick a label). Build-verified only; not device-verified.

@@ -128,6 +128,30 @@ the store from the SELECTED delivery (default) address, GPS only as first-run fa
   not-serviceable "Change delivery location" sheet → AddressListView. iOS already had a MapKit
   picker (capture) and no coupling.
 
+  **Cold-start + not-serviceable + header mirror (2026-07-10, dev `8359260`; xcodebuild
+  iphonesimulator BUILD SUCCEEDED):**
+  1. **State-aware home header** (`Components/HomeComponents.swift` `LocationHeaderView`): the
+     old always-on "Select Store" pill + `homeVM.locality` line is replaced by three states —
+     *resolving* ("Finding your store…" + spinner), *has-store* (store name / "Delivering to
+     <label> · <area>" from the default address; tap switches store if >1 else opens the picker),
+     *no-store* ("Set delivery location" / "Choose where you want delivery" → picker via a new
+     `onChangeLocation` closure from HomeView). HomeView fetches the default address on appear so
+     the subtitle has the label/area.
+  2. **Clear stale store when not serviceable** (`ViewModels/HomeViewModel.fetchNearestStore` +
+     new `clearResolvedStore()`): backend **404** (no serving store) or a 200-empty list now
+     CLEARS the cached store + catalog and sets `errorMessage = "No nearby stores found."` so
+     `HomeView.isNotServiceable` shows the not-serviceable screen instead of stale old-store data;
+     5xx / network errors KEEP the store (transient). Needed a NetworkManager change:
+     `NetworkError.httpError(Int, String)` (+ `statusCode`) so the 404 is distinguishable
+     (errorDescription unchanged → existing error UI intact).
+  3. **Cold start reopens to the last-used delivery location** (`Utils/AppEnvironment.swift`):
+     the last delivery point is persisted in **UserDefaults** (`haper_last_delivery_loc`), seeded
+     at launch by `AppEnvironment.initialize()` (called first in `haperApp.init`), and
+     `resolveStoreFromDeliveryAddressOrGps` prefers it over the server default; cleared on logout
+     (`HomeViewModel.clearAll` → `clearDeliveryLocation`). The old hardcoded **Delhi
+     (28.7041,77.1025)** default is gone — the last-resort seed is now **Chhapra (25.7811,84.7274)**
+     to match Android/web (same product-decision note applies).
+
 Still to do: on-device/GPS runtime verification (Android + iOS), and a web map picker.
 
 ## Manual test steps
@@ -177,6 +201,20 @@ Still to do: on-device/GPS runtime verification (Android + iOS), and a web map p
 4. **Cold start remembers the delivery location:** deliver to a served address, close the tab,
    reopen the app → **Expect:** the same store loads (resolved from the persisted last-used
    delivery location), not the server default.
+5. **Logout clears it:** log out → log in as a different user → **Expect:** the previous user's
+   delivery location is gone (resolves from the new user's default).
+
+### ✅ iOS cold-start + not-serviceable + header (2026-07-10)
+1. **Header states:** open Home while it loads → **Expect:** "Finding your store…" + spinner;
+   once loaded → store name / "Delivering to <label> · <area>" (served) OR "Set delivery location
+   / Choose where you want delivery" (not served, tap → address picker sheet).
+2. **Deliver Here re-homes:** on My Addresses tap **Deliver Here** on an in-range address →
+   **Expect:** jumps to the Home tab and the catalog loads for that address's store.
+3. **Switch to an unserved address:** **Deliver Here** on an out-of-range address (backend 404) →
+   **Expect:** Home shows the not-serviceable screen (stale store cleared), not the old catalog.
+4. **Cold start remembers the delivery location:** deliver to a served address, force-quit,
+   reopen → **Expect:** the same store loads (from the persisted last-used location), not the
+   server default, no hardcoded-Delhi reset.
 5. **Logout clears it:** log out → log in as a different user → **Expect:** the previous user's
    delivery location is gone (resolves from the new user's default).
 

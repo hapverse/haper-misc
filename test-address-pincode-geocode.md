@@ -4,7 +4,7 @@
 jumps to that pincode's approximate centre → user drags to the exact spot.
 **Backend:** `GET /user/address/geocode?pin=<6-digit>` (packages/user address route);
 `geocodingUtils.getCoordsFromPincode` (packages/shared).
-**Apps:** Android (first), then iOS. **Web: N/A** — the web Add/Edit Address form has NO map
+**Apps:** Android + iOS (done). **Web: N/A** — the web Add/Edit Address form has NO map
 picker (it stamps device GPS on new addresses), so there is no pin to snap. If a web map picker
 is ever added, wire it to `GET /user/address/geocode?pin=` then.
 
@@ -67,7 +67,21 @@ now defaults to `googlemaps`. Both reverse geocode (`getLocality`) and forward g
   recenters the inline preview + MapPickerScreen) and `locationStatus = "Location set from
   pincode — drag to adjust"`. `initialPin` guard = don't snap on opening an existing address.
 - Needs the backend deployed (key live) to actually return coords; until then `coords:null`
-  and the pin just stays put. Still needs on-device verification. Then mirror to iOS + web.
+  and the pin just stays put. Still needs on-device verification.
+
+## iOS — DONE (haper-ios, dev `8359260`; xcodebuild iphonesimulator BUILD SUCCEEDED; NOT device-verified)
+
+- `Models/AddressModels.swift`: `PincodeGeocodeResponse { coords: PincodeCoords? }`,
+  `PincodeCoords { latitude, longitude }`.
+- `ViewModels/AddressViewModel.geocodePincode(pin:completion:)` → `GET /user/address/geocode?pin=`;
+  best-effort (calls back only on non-null coords, else leaves the pin as-is).
+- `Views/AddEditAddressView.swift`: `.onChange(of: pin)` sanitizes to digits (capped 6) and
+  runs a **~300ms** debounced `Task`; fires only when `digits.count == 6 && digits != initialPin
+  && ValidationHelper.validatePin == nil` and not read-only; moves `mapCenter` + camera to the
+  returned coords (user then drags to adjust). `initialPin` (set in `setupForm`) guards against
+  snapping on opening an existing address. Fail-safe: null/error leaves the pin, never blocks save.
+- Needs the backend deployed (key live) to actually return coords; until then `coords:null`
+  and the pin just stays put. Build-verified only.
 
 ## Manual test steps (after key is live + backend deployed)
 
@@ -95,4 +109,4 @@ now defaults to `googlemaps`. Both reverse geocode (`getLocality`) and forward g
 - Backend: safe to ship now — dormant (returns null) until `GEOCODING_SERVICE=googlemaps` +
   key are set. Dev: `dapi.haper.in`.
 - Set `GOOGLE_PLACES_API_KEY` + `GEOCODING_SERVICE=googlemaps` in Parameter Store → redeploy.
-- Then build + ship the Android wiring; mirror to iOS + web.
+- Then build + ship the Android + iOS wiring. (Web N/A — no map picker.)
