@@ -78,6 +78,29 @@ the store from the SELECTED delivery (default) address, GPS only as first-run fa
   MainActivity fires it on `addressVM.defaultAddress` change; removed the AddEditAddressScreen
   AppEnvironment-coords overwrite (single source of truth). Capture already enforced (map pin +
   Save blocks without coords). HomeScreen not-serviceable "Change delivery location".
+
+  **Cold-start reliability fixes (2026-07-09, assembleDebug SUCCESSFUL):** three defects that
+  made store selection stick or do nothing:
+  1. **Location + store now persist across launches.** `AppEnvironment` was in-memory only and
+     defaulted to **Delhi (28.7041,77.1025)** — wrong for a Bihar business and reset on every
+     cold start. Now `AppEnvironment.initialize(context)` (called first in `MainActivity.onCreate`)
+     seeds lat/lng/storeId from `SharedPreferences("haper_location_prefs")`, and the setters
+     write through. A returning user resolves their real store instantly; the last-resort seed
+     (fresh install + denied location + no address) is **Chhapra (25.7811,84.7274)**, near the
+     live store, not Delhi. ⇐ **product decision to confirm:** this means a zero-signal new user
+     now browses the Chhapra store instead of hitting "not serviceable"; revert to a non-serving
+     coord if strict not-serviceable is preferred.
+  2. **Resolution watchdog now covers the address path, not just GPS.** The 8s safety net was
+     armed only in `requestLocationAndFetch()`; the delivery-address branch (the primary path)
+     had none, so a slow/failed `getDefaultAddress` could wedge the "Finding your nearest store"
+     overlay forever. `armResolutionWatchdog()` is now called up front in
+     `resolveStoreFromDeliveryAddressOrGps()` and in `onDeliveryAddressChanged()`. A single
+     tracked `resolveJob` is cancelled before each new resolve so racing `fetchHomeData()`
+     triggers can't stack duplicate nearest-store calls or stomp the fetch guard.
+  3. **Saving a new address now delivers there.** `AddressViewModel.justAddedAddress` is set on
+     add-success; MainActivity re-homes to it via `onDeliveryAddressChanged`. Previously an added
+     address did nothing unless the user also marked it default — so "add a Chapra address to
+     order for someone there" silently stayed on the old store.
 - **Web** (`haper-web`, dev b8f8b3d; tsc clean): api.ts `resolveStoreForDeliveryLocation` /
   `resolveStoreFromDefaultAddress`; AuthContext.detectStore resolves from the default address;
   AddressBook re-homes on "Deliver to this Address"; Home not-serviceable "Change delivery
@@ -113,6 +136,18 @@ Still to do: on-device/GPS runtime verification (Android + iOS), and a web map p
 - `=true`: placing an order to a far address (with coords) returns **400** "…not in the
   selected store's delivery area…". Near address, store-pickup, and no-coordinate addresses
   still succeed.
+
+### ✅ Android cold-start reliability (2026-07-09)
+1. **Add-address delivers there:** at Bheldi (or any served point), Add an in-range Chapra
+   address with a pin → **Expect:** home switches to the Chapra store immediately (no need to
+   also mark it default). If nothing serves that point → not-serviceable screen (correct).
+2. **Cold start remembers the store:** resolve a store, force-stop the app, reopen →
+   **Expect:** the same store loads immediately; no long "Finding your nearest store" spinner,
+   no reset to a Delhi/other default.
+3. **Overlay never sticks:** put the phone in airplane mode and cold-start → **Expect:** the
+   loading overlay clears within ~8s (watchdog) to the not-serviceable/error state, never hangs.
+4. **Fresh install, location denied, no address:** **Expect:** browses the Chhapra store (the
+   last-resort seed) rather than a dead "not serviceable" — see the product-decision note above.
 
 ### Edge cases
 - Address with **no coordinates** (85% of legacy rows): guard is skipped (fail-open); the

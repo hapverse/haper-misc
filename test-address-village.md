@@ -48,10 +48,13 @@ Only this one endpoint changed — geo middleware and other `req.storeId` reader
 3. **Expect:** "Village / Locality" is a **dropdown** showing exactly `Alpha`, `Bravo`,
    and selection is **required** to save.
 
-### ✅ No store context (fallback)
-1. Call `GET /user/address/default` without an `x-store-id` header.
-2. **Expect:** `data.villages` = the master list (`shared/constants/address.constant.js`).
-   This preserves old behaviour for clients that don't send a store.
+### ✅ No store context (fallback) — CHANGED 2026-07-10
+1. Call `GET /user/address/default` without an `x-store-id` header (store-less / new /
+   not-yet-serviceable user).
+2. **Expect:** `data.villages` = **`[]`** → the app shows a **free-text** village field, NOT
+   a dropdown. (Previously this returned the hardcoded 25-village master list, which forced a
+   confusing dropdown of arbitrary villages on new users. `AddressConstant.villages` is no
+   longer used by this controller.)
 
 ### Edge cases
 - Switching from a with-villages store to a no-villages store must flip the field
