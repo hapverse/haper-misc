@@ -106,6 +106,22 @@ the store from the SELECTED delivery (default) address, GPS only as first-run fa
   AddressBook re-homes on "Deliver to this Address"; Home not-serviceable "Change delivery
   location" → /addresses. **GAP:** web address form still stamps device GPS on NEW addresses
   (no map picker yet) — a follow-up; resolution is correct for addresses that HAVE coords.
+
+  **Cold-start + reliability mirror (2026-07-10, dev `8d0fe8c`; tsc clean, vite build OK):**
+  1. **State-aware home header** (`pages/Home.tsx`) mirrors the app's HomeHeroCard: *resolving*
+     ("Finding your store…" + spinner) while home data loads, *has-store* ("Delivering to
+     <label> · <area>"), and *no-store* ("Set delivery location" / "Choose where you want
+     delivery" → /addresses). Replaces the old always-on "Delivery to … | Select Address".
+  2. **Clear stale store when not serviceable** (`services/api.ts` `fetchNearestStoreAndApply`):
+     a served point sets the new store; a 200-empty or 404 CLEARS the cached store (so the home
+     shows not-serviceable, not old-store data); a 5xx / network error KEEPS the existing store
+     (transient). Previously `resolveStoreForDeliveryLocation` cleared the store up front even on
+     a hiccup.
+  3. **Cold start reopens to the last-used delivery location** (`services/api.ts`): the last
+     delivery point re-homed to is persisted in `localStorage` (`haper_delivery_loc`), seeds the
+     request coords at load, and `resolveStoreFromDefaultAddress` prefers it over the server
+     default; cleared on logout (`clearAuth`). The web GPS-stamping gap for NEW addresses is
+     unchanged (still a follow-up).
 - **iOS** (`haper-ios`, dev fe5d629; xcodebuild simulator OK): HomeViewModel resolves from the
   default address (GPS fallback); location listener guarded by `deliveryCoords` so a late GPS
   update can't override; MainTabView `.onChange(defaultAddress?.location?.coordinates)`; HomeView
@@ -148,6 +164,21 @@ Still to do: on-device/GPS runtime verification (Android + iOS), and a web map p
    loading overlay clears within ~8s (watchdog) to the not-serviceable/error state, never hangs.
 4. **Fresh install, location denied, no address:** **Expect:** browses the Chhapra store (the
    last-resort seed) rather than a dead "not serviceable" — see the product-decision note above.
+
+### ✅ Web cold-start + not-serviceable (2026-07-10)
+1. **Header states:** open Home while it loads → **Expect:** "Finding your store…" with a
+   spinner; once loaded → "Delivering to <label> · <area>" (served) OR "Set delivery location /
+   Choose where you want delivery" (not served).
+2. **Deliver Here re-homes:** on /addresses tap **Deliver Here** on an in-range address →
+   **Expect:** navigates to Home and the catalog loads for that address's store.
+3. **Switch to an unserved address:** **Deliver Here** on an out-of-range address →
+   **Expect:** Home shows the not-serviceable screen (stale store cleared), not the old store's
+   catalog.
+4. **Cold start remembers the delivery location:** deliver to a served address, close the tab,
+   reopen the app → **Expect:** the same store loads (resolved from the persisted last-used
+   delivery location), not the server default.
+5. **Logout clears it:** log out → log in as a different user → **Expect:** the previous user's
+   delivery location is gone (resolves from the new user's default).
 
 ### Edge cases
 - Address with **no coordinates** (85% of legacy rows): guard is skipped (fail-open); the

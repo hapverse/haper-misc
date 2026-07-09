@@ -4,7 +4,9 @@
 jumps to that pincode's approximate centre → user drags to the exact spot.
 **Backend:** `GET /user/address/geocode?pin=<6-digit>` (packages/user address route);
 `geocodingUtils.getCoordsFromPincode` (packages/shared).
-**Apps:** Android (first), then iOS + web.
+**Apps:** Android (first), then iOS. **Web: N/A** — the web Add/Edit Address form has NO map
+picker (it stamps device GPS on new addresses), so there is no pin to snap. If a web map picker
+is ever added, wire it to `GET /user/address/geocode?pin=` then.
 
 ## Why
 

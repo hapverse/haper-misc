@@ -2,7 +2,7 @@
 
 **Area:** User app → Add/Edit Address → "Save as" chips; Address list card shows the label.
 **Backend:** `addresses.schema` `label`; `POST/PATCH /user/address` validators (packages/user).
-**Apps:** Android (done); iOS + web TODO.
+**Apps:** Android + web (done); iOS TODO.
 
 ## What it does
 Each address can carry an optional nickname: **Home**, **Work**, or **Other** (typed custom
@@ -42,6 +42,32 @@ before shipping/using the labelled app build.**
 2. **Expect:** the app goes to **Home** and the header resolves that address's store
    ("Delivering to <label> · …"), or the not-serviceable screen if nothing serves it.
 
+## Web — DONE (haper-web, dev `ce0a28a`; tsc clean, vite build OK; NOT browser-verified)
+- `types.ts`: `label` on `AddressModel` + `AddressUpsertRequest` (nullable); `Address` gains a
+  `label` field (the raw nickname) alongside the existing `type` chip category.
+- `services/mappers.ts`: `mapAddressModelToAddress` derives the `type` chip from `label`
+  (custom → "Other", unlabeled → "Home") and carries the raw `label`; `mapAddressToRequest`
+  sends `label` (trimmed, or null).
+- `pages/AddressBook.tsx`: **PIN code is now the first field**; a "Save as (Optional)"
+  **Home / Work / Other** chip row (Other reveals a max-30 text input); tapping the selected
+  chip again clears it; edit re-derives the chip from the saved label (custom → Other). Cards
+  show the label text as the heading and a label-based leading icon (Home → house, Work →
+  briefcase, else → pin). The non-default action is now **"Deliver Here"** and navigates to
+  **/home** on success (store re-homes). Default card badge is **"Delivering here"** with
+  **"Your order will be delivered here"**.
+- `pages/Checkout.tsx`: address-select cards use the label-based icon + label text.
+
+### Web manual steps (after backend deploy)
+1. Add Address → PIN code appears first → tap **Work** → fill → Save → **Expect:** card shows
+   "Work" with a briefcase icon.
+2. Add Address → **Other** → type "Parents" (max 30) → Save → **Expect:** card shows "Parents"
+   with a pin icon.
+3. Edit a legacy (unlabeled) address → tap **Home** → Save → **Expect:** shows "Home".
+4. Deselect a chip on a labelled address → Save → **Expect:** label cleared.
+5. On a non-default address tap **Deliver Here** → **Expect:** navigates to Home; header shows
+   "Delivering to <label> · <area>" (or not-serviceable if nothing serves it). Default card
+   shows the "Delivering here" badge.
+
 ## Manual test steps (after backend deploy + new APK)
 ### ✅ Add with a label
 1. Add Address → tap **Work** → fill the form → Save.
@@ -70,5 +96,8 @@ before shipping/using the labelled app build.**
 ## Rollout
 - Backend: safe (nullable field, additive validator) — deploy `dea70bd` to dev (`dapi.haper.in`).
 - Android: ship the new debug APK after the backend is live.
-- **TODO:** mirror to iOS + web (add the "Save as" chips + send `label`); update
+- Web: done on dev (`ce0a28a`) — the form sends `label` only when a chip is picked, so it is
+  safe against a backend without the validator, but deploy the backend first before users pick
+  a label (else 403).
+- **TODO:** mirror to iOS (add the "Save as" chips + send `label`); update
   `haper-misc/client-followups.md`.
