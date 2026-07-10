@@ -66,7 +66,8 @@ on a **transfer Receive**, or on a **sale**. Creating or dispatching a transfer 
 |---|---|---|---|---|
 | Categories / sub-categories **CRUD** (CH-1) | ✅ | ❌ (on/off only) | ❌ | ❌ |
 | Per-store category **On/Off** (CH-1) | ✅ (in a store) | ✅ | ❌ | ❌ |
-| **Product Master** + Assign (CH-6) | ✅ | ❌ | ❌ | ❌ |
+| **Product Master**: view + create + Assign (CH-6 / **CH-11**) | ✅ (all stores) | ❌ | ✅ (create + assign to **served** stores only; **no** edit/discontinue) | ❌ |
+| **Warehouse Staff** accounts (**CH-11**) | ✅ (any warehouse) | ❌ | ✅ (own warehouse **staff** only; never a manager) | ❌ |
 | Item per-store fields (price/stock/barcode) | ✅ | ✅ | — | — |
 | Item catalogue fields (name/brand/GST…) (CH-6) | ✅ (all stores) | ❌ (read-only) | — | — |
 | **Warehouse dashboard** (home, real counts) — #1 | ✅ | ❌ | ✅ | ✅ |
@@ -103,6 +104,18 @@ Sidebar → **Warehouse Staff** → **+ New staff** → pick role (Warehouse Man
 full warehouse control; Warehouse Staff = receive + transfers) + the warehouse +
 name/email/password. Log in as them later → they see only the warehouse screens.
 
+✅ **Change password (super admin):** on the staff row → **Change password** → enter a new
+   one (min 6) → **Update password**. Log in as that manager/staff with the **new** password
+   → works; the **old** password no longer works. (The password is stored hashed, never shown.)
+✅ **Suggest / Copy:** under any password field (warehouse staff, **store admin**, **delivery
+   boy** — create *and* reset) there's a **🎲 Suggest** button that fills a strong password
+   (alphanumeric + `.@#-_`, ambiguous chars like l/1/O/0 avoided) and reveals it, plus a
+   **📋 Copy** button that copies it to the clipboard so you can hand it over. Suggested
+   passwords always satisfy the min-6 rule.
+❌ A password shorter than 6 chars → blocked (FE toast + backend **400**).
+❌ A **store admin** (or anyone not super admin) has no Warehouse Staff page and the API
+   rejects the change with **403** — only super admin manages these accounts.
+
 ### 1c. (Recommended) Turn on batch tracking — to exercise FEFO / lots / recall  (B1)  *(super admin)*
 While editing the warehouse (or on create), tick **"Batch tracking (FEFO + per-lot
 cost/expiry)"** → Save. ✅ Enabling **seeds existing stock**, so the response notes how
@@ -125,14 +138,23 @@ This puts stock into the warehouse.
 
 1. Sidebar → **Warehouses** → select the warehouse → **+ Receive goods**.
 2. (Optional) supplier + invoice number.
-3. Add a line:
-   - **SKU/Barcode** — a code you'll also set as the store item's barcode, e.g. `PB001`.
-   - **Name** (e.g. `Peanut Butter 500g`), **Batch no.** (leave blank = auto, or type
-     the supplier's, e.g. `LOT-A`), **Cost / unit (₹) — required, > 0**, **Expiry**,
-     **Qty** (e.g. `100`).
+3. **Add a product** — use the **"Add a product (search the catalog by name or barcode)"**
+   box. Type e.g. `Peanut Butter` (or a barcode) → pick the product from the dropdown.
+   This **auto-fills** the line's **SKU/Barcode** (= that product's barcode) and **Name**,
+   so the warehouse SKU always matches a real item (the SKU **is** the barcode in Haper —
+   the same value the picker scan-gate and transfers use). You then fill only:
+   - **Batch no.** (leave blank = auto, or type the supplier's, e.g. `LOT-A`),
+     **Cost / unit (₹) — required, > 0**, **Expiry**, **Qty** (e.g. `100`).
+   - *Uncatalogued goods:* you can still **type** SKU/Barcode + Name manually in the grid.
 4. **Receive**.
 
-✅ Warehouse stock shows `PB001 … Available 100`.
+✅ Searching a product by **name or barcode** returns matches; picking one fills
+   **SKU/Barcode + Name** for you. The same product served to several stores appears
+   **once** (deduped by barcode).
+✅ Warehouse stock shows the picked barcode … `Available 100` (SKU column = the barcode).
+❌ Try to pick a product that has **no barcode enrolled** → toast "… has no barcode/SKU
+   yet — enroll one on the item first" and **no line is added** (matches the transfer rule).
+✅ Pick the **same product twice** → toast "… is already on the list" (no duplicate line).
 ❌ Leave **Cost / unit** blank (or `0`) on any line → **blocked** with "Enter a cost /
    unit (₹) greater than 0 for every line" (FE toast; backend also rejects with **400**).
    Cost is mandatory because it becomes the store's cost price (weighted-average) the
@@ -261,14 +283,23 @@ First make the link: **Items → the item → set Barcode = `PB001`** (same as t
 3. **Dispatch** the transfer.
    ✅ Warehouse **Available** drops by 30; **store item quantity is unchanged** (golden rule).
    ✅ Expand the transfer → each line shows **Batches (shipped)** (the lots that went out) (CH-3).
-4. **Receive** the transfer.
-   ✅ Store item quantity rises by 30; the lot's real cost + expiry flow into the store.
+4. **Receive** the transfer. The receive modal now has a **"Scan barcode"** box per line —
+   you **must scan / type a barcode that matches the line's SKU** for every item that
+   arrived. **"Confirm receipt" stays disabled** until each arrived line shows **✓ match**;
+   a wrong code shows **✗ mismatch**. (The SKU **is** the barcode, so this is the same value
+   from the warehouse receipt / transfer.)
+   ✅ Scan `PB001` → line shows **✓ match** → **Confirm receipt** enables → store item rises
+      by 30; the lot's real cost + expiry flow into the store.
+   ❌ Scan a **wrong** barcode (e.g. `PB999`) → **✗ mismatch**, button stays disabled. If you
+      force it via the API, the backend rejects with **400** `Barcode mismatch …` and **no
+      stock moves** (transfer stays DISPATCHED).
 5. **Stock Ledger** → a `TRANSFER_OUT` (warehouse, −30) and `TRANSFER_IN` (store, +30),
    both with the **Batch** column populated.
 
 ### 8c. Short receive → shrinkage (partial receive)  (CH-3, CH-4)
 On **Receive**, each line has an editable **Received** qty. Enter **less** than dispatched
-(e.g. dispatched 30, receive **28**) → **Receive**.
+(e.g. dispatched 30, receive **28**) → scan the matching **barcode** → **Receive**.
+✅ A line received as **0** (nothing arrived) needs **no** barcode scan — it's skipped.
 ✅ Store rises by **28** only; warehouse already lost the full **30** at dispatch (in-transit clears).
 ✅ The **2 missing units are shrinkage** — NOT returned to the warehouse and NOT added to the
    store; reconcile them at the next physical stock-take.
@@ -296,6 +327,11 @@ Log in as the **store admin** from step 6.
 **Request  *(store admin)*:**
 1. Store-switcher = the store. Sidebar → **Replenishment** → **+ Request stock** →
    search the item → **Requested qty** `40` → **Raise request**. ✅ Status **PENDING**.
+   ✅ Click the request's **Items** cell (▸) to expand it: the per-line table now shows
+   **Wh avail** and **Free** (= warehouse available − reserved) for each requested item —
+   same numbers as the Approve modal, fetched once when the row is first opened. A line
+   whose **Free** can't cover the requested qty shows **Free in red** (0 also red).
+   Requests with no serving warehouse yet, or a SKU not stocked, show **"—"**.
 
 **Approve  *(super admin / warehouse)*:**
 2. Open the request → **Approve**. The modal shows per line: **Avail**, **Reserved**,
@@ -381,8 +417,10 @@ fields warns it **updates every store**.
 **Warehouse manager** should see (no store switcher): **Dashboard** (warehouse cockpit),
 **Stock Health**, **Item Lookup**, **Warehouses** (stock + write-off + reorder policy),
 **Suppliers**, **Transfers** (create/dispatch/cancel), **Replenishment** (approve/reject/fulfil),
-**Stock Ledger**, **Batch Recall** — and **nothing** store-side (no Items/Categories/Product
-Master/Orders/Analytics/Stores). **Warehouse staff**: the same minus the manage-only actions —
+**Stock Ledger**, **Batch Recall**, plus **Product Master** (create + assign to their served
+stores — no edit/discontinue) and **Warehouse Staff** (their own warehouse's staff) — see §15k —
+and **nothing else** store-side (no Items/Categories/Orders/Analytics/Stores). **Warehouse staff**:
+the same minus the manage-only actions —
 they can **view** warehouses/stock + **receive** + do transfers, but get **no** warehouse
 CRUD, **no** Approve/Reject/Fulfil, **no** write-off, and Batch Recall is **trace-only** (full §15).
 
@@ -497,6 +535,42 @@ the warehouse manager (a plain reload can keep a stale permission cache), then c
   stock view with the warehouse auto-selected and the goods-receipt form already open.
   Only **Receive Goods** highlights in the sidebar (not Warehouses too).
 - ❌ If any are missing → stale session or stale admin build (see Troubleshooting).
+
+### 15k. Warehouse manager: Product Master + Warehouse Staff  (CH-11)
+A warehouse manager can now catalogue the goods they receive and staff their own warehouse —
+without a super admin. Log in as a **warehouse manager** (no store switcher).
+
+**Product Master (create + assign to served stores):**
+- ✅ Sidebar → **Product Master** is now visible. Open it → the list loads.
+- ✅ **+ New product** works — create a product (name/unit/barcode/image). Use this to catalogue a
+  barcode you received into the warehouse but that isn't a product yet (the "orphan barcode" case).
+- ✅ On a product row, **Assign** is shown; **Edit** and **Discontinue/Activate** are **hidden**
+  (those fan out to every store — super-admin only; the backend also 403s them).
+- ✅ In **Assign**, the store list shows **only the stores this warehouse serves** (fetched from
+  `GET /admin/warehouse/:id/stores`). The segmented button reads **"All my stores"** (not "All stores").
+  - ❌ There's no way to pick a store the warehouse doesn't serve; if forced via the API, the backend
+    returns **403** "You can only assign products to stores your warehouse serves."
+  - ✅ **"All my stores"** assigns to exactly the served stores (a store served by another warehouse
+    is NOT touched).
+  - ✅ The manager still sets **price / selling price / low-qty** at assign (same as the super-admin flow).
+- ✅ Super admin is unchanged — sees Edit/Discontinue, and Assign "All stores" still means **every** store.
+
+**Warehouse Staff (own warehouse, staff only):**
+- ✅ Sidebar → **Warehouse Staff** is now visible. The list shows **only the STAFF of this manager's
+  warehouse** (no managers, no other warehouse's staff).
+- ✅ **+ New staff** → the **Role** field is locked to **Warehouse Staff** (no "Manager" option) and the
+  **Warehouse** field is locked to the manager's own warehouse. Create works.
+  - ❌ Forcing `role: warehouse_manager` via the API → **403** "A warehouse manager can only create
+    warehouse staff, not a manager." Forcing another `warehouseId` → **403** "You can only add staff to
+    your own warehouse."
+- ✅ **Change password** + **Deactivate/Activate** work for the manager's own staff.
+  - ❌ Editing/deactivating a staffer of **another** warehouse, or **any manager** → **403**.
+  - ❌ A warehouse manager cannot change a staffer's raw **permissions** (super-admin only) → **403**.
+- ✅ Super admin still manages **all** warehouse accounts (managers + staff, any warehouse) as before.
+
+> Backend guards are authoritative (`packages/admin/src/routes/product/*` +
+> `packages/admin/src/routes/warehouse-staff/*`); the UI locks are convenience only. Tests:
+> `product-assign-warehouse-scope.test.js`, `warehouse-staff-manager-scope.test.js`.
 
 ---
 

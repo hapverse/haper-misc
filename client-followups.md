@@ -448,6 +448,55 @@ detail would close that gap — not built yet.
 
 ---
 
+## CH-11 · Warehouse manager gets Product Master (create + assign-to-served-stores) + own-warehouse Staff — backend + admin DONE
+**Backend + admin:** ✅ on `dev` (haper-backend + haper-admin).
+**Why:** a warehouse manager is the one who physically receives new goods, so they hit the
+"received a barcode that isn't a catalogued product yet" gap. They previously had **no** Product
+Master access (super-admin-only), and couldn't staff their own warehouse (super-admin-only). This
+gives them just enough — **create** a product + **assign it to the stores their warehouse serves**,
+and manage **their own warehouse's staff** — without opening company-wide powers.
+**Plain summary:** warehouse managers can now catalogue + onboard products to their served stores,
+and add/manage their own warehouse's staff; they still can't edit shared products, price nothing
+they don't serve, or create another manager.
+
+| Client | What to do | Status |
+|---|---|---|
+| **backend** | `product` routes: View + Create + Assign + upload-image now allow **super_admin OR warehouse_manager** (Edit/Discontinue stay super-admin). `product/controller.assign` fences a warehouse caller to `StoreRepository.getServedStores(their warehouse)` — `"ALL"` collapses to served stores, an unserved store → **403**; super admin unchanged. `warehouse-staff` routes now allow **warehouse_manager**; the controller fences them to **STAFF of their OWN warehouse** (create forces role=staff + own warehouse; list/update/remove reject a manager target, another warehouse, or a permissions/warehouse-move edit → 403). Tests: `product-assign-warehouse-scope.test.js`, `warehouse-staff-manager-scope.test.js` (admin jest green). | ✅ done (dev) |
+| **admin** | Sidebar: **Product Master** + **Warehouse Staff** now visible to warehouse_manager (`useMenu.ts` `requireAnyRole`); routes moved to a `['super_admin','warehouse_manager']` group (`App.tsx`). **ProductsList**: Edit + Discontinue hidden for non-super-admins (Create + Assign shown). **AssignModal**: for a warehouse manager the store picker loads **served stores** (`inventoryApi.listServedStores`) and the segment reads **"All my stores"**. **WarehouseStaffPage**: Role locked to **Staff**, Warehouse locked to **own**, list is backend-scoped. `tsc -b` + eslint clean; vitest green (`AssignModal.test.tsx` incl. a manager case). | ✅ done (dev) |
+| **web / android / ios / picker / delivery** | Not affected (admin-only surface; no customer JSON change). | — |
+
+**Backend notes (CH-11):**
+- `POST /admin/product`, `POST /admin/product/:id/assign`, `POST /admin/product/upload-image`, `GET /admin/product(/:id)` — now super_admin **or** warehouse_manager. `PATCH /admin/product/:id` + `/status` stay super-admin-only.
+- Assign fence: warehouse caller → served-store intersection (`"ALL"` = served only). Super admin → unrestricted.
+- `warehouse-staff` (`GET/POST/PATCH/DELETE`) — warehouse_manager scoped to own-warehouse **staff**; role/warehouse forced; permissions + warehouse-move edits are super-admin-only.
+- **Test guide:** `haper-misc/test-inventory.md` §15k (+ role-capabilities table).
+
+---
+
+## CH-12 · Barcode is master-owned (product identity) — super admin + warehouse manager only — backend + admin DONE; picker app PENDING
+**Backend + admin:** ✅ on `dev`. **Picker app:** ⏳ one client change left (below).
+**Why:** barcode is the cross-store identity — the **warehouse SKU** + the **picker scan key** + the
+transfer link. When it was a freely-editable **per-store** field, a store admin or picker could set a
+value that didn't match the physical product (or diverged across stores) → the warehouse couldn't map
+stock to replenish, and the picker's scan never matched. Now there's **one barcode per product**, owned
+by the master, set only by the two roles that handle product identity (HQ) + physical goods (warehouse).
+**Plain summary:** barcode is now set ONLY in Product Master by **super admin or warehouse manager**, and
+**fans out to every store's item**. Read-only everywhere else; the picker no longer enrolls.
+
+| Client | What to do | Status |
+|---|---|---|
+| **backend** | **NEW** `PATCH /admin/product/:id/barcode` (super_admin + warehouse_manager) → sets the master barcode + **updateMany** all items with that `iId` + uniqueness guard (no other product/item may use it). Item edit (`PUT /admin/item/:id`) **drops `barcode`** from editable fields (ignored). Generic master edit (`PATCH /admin/product/:id`) **strips barcode** (only the fan-out endpoint changes it). Admin shelf-walk `enroll-barcode`/`clear-barcode` → **super-admin-only** + fan out to master + siblings. **Picker `verify`** no longer enrolls a missing barcode — returns `result: "no_barcode"`. Tests: `product-barcode.test.js` (8), `picking-lifecycle.test.js` updated. Migration `reconcile-product-barcodes.js` (dry-run) normalises legacy divergence + flags conflicts. | ✅ done (dev) |
+| **admin** | ItemModal: **Barcode read-only** (+ "managed in Product Master" hint); helper text updated. ProductModal: barcode editable on **create**, read-only on **edit**. Product Master list: new **"Barcode"** action (super admin + warehouse manager) → `BarcodeModal` → `productApi.setBarcode` (fans out). `tsc` clean, vitest green. | ✅ done (dev) |
+| **picker (app)** | **⏳ TODO:** the `verify` scan of an item with **no barcode** now returns `result: "no_barcode"` (was `"enrolled"`). The Kotlin app must show **"No barcode on file — ask the warehouse to set it. Pick without a scan."** instead of the old "Barcode registered ✓", and NOT treat it as verified (the picker uses "confirm without scan" to pick). Backend already enforces it; this is UX only. | ⏳ to do |
+| **web / ios / delivery** | Not affected (barcode is admin/picker-internal; customer JSON unchanged). | — |
+
+**Operational note:** the barcode must be set **before** a product is picked — the natural owner is the
+**warehouse manager at goods-receipt** (physical product + scanner). If a product reaches a store with no
+barcode, the picker can only "confirm without scan" until a super admin / warehouse manager sets it.
+**Test guide:** `haper-misc/test-picking.md` §F (enroll step changed) + a Product-Master barcode step in `test-inventory.md`.
+
+---
+
 ## Future changes
 **This file is COMPLETE for inventory-v2** — CH-1…6 cover every shipped backend change (Phases 0–4) with a
 per-client checklist + exact endpoints, and CH-7 covers the one optional P9 item (with its backend prerequisite).
