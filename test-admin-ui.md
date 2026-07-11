@@ -43,3 +43,24 @@ Steps:
 > Regression check: this is a passive, blur-only guard — it never calls
 > `preventDefault`, so it can't block page scrolling anywhere. Covered by
 > `src/utils/numberInputScrollGuard.test.ts` (vitest).
+
+---
+
+## Issue 8 — Shelf (location) column in Items list
+
+**Where:** Items → Items Management table (`src/pages/Items/ItemsList.tsx`).
+**Why:** pickers need each item's shelf location visible at a glance without opening
+the item. The value is the item's `location` field (edited via the item form's
+"Shelf Location" input, e.g. `A3-B05`). Read-only column; the admin list API already
+returns `location` (admin projection strips only `__v`/`createdAt`).
+
+Steps:
+1. Open **Items**. The table columns are now: Item · Price · **Shelf** · Stock ·
+   Status · Stock Value · Actions (Shelf sits directly after Price).
+2. ✅ An item with a shelf set (e.g. `A3-B05`) shows it in monospace under **Shelf**.
+3. ✅ An item with **no** shelf shows a muted `—` (never blank/`undefined`).
+4. ✅ Editing an item's **Shelf Location** in the form and saving updates the value
+   shown in this column after refresh.
+5. ✅ Column counts line up — no header/cell misalignment (7 headers, 7 cells).
+6. ❌ It must not show `null`/`undefined` or shift other columns.
+
