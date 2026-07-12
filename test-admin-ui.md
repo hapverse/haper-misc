@@ -64,3 +64,23 @@ Steps:
 5. ✅ Column counts line up — no header/cell misalignment (7 headers, 7 cells).
 6. ❌ It must not show `null`/`undefined` or shift other columns.
 
+---
+
+## Issue 9 — Search items by iId + shelf (and product-master by iId)
+
+**Where:** Items → search box; Product Master → search box.
+Backend: `packages/shared/repositories/item.repository.js` (both search `$or` blocks) +
+`product.repository.js` (already had iId).
+**Why:** staff need to find a row by product identity (`iId`, e.g. `BI692052`) or shelf
+code (`location`, e.g. `A3-B05`), not just name/brand/barcode. Both item search blocks now
+include `iId` and `location`; barcode/name/brand/tags/category still match.
+
+Steps:
+1. ✅ **Items** — a full or partial **iId** (`BI692052`, `692052`) returns that item.
+2. ✅ **Items** — a **shelf** code (`A3-B05`, `F1`) returns items on that shelf.
+3. ✅ **Items** — barcode / name / brand still work (unchanged).
+4. ✅ **Product Master** — an **iId** returns that master (already worked; placeholder now says so).
+5. ✅ Placeholders: Items → "name, brand, barcode, iId, or shelf"; Products → "name, brand, barcode or iId".
+6. ❌ Regression: empty search still returns the full list; existing name/barcode searches
+   return the same rows (the change only *adds* `$or` branches).
+
