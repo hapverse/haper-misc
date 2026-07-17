@@ -119,6 +119,10 @@ Tap **Scan to verify** (or **Scan to register barcode**):
 5. ✅ On a successful decode: a **beep + haptic**, then it returns to the line.
 6. ❌ Back / Cancel returns without changing the line.
 
+> The **system back gesture / button** (edge swipe on Android 13+, 3-button back) now closes
+> this scanner too — same as Cancel — instead of minimising the app. Full back-navigation
+> coverage for every picker screen is in **`test-picker-back-navigation.md`**.
+
 ### F. Scan to verify / mismatch / no-barcode  (feat: existing + error tone; CH-12)
 1. Scan the **correct** barcode → ✅ toast **"Product verified ✓"**; the card now **reveals
    name/image/qty** and a **"Pick N"** button.
