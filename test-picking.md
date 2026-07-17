@@ -8,6 +8,9 @@ change it exercises.
 
 > Companion to `test-inventory.md` (admin/inventory). That guide explicitly **doesn't**
 > cover the picker app — this one does.
+>
+> Admin-side counterpart: `test-picker-stats.md` covers the **Pickers-page performance
+> metrics** (per-picker leaderboard + drawer) that these completed picks roll up into.
 
 ---
 
