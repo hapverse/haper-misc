@@ -4,7 +4,7 @@
 **Who can see it:** **super-admin only** (the menu entry is `superAdminOnly`; a store admin never sees it)
 **Backend:** none new — reuses `GET /admin/item/catalog` and `GET /admin/item/catalog-summary`
 (both need the `items.view` permission)
-**Printer:** SEZNIK **Josh** 2-inch Bluetooth direct-thermal, **50 × 25 mm** label roll
+**Printer:** SEZNIK **Josh** 2-inch Bluetooth direct-thermal, **50 × 30 mm** label roll
 
 ## What this is (real example)
 
@@ -12,26 +12,26 @@ A shopkeeper needs a **barcode price sticker** for every shelf so the picker/POS
 and so the customer can read MRP and the selling price. This page turns catalog items into those
 stickers.
 
-Each label looks like this (top to bottom):
-1. **Item name** on the left, with the **shelf code** (the item's `location`) on the **right** of
-   the same top line — e.g. `Aashirvaad Atta` … `A3`. The shelf is omitted when the item has no
-   `location`. (Pack size is **not** shown on the label.)
+Each label looks like this (top to bottom, **everything centered**):
+1. **Item name**, centered — e.g. `Aashirvaad Atta`. (Pack size is **not** shown on the label.)
 2. A **full-width Code 128 barcode** (the big middle element), with the **human-readable digits
    under the bars** — e.g. `0801000012511`.
-3. A **bottom row split in two**: left cell **MRP** (the item's `price`), right cell **SP** (the
-   item's `sellingPrice`).
+3. A **bottom row**: the **shelf code** (the item's `location`, shown as **just the value, no label**)
+   **before** MRP, then **MRP** (the item's `price`), then **SP** (the item's `sellingPrice`) — so
+   the row reads **<shelf> · MRP · SP** (e.g. `A3 · MRP ₹120 · SP ₹99`). The shelf cell is omitted
+   when the item has no `location` (then the row is just MRP · SP).
 
 There are **two ways** to get labels onto the printer, both on this one page, both working on the
 **same selected set of items**:
 
-- **Print path (rendered):** on-screen 50 × 25 mm preview cards + a **Print labels** button. Print
-  opens the browser's print dialog with **one 50 × 25 mm label per page** and real barcodes. From
+- **Print path (rendered):** on-screen 50 × 30 mm preview cards + a **Print labels** button. Print
+  opens the browser's print dialog with **one 50 × 30 mm label per page** and real barcodes. From
   that dialog you either (a) pick the **SEZNIK printer** directly, or (b) choose **Save as PDF** and
   open that PDF in the SEZNIK app. **No extra PDF software needed** — the browser's Save-as-PDF does
   it.
 - **Export path (Excel / CSV):** **Download .xlsx** and **Download .csv** buttons. One row per
   item, columns **Name · Shelf · Barcode · MRP · SP**. You import this into the SEZNIK app's
-  **"Excel File Print"** feature, map the columns onto the label template, and print at 50 × 25 mm.
+  **"Excel File Print"** feature, map the columns onto the label template, and print at 50 × 30 mm.
 
 **Real example.** Super-admin picks the store **Haper Mart**, chooses **Active only**, sees
 *"320 will print / export, 12 skipped (no barcode)"*, hits **Print labels**, chooses **Save as PDF**,
@@ -86,7 +86,7 @@ Source (for reference):
 ### ✅ B. Pick a store → the page works
 1. Switch the selector to a **specific store** (e.g. **Haper Mart**).
 2. **Expect:** the page loads with three sections — **1. Choose what to print**, **2. Review &
-   print**, and a **Preview (50 × 25 mm)** grid.
+   print**, and a **Preview (50 × 30 mm)** grid.
 
 ### ✅ C. Scope picker has three modes
 Under **1. Choose what to print**:
@@ -113,16 +113,16 @@ Under **1. Choose what to print**:
    for **Selected** scope it shows exactly the selected items that have no barcode.
 
 ### ✅ F. Preview matches what will print
-1. Look at the **Preview (50 × 25 mm)** grid — WYSIWYG label cards at true size.
-2. **Expect** each card shows: name on top with the **shelf code on the right** (when set), a
-   **full-width barcode** with the digits underneath, and the **MRP | SP** row at the bottom.
+1. Look at the **Preview (50 × 30 mm)** grid — WYSIWYG label cards at true size.
+2. **Expect** each card shows (all centered): name on top, a **full-width barcode** with the digits
+   underneath, and the bottom row **<shelf> · MRP · SP** (shelf value before MRP, omitted when unset).
 3. The preview shows the **first 50** labels only; if the run is bigger you'll see *"Showing first
    50 of 320 labels. Print / export includes all of them."* — the buttons still cover **all** items,
    the preview is just capped for speed.
 
-### ✅ G. Print path → one 50 × 25 mm label per page
+### ✅ G. Print path → one 50 × 30 mm label per page
 1. Click **Print labels**.
-2. **Expect:** a print window opens and the browser print dialog appears, with **one 50 × 25 mm
+2. **Expect:** a print window opens and the browser print dialog appears, with **one 50 × 30 mm
    label per page** and **real Code 128 bars** (matching the preview).
 3. From the dialog either **pick the SEZNIK printer** or choose **Save as PDF** and open that PDF in
    the SEZNIK app. The printed label should **match the on-screen preview**.
@@ -134,7 +134,7 @@ Under **1. Choose what to print**:
    item**, and **skipped (no-barcode) items are absent**.
 3. Shelf reads like **"A3"** (blank when the item has no `location`).
 4. Import into the SEZNIK app's **Excel File Print**, map the columns onto the label template
-   (name / shelf / barcode / MRP / SP), and print at 50 × 25 mm.
+   (name / shelf / barcode / MRP / SP), and print at 50 × 30 mm.
 
 ### ❌ I. Buttons are disabled when there's nothing to do
 - While counts are still **loading**, or when **Will print / export = 0**, the **Print / Download**
