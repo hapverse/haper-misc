@@ -126,6 +126,8 @@ Under **1. Choose what to print**:
    label per page** and **real Code 128 bars** (matching the preview).
 3. From the dialog either **pick the SEZNIK printer** or choose **Save as PDF** and open that PDF in
    the SEZNIK app. The printed label should **match the on-screen preview**.
+> **Format:** the **Individual (50 × 30 mm)** format described here is the **default**. To tile many
+> labels on one **A4** page instead, use the **Print format** control — see **A4 sheet format** below.
 
 ### ✅ H. Export path → .xlsx and .csv for the SEZNIK "Excel File Print"
 1. Click **Download .xlsx** (and **Download .csv**). Files download named like
@@ -140,6 +142,64 @@ Under **1. Choose what to print**:
 - While counts are still **loading**, or when **Will print / export = 0**, the **Print / Download**
   buttons are **disabled**. Selecting a scope with zero barcoded items (e.g. Selected mode with
   nothing ticked) leaves them disabled — expected, not a bug.
+
+---
+
+## A4 sheet format (tile many labels on one A4 page)
+
+Besides the one-label-per-page thermal roll, you can print **many labels tiled on a normal A4 sheet**
+— handy when you only have an office inkjet/laser printer and a sheet of sticker paper (or plain
+paper you cut by hand). You pick this with the **Print format** control in **2. Review & print**; it
+changes **only how the same labels are laid out**, not which items print.
+
+**Real example.** Super-admin picks **Haper Mart**, **Active only** (say **90** barcoded items), sets
+**Print format** to **A4 sheet — 48/page**, hits **Print labels**, and gets a **2-page A4 print**:
+page 1 has **48** labels (4 across × 12 down), page 2 has the remaining **42** labels filling from the
+top-left, with **no blank page** after them.
+
+### ✅ J. Picking the print format
+1. In **2. Review & print**, find the **Print format** control (a small segmented control near the
+   numbers). It has three choices:
+   - **Individual (50 × 30 mm)** — the original one-label-per-page thermal format. **This is the
+     default** and is **unchanged**.
+   - **A4 sheet — 48/page** — 4 columns × 12 rows = **48** labels per A4 page (label 50 × 23.92 mm).
+   - **A4 sheet — 44/page** — 4 columns × 11 rows = **44** labels per A4 page (a **true** 50 × 25 mm
+     label, with tidier top/bottom margins).
+2. Pick a format, then hit the **same Print labels button** — there is still **only one** Print
+   button; it runs whichever format is selected.
+
+### ✅ K. 48 vs 44 — which to choose
+- **48/page** packs more labels per sheet, but each is squeezed a hair under 25 mm tall
+  (**50 × 23.92 mm**) so all 12 rows fit inside A4's 297 mm height (top/bottom margin ~5 mm).
+- **44/page** gives a **true 50 × 25 mm** label with a clean ~**11 mm** top/bottom margin — fewer
+  labels per sheet but exact size and neater edges.
+- Both keep **4 columns × 50 mm = 200 mm across, with 5 mm on each side** and **no gap** between
+  labels.
+
+### ✅ L. What an A4 label shows (same design as the thermal label)
+Each tiled label is the **same design** as the 50 × 30 mm one:
+1. **Item name** on top, centered.
+2. A **real full-width Code 128 barcode** (not a placeholder), with the **human-readable digits on
+   their own line right under the bars** — e.g. `8901030812345`.
+3. The bottom row **<shelf> · MRP · SP** — shelf value first (omitted when the item has no
+   `location`), **MRP struck through only on a real discount**, and **SP** the big bold number.
+
+### ✅ M. Verifying an A4 print
+1. Set **Print format** to **A4 sheet — 48/page**, hit **Print labels**.
+2. **Expect** the print preview to show a full A4 page with **48 labels** (4 across, 12 down) and
+   **real scannable bars** with the **digits visible under each**.
+3. Switch to **A4 sheet — 44/page** and print again: now **44 labels** (4 × 11) at a true 50 × 25 mm.
+4. With more items than one sheet holds (e.g. **90** items at 48/page), you get **multiple A4 pages**;
+   the **last page fills from the top-left** and there is **no trailing blank page** after it.
+5. **Empty-barcode items are still skipped** here too — they never appear on any sheet and stay in
+   the **Skipped (no barcode)** count.
+6. The on-screen **Preview** grid still shows **50 × 30 mm cards** even when an A4 format is
+   selected — the preview is a per-label WYSIWYG, **not** an A4 page mock-up. That's **expected**.
+
+### ❌ N. The individual format is unchanged
+- Leaving **Print format** on **Individual (50 × 30 mm)** (the default) prints **exactly as before**
+  — one 50 × 30 mm label per page for the SEZNIK thermal roll. The A4 option is **purely additive**;
+  it does **not** affect the thermal path, the preview grid, or the .xlsx / .csv exports.
 
 ---
 
