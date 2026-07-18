@@ -13,7 +13,9 @@ and so the customer can read MRP and the selling price. This page turns catalog 
 stickers.
 
 Each label looks like this (top to bottom):
-1. **Item name + pack size**, small, at the top — e.g. `Aashirvaad Atta 5 kg`.
+1. **Item name** on the left, with the **shelf code** (the item's `location`) on the **right** of
+   the same top line — e.g. `Aashirvaad Atta` … `A3`. The shelf is omitted when the item has no
+   `location`. (Pack size is **not** shown on the label.)
 2. A **full-width Code 128 barcode** (the big middle element), with the **human-readable digits
    under the bars** — e.g. `0801000012511`.
 3. A **bottom row split in two**: left cell **MRP** (the item's `price`), right cell **SP** (the
@@ -28,7 +30,7 @@ There are **two ways** to get labels onto the printer, both on this one page, bo
   open that PDF in the SEZNIK app. **No extra PDF software needed** — the browser's Save-as-PDF does
   it.
 - **Export path (Excel / CSV):** **Download .xlsx** and **Download .csv** buttons. One row per
-  item, columns **Name · Pack size · Barcode · MRP · SP**. You import this into the SEZNIK app's
+  item, columns **Name · Shelf · Barcode · MRP · SP**. You import this into the SEZNIK app's
   **"Excel File Print"** feature, map the columns onto the label template, and print at 50 × 25 mm.
 
 **Real example.** Super-admin picks the store **Haper Mart**, chooses **Active only**, sees
@@ -112,8 +114,8 @@ Under **1. Choose what to print**:
 
 ### ✅ F. Preview matches what will print
 1. Look at the **Preview (50 × 25 mm)** grid — WYSIWYG label cards at true size.
-2. **Expect** each card shows: name + pack size on top, a **full-width barcode** with the digits
-   underneath, and the **MRP | SP** row at the bottom.
+2. **Expect** each card shows: name on top with the **shelf code on the right** (when set), a
+   **full-width barcode** with the digits underneath, and the **MRP | SP** row at the bottom.
 3. The preview shows the **first 50** labels only; if the run is bigger you'll see *"Showing first
    50 of 320 labels. Print / export includes all of them."* — the buttons still cover **all** items,
    the preview is just capped for speed.
@@ -128,11 +130,11 @@ Under **1. Choose what to print**:
 ### ✅ H. Export path → .xlsx and .csv for the SEZNIK "Excel File Print"
 1. Click **Download .xlsx** (and **Download .csv**). Files download named like
    `shelf-labels-haper-mart-20260718.xlsx`.
-2. Open the file and **Expect:** columns **Name · Pack size · Barcode · MRP · SP**, **one row per
+2. Open the file and **Expect:** columns **Name · Shelf · Barcode · MRP · SP**, **one row per
    item**, and **skipped (no-barcode) items are absent**.
-3. Pack size reads like **"500 g"** or **"5 kg"** (blank when the item has no weight/unit).
+3. Shelf reads like **"A3"** (blank when the item has no `location`).
 4. Import into the SEZNIK app's **Excel File Print**, map the columns onto the label template
-   (name / barcode / MRP / SP), and print at 50 × 25 mm.
+   (name / shelf / barcode / MRP / SP), and print at 50 × 25 mm.
 
 ### ❌ I. Buttons are disabled when there's nothing to do
 - While counts are still **loading**, or when **Will print / export = 0**, the **Print / Download**
