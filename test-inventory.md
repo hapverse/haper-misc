@@ -572,6 +572,15 @@ without a super admin. Log in as a **warehouse manager** (no store switcher).
 > `packages/admin/src/routes/warehouse-staff/*`); the UI locks are convenience only. Tests:
 > `product-assign-warehouse-scope.test.js`, `warehouse-staff-manager-scope.test.js`.
 
+### 15l. Correct a PAST goods-receipt  *(manager / super admin)*
+Fix a receipt you keyed wrong (qty up/down, expiry, batch code, cost) **without** faking a
+write-off + re-receive, anchored on the batch lot `(warehouse, SKU, batch no.)`. The admin UI is
+now built — a **Correct** button on each Batches-table row (batch warehouses) or **"Correct
+receipt…"** in the write-off panel (legacy warehouses). The **2-decimal cost precision** fix shipped
+with it.
+
+➡ **Full walkthrough + the 2dp cost checklist: [`test-warehouse-receipt-correction.md`](./test-warehouse-receipt-correction.md).**
+
 ---
 
 ## Troubleshooting
