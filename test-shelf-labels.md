@@ -113,7 +113,8 @@ Under **1. Choose what to print**:
 1. Click **View skipped**.
 2. **Expect:** a modal **"Skipped — no barcode (N)"** listing each item (name + brand + pack size),
    with the note that they're **never printed or exported** and you should **add a barcode on the
-   Items page** to include them.
+   Items page** to include them. (Super-admins can **auto-generate** an internal barcode for these —
+   see **test-barcode-generation.md**.)
 3. For **All / Active** scope the list shows the **first 100** skipped items (a footnote says so);
    for **Selected** scope it shows exactly the selected items that have no barcode.
 
