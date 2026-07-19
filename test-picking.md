@@ -8,6 +8,9 @@ change it exercises.
 
 > Companion to `test-inventory.md` (admin/inventory). That guide explicitly **doesn't**
 > cover the picker app — this one does.
+>
+> Admin-side counterpart: `test-picker-stats.md` covers the **Pickers-page performance
+> metrics** (per-picker leaderboard + drawer) that these completed picks roll up into.
 
 ---
 
@@ -118,6 +121,10 @@ Tap **Scan to verify** (or **Scan to register barcode**):
 4. ✅ **Tap** the preview = focus; **pinch** = zoom.
 5. ✅ On a successful decode: a **beep + haptic**, then it returns to the line.
 6. ❌ Back / Cancel returns without changing the line.
+
+> The **system back gesture / button** (edge swipe on Android 13+, 3-button back) now closes
+> this scanner too — same as Cancel — instead of minimising the app. Full back-navigation
+> coverage for every picker screen is in **`test-picker-back-navigation.md`**.
 
 ### F. Scan to verify / mismatch / no-barcode  (feat: existing + error tone; CH-12)
 1. Scan the **correct** barcode → ✅ toast **"Product verified ✓"**; the card now **reveals

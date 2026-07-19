@@ -624,3 +624,30 @@ db.admins.updateOne(
   { upsert: false }
 );
 ```
+
+---
+
+## 14. Shelf (location) uniqueness
+
+A **real shelf code can hold only one item per store** — you can't assign the same
+shelf to two different items. The `DefaultShelf1` placeholder (the migration's
+"unassigned" value) and an empty shelf are **exempt**. Matched **case-insensitively**
+(`A3` == `a3`). Enforced in admin item **create** + **edit**.
+
+Steps (admin):
+- ✅ Give item A shelf `A3`, save. Give item B shelf `A3` → **blocked, 409**:
+  *"Shelf "A3" is already assigned to "…". Each shelf can hold only one item."*
+- ✅ Same with different case (`a3` on item B) → still blocked.
+- ✅ Move item B to a **free** shelf (`B3`) → saves fine.
+- ✅ Two items both on `DefaultShelf1` → allowed (placeholder is exempt).
+- ✅ An item that **already** shares a shelf with another (legacy data) can still be
+  **edited** as long as you don't change its shelf — only *moving onto an occupied
+  shelf* is blocked.
+
+Tests: `packages/admin/__tests__/item-shelf-unique.test.js` (5, green).
+
+> **Follow-up (not done):** a **partial unique index** on `{ storeId, location }`
+> (excluding `DefaultShelf1`/empty) would make this a hard DB guarantee, but it can't
+> be built until the **6 existing duplicate shelves in prod** (`AH3, C1, E4, J4, ZP4,
+> ZZ31`) are resolved. Re-shelve one item of each pair, then add the index via a
+> migration. Until then the app-level check above is the guard.
