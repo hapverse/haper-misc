@@ -1,20 +1,23 @@
-# Test: Generate internal barcodes (super-admin) — for products with no barcode
+# Test: Generate internal barcodes — for products with no barcode
 
-**Area:** Admin panel → **Catalog → Items** (`damin.haper.in` on dev). Super-admin only.
-**Who can use it:** **super-admin only** (buttons are hidden for everyone else; the API is `requireRole(SUPER_ADMIN)`).
-**Backend:** new endpoints on the items router; a shared EAN util. **Needs BOTH deploys** — backend
-`dapi.haper.in` **and** admin `damin.haper.in`.
+**Area:** Admin panel → **Catalog → Product Master** (`/products`, `damin.haper.in` on dev).
+**Who can use it:** **super-admin OR warehouse-manager** (same as the existing "Barcode" action — the
+buttons are hidden for everyone else; the API is `requireRole(SUPER_ADMIN, WAREHOUSE_MANAGER)`).
+**Backend:** new endpoints on the **product-master** router; a shared EAN util. **Needs BOTH deploys** —
+backend `dapi.haper.in` **and** admin `damin.haper.in`.
 
 ## What this is (real example)
 
 Many products (loose / repacked goods) ship with **no barcode**, so they get **skipped** on shelf
-labels and can't be scanned at the counter. This lets a super-admin **mint an internal barcode** for
-them — one product at a time or all-missing at once. The code is written to the **product master and
-every store's copy**, so it immediately prints on shelf labels and scans at POS and in the picker.
+labels and can't be scanned at the counter. This lets a super-admin or warehouse-manager **mint an
+internal barcode** for them from the **Product Master** — one product at a time or all-missing at once.
+The barcode is a **product-master property**: the code is written to the master **and fanned out to
+every store's copy** of that item, so it immediately prints on shelf labels and scans at POS and in the
+picker.
 
-**Example:** *Anda Tilauri* has a blank barcode. Super-admin clicks **Generate barcode** → the system
-mints `2000000047126` → saves it to the master + all stores → the item now prints a scannable label
-and beeps at the POS scanner.
+**Example:** *Anda Tilauri* has a blank barcode. On Product Master, click **Generate** → the system mints
+`2000000047126` → saves it to the master **and all stores** → the item now prints a scannable label and
+beeps at the POS scanner.
 
 ## The barcode scheme (standard EAN-13, derived from the iId)
 
@@ -25,18 +28,18 @@ EAN-13 = "2"  +  <the product's iId digits, left-padded to 11>  +  <check digit>
   code **can never collide with a real scanned barcode**.
 - **iId digits** — the product's own unique `iId` with the letters dropped (`BI4712` → `4712`),
   left-padded to 11 digits. Because the `iId` is unique per product, **no two products ever get the
-  same code** (uniqueness is inherited from the iId — no counter, fully deterministic).
+  same code** (uniqueness inherited from the iId — no counter, fully deterministic).
 - **check digit** — the standard EAN-13 check digit (catches scan errors).
 
 Worked example: `BI4712` → digits `4712` → payload `200000004712` → check `6` → **`2000000047126`**.
 
-## Endpoints (super-admin only)
+## Endpoints (super-admin OR warehouse-manager)
 
-- `POST /admin/item/:itemId/generate-barcode` — resolves item → its product (`iId`); mints + applies
-  the code **only if the product has no barcode** (else **409** "already has a barcode"). Returns
-  `{ barcode, product, syncedItems }`.
-- `POST /admin/item/generate-missing-barcodes` — for the **current store's** barcode-less products
-  (deduped by product, paged; `limit` default 200 / max 500 per call). Returns
+- `POST /admin/product/:productId/generate-barcode` — loads the master by `_id`; mints + applies the
+  code **only if the product has no barcode** (else **409** "already has a barcode"). Returns
+  `{ barcode, product, syncedItems }` (`syncedItems` = how many store copies got the code).
+- `POST /admin/product/generate-missing-barcodes` — **GLOBAL** over the product master (not per-store):
+  pages every master with an empty barcode (`limit` default 200 / max 500 per call). Returns
   `{ generated, skipped, failed, remaining, failures }`. `remaining > 0` means "run again for the rest"
   (no auto-loop).
 
@@ -49,53 +52,55 @@ rows; the missing master is skipped, not 404'd.
 
 ## The walkthrough
 
-### ✅ A. Per-item generate (super-admin, barcode-less item)
-1. Log in to `damin.haper.in` as **super-admin**, open **Catalog → Items**, pick a store.
-2. Find an item with **no barcode** (use the **Missing Barcode** filter). In its Actions cell you'll
-   see a **Generate barcode** button (only shows when you're super-admin AND the item has no barcode).
-3. Click it. **Expect:** a toast **"Generated barcode 2000000…"**, the row refreshes, and the barcode
-   is now filled in. A spinner shows on the active row while it runs.
+### ✅ A. One product from the Barcode modal
+1. Log in to `damin.haper.in` as **super-admin** (or **warehouse-manager**), open **Catalog → Product
+   Master**.
+2. Open the **Barcode** action on a product that has **no barcode**. Beside the "Scan or type" input
+   there's an **"or Generate one"** button.
+3. Click it → **Expect** a toast **"Generated barcode 2000000… — updated N store item(s)."** and the
+   list refreshes with the barcode filled in. (`N` = number of stores that stock the product = the
+   fan-out.)
 
-### ✅ B. The code is a real EAN-13, on master + all stores
-1. Note the generated code — it's 13 digits starting with **`2`**, and the middle digits are the
-   product's `iId`.
-2. Switch to another store that stocks the same product (if any) — **Expect** the **same barcode**
-   there (it fanned out).
-3. Scan/print: on the **Shelf Labels** page the item now **prints** (no longer skipped), rendered as a
-   real **EAN-13** barcode; scanning it at POS resolves the item.
+### ✅ B. Per-row Generate
+1. In the Product Master list, a product with **no barcode** shows a per-row **Generate** action.
+2. Click it → same toast + refresh. Row actions disable while a generate is in flight.
 
-### ✅ C. Already has a barcode → no-op (409)
-1. Click Generate (via the modal, below) on an item that **already has a barcode**.
+### ✅ C. The code is a real EAN-13, on master + all stores
+1. The generated code is 13 digits starting with **`2`**, with the product's `iId` in the middle.
+2. It fans out: check the same product's item in each store — **Expect** the **same barcode** everywhere
+   (that's what `syncedItems` counted).
+3. On the **Shelf Labels** page the item now **prints** (it was skipped before), as a real **EAN-13**;
+   scanning it at POS resolves the item.
+
+### ✅ D. Bulk "Generate missing barcodes" (global)
+1. Click the toolbar **Generate missing barcodes** button → confirm the prompt.
+2. **Expect** a toast like **"Generated 180, skipped 0, failed 0"**, and the list refreshes. It's
+   **global** (all product masters missing a barcode, not one store). If more than one batch remains it
+   appends **"— run again for the rest"** (`remaining > 0`); click again to continue. It **never
+   silently truncates**.
+
+### ✅ E. Already has a barcode → no-op (409)
+1. Trigger Generate on a product that **already has a barcode**.
 2. **Expect:** a clear error toast **"This product already has a barcode."** — the existing (real)
    barcode is **never overwritten**.
 
-### ✅ D. In-modal Generate button
-1. Open an item's edit modal (**Edit**). The barcode field is read-only.
-2. For a **barcode-less** item as super-admin, a **Generate** button sits beside the field.
-3. Click it → **Expect** the code toast, and the modal closes/refreshes so the field shows the new code.
-
-### ✅ E. Bulk "Generate for all missing"
-1. Turn on the **Missing Barcode** filter. Beside it, a **Generate missing barcodes (N)** button appears
-   (super-admin only; the `(N)` count shows while the Missing Barcode filter is on).
-2. Click it → confirm the prompt. **Expect:** a toast like **"Generated 180, skipped 0, failed 0"**, and
-   the list refreshes. If more than one page-worth remain, it appends **"— run again for the rest"**
-   (`remaining > 0`); click again to continue. It **never silently truncates**.
-
-### ❌ F. Not a super-admin → nothing to see
-1. Log in as a **store admin** (not super-admin).
-2. **Expect:** **no** Generate buttons anywhere (per-row, modal, or bulk). The API also rejects them
-   with **403** if called directly.
+### ❌ F. Not a super-admin / warehouse-manager → nothing to see
+1. Log in as a **store admin** (neither super-admin nor warehouse-manager). Note: the Product Master
+   page itself is already gated to super-admin + warehouse-manager, so a store admin can't reach it.
+2. Even if the API is called directly, generation returns **403**.
 
 ### ✅ G. Shelf-label rendering unaffected for non-EAN codes
 1. On the Shelf Labels page, an item with a **real EAN-13** barcode (e.g. a generated `2000000047126`)
    renders as **EAN-13** symbology; an item with an **alphanumeric / non-EAN** barcode still renders as
-   **Code 128 exactly as before**. (No change to existing labels.)
+   **Code 128 exactly as before**.
 
 ### Edge cases
 - **iId with more than 11 digits** (extremely unlikely at this scale): generation returns a clear error
-  for that item; in bulk it's counted under **failed** with the reason — it is never truncated.
-- **Rare collision** (the derived code somehow already exists): reported for that item (not silently
+  for that product; in bulk it's counted under **failed** with the reason — never truncated.
+- **Rare collision** (the derived code somehow already exists): reported for that product (not silently
   changed); in bulk it's a **failed** with reason.
+- The old **item-scoped** paths (`POST /admin/item/:itemId/generate-barcode`, `/generate-missing-barcodes`)
+  were **removed** — they now 404. Generation lives only on the Product Master.
 
 ---
 
@@ -105,8 +110,8 @@ rows; the missing master is skipped, not 404'd.
 
 ## Source (for reference)
 - EAN util: `haper-backend/packages/shared/utils/ean.utils.js` (`buildEan13FromIId`, `checkDigit`, `isValidEan13`).
-- Repo fan-out: `haper-backend/packages/shared/repositories/product.repository.js` (`generateBarcodeForIId`).
-- Endpoints: `haper-backend/packages/admin/src/routes/items/{controller,router,validator}.js`.
-- Admin UI: `haper-admin/src/pages/Items/ItemsList.tsx`, `ItemModal.tsx`.
+- Repo fan-out + missing-master helpers: `haper-backend/packages/shared/repositories/product.repository.js` (`generateBarcodeForIId`, `missingBarcodeMasters`, `countMissingBarcodeMasters`).
+- Endpoints: `haper-backend/packages/admin/src/routes/product/{controller,router,validator}.js`.
+- Admin UI: `haper-admin/src/pages/Products/{ProductsList,BarcodeModal}.tsx`, `haper-admin/src/api/products.ts`.
 - EAN-13 label rendering: `haper-admin/src/utils/shelfLabelPrint.ts` (`isValidEan13` / `optionsFor`).
-- Backend tests: `haper-backend/packages/admin/__tests__/items.test.js`.
+- Backend tests: `haper-backend/packages/admin/__tests__/product-barcode.test.js`, `ean.utils.test.js`.
