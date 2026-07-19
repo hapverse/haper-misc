@@ -19,7 +19,9 @@ Each label looks like this (top to bottom, **everything centered**):
 3. A **bottom row**: the **shelf code** (the item's `location`, shown as **just the value, no label**)
    **before** MRP, then **MRP** (the item's `price`), then **SP** (the item's `sellingPrice`) — so
    the row reads **<shelf> · MRP · SP** (e.g. `A3 · MRP ₹120 · SP ₹99`). The shelf cell is omitted
-   when the item has no `location` (then the row is just MRP · SP).
+   when the item has no `location` **or its location is the `Default Shelf` placeholder** (any
+   case) — then the row is just MRP · SP. Applies to the individual label, the A4 sheet, and the
+   Excel/CSV export alike.
 
 There are **two ways** to get labels onto the printer, both on this one page, both working on the
 **same selected set of items**:
