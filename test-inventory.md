@@ -286,10 +286,18 @@ You can add stock two ways — test both.
 2. **Stock In (add):** enter a quantity (e.g. `20`); optionally a **Batch no.**,
    **Cost/unit** (super admin only) and **Expiry** → Save.
    ✅ Quantity rises (0 → 20); a toast shows the new total.
+   ✅ **Blank "Batch no." on a batch-tracking store** auto-names the lot by shelf-life,
+     exactly like warehouse goods-receipt (§3): with an **Expiry** → `AUTO-EXP-<expiry>`
+     (same expiry merges, different expiry = its own lot); **no Expiry** →
+     `AUTO-RCV-<today>`. It no longer piles into the shared `LEGACY` bucket. The code
+     shows in the item's **Batches (lots)** and the `MANUAL_ADJUST` **Stock Ledger** row.
+   ✅ **Flag-OFF store:** a blank batch just `$inc`s the quantity — **no** batch, **no**
+     auto code (unchanged legacy behaviour).
 3. **Adjust down (remove):** switch to *Adjust down*, enter a quantity.
    ✅ Entering **more than current stock** disables the button with a warning. A normal
    reduction lowers the quantity. (If stock changed underneath you and the server
-   rejects it, you get a clear **"exceeds available stock"** toast.)
+   rejects it, you get a clear **"exceeds available stock"** toast.) Adjust-down FEFO-
+   decrements existing lots — it never creates an auto batch.
 
 ### 8b. Bring stock from the warehouse (transfer)  *(super admin)*  (CH-3, CH-4)
 First make the link: **Items → the item → set Barcode = `PB001`** (same as the warehouse SKU).
