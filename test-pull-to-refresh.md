@@ -24,12 +24,28 @@ Android already had all of these — no Android change was needed.
 
 ## What each refresh does (Android and iOS match)
 
-- **Home** → reloads nearest store + categories + featured items (iOS: `fetchHomeData`).
-  On iOS the pull-refresh path skips the full-screen "Finding nearest store..." overlay
-  (uses `fetchHomeData(showLoader: false)`), so it behaves like Android's refresh.
+- **Home** → reloads nearest store + categories + featured items. On iOS this now uses a
+  dedicated `HomeViewModel.refresh()` (async) — it skips the full-screen "Finding nearest
+  store..." overlay AND does **not** clear the current items, so the grid stays visible
+  while fresh data loads (matches Android's `refresh()`, which keeps `featuredItems`).
 - **Categories** → reloads the **currently selected category's** items, page 1
-  (iOS: `fetchItemsByCategory` = Android `refreshCategoryItems`).
-- **Cart** → re-syncs the cart (iOS: `cartManager.fetchCart` = Android `refreshCart`).
+  (iOS: `refreshCategoryItems` = Android `refreshCategoryItems`; keeps the current items
+  on screen instead of blanking them).
+- **Cart** → re-syncs the cart (iOS: `cartManager.refreshCartAsync` = Android `refreshCart`).
+
+## Update (2026-07-20): spinner now waits + no blanking (iOS)
+
+The 2026-07-05 iOS limitation below (fire-and-forget `.refreshable`, spinner dismissing
+immediately, and Home/Categories blanking the list on pull) has been **fixed** for Home /
+Categories / Cart:
+- The `.refreshable` closures now `await` an async refresh (`HomeViewModel.refresh()` /
+  `refreshCategoryItems(...)` / `CartManager.refreshCartAsync()`), which bridges the Combine
+  request to async/await via `withCheckedContinuation`. So the native pull spinner now
+  **persists until the reload actually finishes**, matching Android.
+- A separate `isRefreshing` flag drives the refresh so it never sets `isLoading` (no overlay)
+  and never clears `featuredItems` / `categoryItems` (no blank flash).
+- Orders / Wallet still use the older fire-and-forget pattern (Wallet's refresh now also
+  refetches the balance, not just history).
 
 ## Manual test steps (iOS — the new part)
 
@@ -50,10 +66,9 @@ Android already had all of these — no Android change was needed.
 3. Confirm cart totals / bill details re-sync (e.g. change a price in admin, pull, see it update).
 
 ## Notes / known limitations
-- iOS uses the app's existing fire-and-forget `.refreshable` pattern (same as Orders/Wallet):
-  the pull spinner dismisses immediately rather than staying until the network finishes.
-  Data still updates when it arrives. Making the spinner wait would need Combine→async
-  bridging; deferred.
+- ~~iOS uses the app's existing fire-and-forget `.refreshable` pattern … the pull spinner
+  dismisses immediately … Making the spinner wait would need Combine→async bridging;
+  deferred.~~ **RESOLVED 2026-07-20 for Home / Categories / Cart** (see "Update" section above).
 - **Search** has no pull-to-refresh on either app (out of scope for this change).
 
 ## Deploy / rollout
