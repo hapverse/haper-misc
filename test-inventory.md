@@ -143,8 +143,9 @@ This puts stock into the warehouse.
    This **auto-fills** the line's **SKU/Barcode** (= that product's barcode) and **Name**,
    so the warehouse SKU always matches a real item (the SKU **is** the barcode in Haper —
    the same value the picker scan-gate and transfers use). You then fill only:
-   - **Batch no.** (leave blank = auto, or type the supplier's, e.g. `LOT-A`),
-     **Cost / unit (₹) — required, > 0**, **Expiry**, **Qty** (e.g. `100`).
+   - **Batch no.** (type the supplier's printed lot, e.g. `LOT-A`, **or leave blank to
+     auto-generate** — see the auto-batch rule below), **Cost / unit (₹) — required, > 0**,
+     **Expiry**, **Qty** (e.g. `100`).
    - *Uncatalogued goods:* you can still **type** SKU/Barcode + Name manually in the grid.
 4. **Receive**.
 
@@ -161,6 +162,21 @@ This puts stock into the warehouse.
    moment the lot is transferred (CH-3).
 ✅ Receive the **same SKU + same batch no.** again (e.g. 50) → quantity becomes **150**
    (merged into the lot, no duplicate).
+
+**Auto-batch when the "Batch no." is left blank** (batch-tracking warehouses only — with
+the flag OFF there are no batches at all). The lot is named by **shelf-life** so FEFO and
+cost stay truthful instead of everything piling into one shared `LEGACY` bucket:
+   - **With an Expiry** → the lot is named **`AUTO-EXP-<expiry YYYYMMDD>`**
+     (e.g. expiry 01-Sep-2026 → `AUTO-EXP-20260901`).
+   - **No Expiry** → named **`AUTO-RCV-<today YYYYMMDD>`** (IST receive date).
+✅ Receive the **same SKU, blank batch, same expiry** twice (e.g. 100 then 80) → they
+   **merge** into one `AUTO-EXP-…` lot (qty **180**, cost = weighted-average).
+✅ Receive the **same SKU, blank batch, a DIFFERENT expiry** → a **separate** `AUTO-EXP-…`
+   lot (each expiry keeps its own cost + FEFO position; nothing is flattened).
+✅ The auto code appears in the **stock detail modal → Batches (lots)**, the **Batch
+   Recall** trace, and the `PURCHASE_IN` **Stock Ledger** row (not a blank / `LEGACY`).
+❌ (Old, now fixed) blank batch no. used to dump every no-batch receipt into a single
+   `LEGACY` lot — flattening all expiries and blending all costs. It no longer does.
 ✅ Stock table columns: **Available / Reserved / In-transit / Free-to-promise** (CH-4)
    — at this point Reserved = In-transit = 0, Free-to-promise = Available. Hover the
    **Cost/unit** header → "weighted average of open lots"; **Expiry** → "earliest open
@@ -270,10 +286,18 @@ You can add stock two ways — test both.
 2. **Stock In (add):** enter a quantity (e.g. `20`); optionally a **Batch no.**,
    **Cost/unit** (super admin only) and **Expiry** → Save.
    ✅ Quantity rises (0 → 20); a toast shows the new total.
+   ✅ **Blank "Batch no." on a batch-tracking store** auto-names the lot by shelf-life,
+     exactly like warehouse goods-receipt (§3): with an **Expiry** → `AUTO-EXP-<expiry>`
+     (same expiry merges, different expiry = its own lot); **no Expiry** →
+     `AUTO-RCV-<today>`. It no longer piles into the shared `LEGACY` bucket. The code
+     shows in the item's **Batches (lots)** and the `MANUAL_ADJUST` **Stock Ledger** row.
+   ✅ **Flag-OFF store:** a blank batch just `$inc`s the quantity — **no** batch, **no**
+     auto code (unchanged legacy behaviour).
 3. **Adjust down (remove):** switch to *Adjust down*, enter a quantity.
    ✅ Entering **more than current stock** disables the button with a warning. A normal
    reduction lowers the quantity. (If stock changed underneath you and the server
-   rejects it, you get a clear **"exceeds available stock"** toast.)
+   rejects it, you get a clear **"exceeds available stock"** toast.) Adjust-down FEFO-
+   decrements existing lots — it never creates an auto batch.
 
 ### 8b. Bring stock from the warehouse (transfer)  *(super admin)*  (CH-3, CH-4)
 First make the link: **Items → the item → set Barcode = `PB001`** (same as the warehouse SKU).
