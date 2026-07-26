@@ -667,6 +667,11 @@ shelf to two different items. The `DefaultShelf1` placeholder (the migration's
 "unassigned" value) and an empty shelf are **exempt**. Matched **case-insensitively**
 (`A3` == `a3`). Enforced in admin item **create** + **edit**.
 
+> **Also fires from the Items list now.** The **Shelf** column on `/items` is
+> **click-to-edit** (type a code, press Enter) and it goes through the *same*
+> `PUT /admin/item/:itemId`, so the same 409 message appears as an error toast and the
+> cell reverts. Full walkthrough: **[`test-admin-ui.md` → Issue 11](./test-admin-ui.md)**.
+
 Steps (admin):
 - ✅ Give item A shelf `A3`, save. Give item B shelf `A3` → **blocked, 409**:
   *"Shelf "A3" is already assigned to "…". Each shelf can hold only one item."*
