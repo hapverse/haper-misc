@@ -1,9 +1,9 @@
 # Test: Print Shelf Labels — barcode price labels (admin panel)
 
 **Area:** Admin panel → **Catalog → Shelf Labels**, route **`/shelf-labels`** (`damin.haper.in` on dev)
-**Who can see it:** **super admin**, **store admin** and **warehouse manager** (the last two are
-**NEW** — it used to be super-admin only). Everyone else has no menu entry and gets bounced off
-the route. ⚠️ A **warehouse manager can open the page but cannot use it yet** — see
+**Who can see it:** **super admin** and **store admin** (store admin is **NEW** — it used to be
+super-admin only). Everyone else has no menu entry and gets bounced off the route. 🚫 A
+**warehouse manager is deliberately excluded** (decided **2026-07-26**) — see
 [Who can open this page](#who-can-open-this-page-roles) below.
 **Backend:** none new — reuses `GET /admin/item/catalog` and `GET /admin/item/catalog-summary`
 (both need the `items.view` permission)
@@ -56,29 +56,31 @@ and opens the PDF in the SEZNIK app to print the roll.
   MRP | SP cells) is arranged **once, inside the SEZNIK app**, then reused for every import. The
   **browser Print path already renders the full label** — nothing to set up there.
 - **Latest change (role opening):** the page was opened up from super-admin-only to
-  **super admin + store admin + warehouse manager**. **Front-end only, `haper-admin`** — two gates
-  changed (the sidebar entry and the route guard). **No backend change, no migration, no new env
-  var.** Needs an admin build deployed to `damin.haper.in` (**user-manual** deploy) before you can
-  test it.
+  **super admin + store admin**. A **warehouse manager** was briefly included and then
+  **deliberately removed on 2026-07-26** — see
+  [Who can open this page](#who-can-open-this-page-roles). **Front-end only, `haper-admin`** — two
+  gates changed (the sidebar entry and the route guard). **No backend change, no migration, no new
+  env var.** Needs an admin build deployed to `damin.haper.in` (**user-manual** deploy) before you
+  can test it.
 
 Source (for reference):
 - Page: `haper-admin/src/pages/ShelfLabels/ShelfLabelsPage.tsx`.
 - Print (Code 128 + print window): `haper-admin/src/utils/shelfLabelPrint.ts`.
 - Export (.xlsx / .csv): `haper-admin/src/utils/shelfLabelExport.ts`.
 - Route guard: `haper-admin/src/App.tsx` — `/shelf-labels` now sits in its own
-  `requireRole={['super_admin', 'store_admin', 'warehouse_manager']}` block (it used to be inside
-  the super-admin-only block).
+  `requireRole={['super_admin', 'store_admin']}` block (it used to be inside the super-admin-only
+  block).
 - Menu entry: `haper-admin/src/hooks/useMenu.ts` — Catalog section,
-  `requireAnyRole: ['super_admin', 'store_admin', 'warehouse_manager']` (it used to be
-  `superAdminOnly`).
+  `requireAnyRole: ['super_admin', 'store_admin']` (it used to be `superAdminOnly`).
 
 ---
 
 ## Who can open this page (roles)
 
-The page used to be **super-admin only**. It is now also offered to **store admin** and
-**warehouse manager**. Two front-end gates were changed — the **sidebar entry**
-(`src/hooks/useMenu.ts`) and the **route guard** (`src/App.tsx`). Nothing changed on the API.
+The page used to be **super-admin only**. It is now also offered to **store admin** — and to a
+store admin **only**. A **warehouse manager is deliberately kept out** (see the decision box
+below). Two front-end gates control this — the **sidebar entry** (`src/hooks/useMenu.ts`) and the
+**route guard** (`src/App.tsx`). Nothing changed on the API.
 
 **Real example.** The Haper Mart store admin can now print her own shelf stickers herself,
 instead of asking the super admin to do a label run for her store.
@@ -87,28 +89,40 @@ instead of asking the super admin to do a label run for her store.
 |---|---|---|---|---|
 | `super_admin` | Yes | Yes | Yes — all stores, or one via the store switcher | **Fully works** (unchanged) |
 | `store_admin` | **Yes (NEW)** | **Yes (NEW)** | Yes — **their own store only**. The backend pins them to their `storeId` and **403s** any request naming another store | **Fully works**, correctly scoped |
-| `warehouse_manager` | **Yes (NEW)** | **Yes (NEW)** | **No — 403.** `items.view` is not in the warehouse-manager permission preset. And the page never even sends the request, because a warehouse account has no store attached → no store selected and no store selector shown | ⚠️ **Dead end** — the page loads but says *"Select a specific store first"* with no way to select. Needs a product/backend decision |
+| `warehouse_manager` | **No** ❌ | **No** ❌ — bounces to `/` | **No — 403 anyway.** `items.view` is not in the warehouse-manager permission preset | **No access — on purpose** (decided 2026-07-26, see the box below) |
 | `warehouse_staff` | No | No — bounces to `/` | No (403) | No access |
 | `manager` | No | No — bounces to `/` | *Would* serve (it has `items.view`, scoped to its store) | No access — deliberately gated out in the UI |
 | `support` | No | No — bounces to `/` | *Would* serve (it has `items.view`, scoped to its store) | No access — deliberately gated out in the UI |
 
-### ⚠️ KNOWN LIMITATION — a warehouse manager can open the page but cannot use it
+### 🚫 DELIBERATE DECISION — `warehouse_manager` is excluded on purpose (2026-07-26)
 
-> A warehouse manager now **sees** *Shelf Labels* in the sidebar and **can open** it, but the page
-> is a **dead end** for them: it shows **"Select a specific store first"** and there is **no store
-> selector**, because warehouse accounts are not attached to any store. No labels, no export.
+> **Read this before you "fix" anything.** A warehouse manager was briefly given this page. On
+> **2026-07-26** the role was **removed from both front-end gates**. This is a **considered
+> product decision — NOT an oversight and NOT a bug**.
 >
-> **DO NOT "fix" this by granting `items.view` to warehouse roles.** For warehouse roles the
-> backend deliberately sets **no store context**, and the item-catalog query reads "no store" as
-> "**every** store". Granting that permission would let a warehouse account list, print and export
-> the **entire multi-store catalog**. Today it is blocked **twice over** — no permission **and** no
-> store selected — and it must stay that way until the backend gives warehouse roles a proper,
-> **server-validated** store-selection context.
+> **Why we took it out.** A warehouse account has **no store attached to it**. In the backend,
+> "**no store selected**" means "**all stores**" for the item-catalog query. So the only way to
+> make this page actually work for a warehouse manager would be to grant warehouse roles the
+> **`items.view`** permission — and that would let them **list, print and export every store's
+> catalog**, not just one store's. The backend says the same thing in its own code comment
+> (`haper-backend/packages/admin/src/routes/warehouse/controller.js`): *"The store catalog
+> endpoint is store-gated (items.view) and would leak other stores."* That risk is not worth
+> taking for a page the role could not use anyway.
 >
-> **OPEN follow-up (needs a product decision), pick one:**
-> **(a)** drop `warehouse_manager` from the two front-end gates, or
-> **(b)** build validated store selection for warehouse roles in the backend, then grant the
-> permission.
+> **Real example.** Give the Chapra warehouse manager `items.view` and open the page: instead of
+> one store's shelf list, the export would contain **Haper Mart's items and every other store's
+> items too** — full names, barcodes, MRP and selling prices, downloadable as one .xlsx.
+>
+> **Hard rules until the real fix exists:**
+> - ❌ **Do NOT re-add `warehouse_manager`** to this page's menu gate (`useMenu.ts`) or route
+>   guard (`App.tsx`).
+> - ❌ **Do NOT grant `items.view`** to `warehouse_manager` or `warehouse_staff`.
+>
+> **The real fix, for whoever picks this up later.** This is a **backend job, not a front-end
+> one**: give warehouse roles a proper **server-validated store-selection context** — the
+> warehouse user picks one store the warehouse actually serves, the **server checks** that choice
+> and scopes the catalog to that single store. Once that exists, this decision can be revisited
+> and the page reopened to warehouse roles safely.
 
 ### ✅ R1. Store admin — the new happy path
 1. Log in to `damin.haper.in` as a **store admin**.
@@ -120,14 +134,13 @@ instead of asking the super admin to do a label run for her store.
 5. ❌ They must never see another store's items — the backend rejects a request naming any other
    store with **403**.
 
-### ⚠️ R2. Warehouse manager — expected dead end (not a bug, for now)
-1. Log in as a **warehouse manager**.
-2. ✅ **Catalog → Shelf Labels** appears in the sidebar and the page **opens** (no bounce).
-3. ✅ **Expect** the blocked card **"Select a specific store first"**, and **no store selector** in
-   the top bar to pick one with.
-4. ✅ **Expect no 403 error toast either** — the page never fires the catalog request without a
-   store. If you *do* force the call, the API answers **403** (no `items.view`).
-5. Record this as **expected for now** — see the limitation box above.
+### ❌ R2. Warehouse manager — must NOT get in
+1. Log in to `damin.haper.in` as a **warehouse manager**.
+2. ❌ There is **no Shelf Labels entry** under **Catalog** in the sidebar. (Their other pages —
+   e.g. **Catalog → Product Master** — are still there, so you know the login itself is fine.)
+3. ❌ Type `damin.haper.in/shelf-labels` in the address bar → you are **bounced straight back to
+   the dashboard (`/`)**. The page must **not render even for a moment**.
+4. This is **expected and deliberate** — see the decision box above. Do not raise it as a bug.
 
 ### ❌ R3. Roles that must still be locked out
 Log in as each of **warehouse staff**, **manager**, **support**:
@@ -150,7 +163,8 @@ block must be unaffected. **Log in as a store admin** and try each address by ha
 1. ❌ None of those five may render, and none may appear in the store admin's sidebar.
 2. ✅ Log back in as **super admin** → all five still open normally.
 
-> Covered by `haper-admin/src/hooks/useMenu.test.ts` (6 tests, vitest) for the menu gate.
+> Covered by `haper-admin/src/hooks/useMenu.test.ts` (vitest) for the menu gate — including an
+> explicit test that a **`warehouse_manager` does NOT see** the Shelf Labels entry.
 
 ---
 
@@ -205,7 +219,8 @@ Under **1. Choose what to print**:
 2. **Expect:** a modal **"Skipped — no barcode (N)"** listing each item (name + brand + pack size),
    with the note that they're **never printed or exported** and you should **add a barcode on the
    Items page** to include them. (Super-admins / warehouse-managers can **auto-generate** an internal
-   barcode for these from **Product Master** — see **test-barcode-generation.md**.)
+   barcode for these from **Product Master** — a **different page**, which a warehouse manager *can*
+   open — see **test-barcode-generation.md**.)
 3. For **All / Active** scope the list shows the **first 100** skipped items (a footnote says so);
    for **Selected** scope it shows exactly the selected items that have no barcode.
 
@@ -352,7 +367,7 @@ Each tiled label is the **same design** as the 50 × 30 mm one:
 | Thing | Detail |
 |---|---|
 | **Endpoints used** | `GET /admin/item/catalog` (the item list, paginated, `limit` max **100**) and `GET /admin/item/catalog-summary` (the `totalItems` / `activeItems` counts). Both are **read-only** and existed before this feature. |
-| **Permission** | Both endpoints require **`items.view`**. The **menu entry + route** are additionally gated to **super admin / store admin / warehouse manager** (roles, not permissions). Note the gap: a warehouse manager passes the *front-end* gate but has **no `items.view`**, so the API would 403 — see [Who can open this page](#who-can-open-this-page-roles). |
+| **Permission** | Both endpoints require **`items.view`**. The **menu entry + route** are additionally gated to **super admin / store admin** (roles, not permissions). Warehouse roles have **no `items.view`** and are kept off the page on purpose — with no store attached, the catalog query would return **every** store: see [Who can open this page](#who-can-open-this-page-roles). |
 | **Store scope** | The catalog + summary are scoped to the **active store** (the selector's store), so prices/barcodes/counts are that store's. |
 | **Skipped count** | Comes from `catalog?missingBarcode=true` (`total`) for the chosen scope; **Will print = total − skipped**. |
 | **Full set for print/export** | Pages the catalog **100 at a time** until exhausted, then filters out empty-barcode items — so a Print/Export always covers **every** matching item, not just the 50 previewed. |
@@ -364,8 +379,8 @@ Each tiled label is the **same design** as the 50 × 30 mm one:
 
 | Symptom | Likely cause |
 |---|---|
-| **No "Shelf Labels" menu** at all | Your role isn't one of **super admin / store admin / warehouse manager**, **or** the `haper-admin` build on `damin.haper.in` is behind (the role opening isn't deployed yet — a store admin used to be excluded). |
-| Page shows **"Select a specific store first"** | The store selector is on **"All Stores"** — pick a specific store. **Warehouse manager:** there is no selector to pick with; this is the known dead end, not a bug — see [Who can open this page](#who-can-open-this-page-roles). |
+| **No "Shelf Labels" menu** at all | Your role isn't **super admin** or **store admin**. A **warehouse manager** is excluded **on purpose** — that is not a bug, see [Who can open this page](#who-can-open-this-page-roles). Otherwise the `haper-admin` build on `damin.haper.in` is behind (the role opening isn't deployed yet — a store admin used to be excluded). |
+| Page shows **"Select a specific store first"** | The store selector is on **"All Stores"** — pick a specific store. (Only a **super admin** has an "All Stores" option; a store admin is always pinned to their own store, so they should never see this card.) |
 | **Print / Download** buttons are greyed out | Counts still loading, or **Will print / export = 0** (nothing selected / nothing has a barcode in this scope). |
 | Nothing happens on **Print** + a toast **"Allow pop-ups…"** | The browser blocked the print pop-up — allow pop-ups for `damin.haper.in` and retry. |
 | Barcode **lost its leading zero** in Excel | You opened a plain CSV without the text-formula handling, or edited/re-saved the cell as a number. Use the provided **.xlsx**, or the **.csv** as exported (it wraps the barcode as text). |
