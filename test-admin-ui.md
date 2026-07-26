@@ -84,3 +84,26 @@ Steps:
 6. ❌ Regression: empty search still returns the full list; existing name/barcode searches
    return the same rows (the change only *adds* `$or` branches).
 
+## Issue 10 — Store "View details" (read-only, incl. _id)
+
+**Where:** Stores Management (`/stores`) → each row's **Actions** → the new **eye** button.
+Frontend only: `haper-admin/src/pages/Stores/StoreDetailsModal.tsx` (new) +
+`StoresList.tsx` (the eye action + modal wiring). No backend change — uses the store object
+already in the list.
+**Why:** super-admin needs to see every stored field for a store at a glance — especially the
+Mongo **`_id`** and other reference ids (`servingWarehouseId`, `ownerId`) for support/DB lookups —
+without opening the edit form and risking an accidental change.
+
+Steps:
+1. ✅ Click the **eye** (View Details) icon on any store row → a read-only modal opens with the
+   store name + ACTIVE/INACTIVE pill in the header.
+2. ✅ **Identity** section shows the **Store ID** (`_id`) in monospace with a **copy** button →
+   clicking it copies the id and toasts "Copied".
+3. ✅ All fields render grouped: Identity, Contact (email/GSTIN copyable, map link opens in a new
+   tab), Location & delivery area (coordinates as `lat, lng`, service-area, radius), Order & charges,
+   Delivery incentives, Supply layer (serving-warehouse / owner ids, copyable), Villages (chips),
+   Business hours (per day), and Image (thumbnail) — each shows **"—"** when empty.
+4. ✅ It's **read-only** — no inputs, no save; **Close** (or the ✕) dismisses it. Edit/Delete
+   actions are unchanged and still work.
+5. ❌ Regression: opening details must not mutate the store; the list is unchanged after closing.
+
