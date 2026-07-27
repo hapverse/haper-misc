@@ -69,7 +69,15 @@ SEZNIK app to print the roll.
 - **SEZNIK side:** for the **Excel-import** path, the label layout (name on top, big barcode,
   MRP | SP cells) is arranged **once, inside the SEZNIK app**, then reused for every import. The
   **browser Print path already renders the full label** — nothing to set up there.
-- **Latest change (new 50 × 25 mm thermal format, 2026-07-26):** a **fourth** print format was
+- **Latest change (format buttons lock while a run is building, 2026-07-27):** while **any** run
+  is in flight (**Print**, **Download .xlsx**, **Download .csv**) all **four** Print-format buttons
+  are **disabled**, and each run **pins the format that was selected when it was clicked** — so the
+  screen can never advertise a format the running job is not building. The chooser stays **usable
+  while the pre-flight counts load** (that builds nothing and risks no media). **Front-end only,
+  `haper-admin`** (`ShelfLabelsPage.tsx`). **No backend change, no migration, no new env var, no
+  new dependency.** On **`dev`** and **NOT deployed yet** — needs an admin build deployed to
+  `damin.haper.in` (**user-manual** deploy) before you can test it. See **§V**.
+- **Previous change (new 50 × 25 mm thermal format, 2026-07-26):** a **fourth** print format was
   added — **Individual — 50 × 25 mm**, a second thermal-roll size. **Front-end only, `haper-admin`**
   (`shelfLabelPrint.ts` + `ShelfLabelsPage.tsx`). **No backend change, no migration, no new env var,
   no new dependency.** Needs an admin build deployed to `damin.haper.in` (**user-manual** deploy)
@@ -498,6 +506,71 @@ Both thermal cards are visibly titled **"Individual"**, so the size line is what
 3. ❌ The selected one must announce as **pressed / selected**, so a non-sighted operator can tell
    which size is armed before printing.
 
+### ❌ V. You cannot switch format while a run is already building (2026-07-27)
+
+Clicking **Print** does not print straight away — the page first fetches the **whole catalog**,
+100 items at a time, which on a big store takes **several seconds**. Until this fix the four
+format cards stayed **clickable during that wait**, so an impatient operator could change the
+format **after** the job had already started. The screen then showed one format while a
+**different** one was actually being built.
+
+**Real example of the old bug.** A **50 × 25 mm** roll is loaded. The operator picks
+**Individual · 50 × 25 mm**, clicks **Print**, sees nothing happen for four seconds, so she clicks
+**A4 sheet · 48/page**. The screen switches to A4 — the highlight moves and the button now reads
+`Print 1,390 labels — A4 48/page` — but the run already in flight is still building the
+**50 × 25 mm** job. She walks over to the A4 printer and the thermal job lands on the roll
+instead. Roll stock and paper both wasted.
+
+1. Pick a store with a **big catalog**, so the fetch genuinely takes a few seconds — e.g.
+   **Haper Mart**, ≈**1,390** items. **This matters:** on a small store the run finishes before
+   you can click anything and the test proves nothing.
+2. Set **1. Choose what to print** to **All items** (the biggest, slowest set).
+3. Set **Print format** to **Individual · 50 × 25 mm** and click **Print** — the button reads
+   `Print 1,390 labels — 50 × 25 mm` and then shows a **spinner**.
+4. **While the spinner is still turning**, try to click each of the other three cards —
+   **Individual · 50 × 30 mm**, **A4 sheet · 48/page**, **A4 sheet · 44/page**.
+5. ✅ **Expect all four cards to be visibly greyed out (dimmed)**, to show a **"not-allowed"
+   cursor** on hover, and **clicking them to do nothing at all**:
+   - the **highlight stays on Individual · 50 × 25 mm**,
+   - the **Print button text does not change** — still `— 50 × 25 mm`,
+   - the job that opens in the print window is the **50 × 25 mm** one you picked **before** you
+     clicked Print.
+6. ✅ The moment the run finishes (the print window and the browser print dialog appear), the four
+   cards go **back to full colour and are clickable again**.
+7. ❌ **Must NOT happen:** a mid-run click **switches the whole UI** — the highlight moves and the
+   button becomes `Print 1,390 labels — A4 48/page` — while the run in flight keeps building the
+   **50 × 25 mm thermal** job. The screen saying **A4** while a **roll** job prints is exactly what
+   this step exists to catch.
+
+**Same lock on the two exports — test these too.** Repeat steps 3–6 with **Download .xlsx**, then
+again with **Download .csv**. ✅ The four format cards must grey out during those runs as well: the
+lock is on **any** run in flight, not on Print only.
+
+**The cards must come back even when the run ends badly.** ✅ Start a Print on the big store and
+kill the network mid-fetch (**DevTools → Network → Offline**) → the toast reads *"Something went
+wrong building the labels. Please try again."* and the **four cards must be clickable again**
+immediately. Same if a run ends with nothing to print (toast *"No items with a barcode in this
+selection."*). ❌ They must **never stay stuck greyed** — that would leave the operator unable to
+change format without reloading the page.
+
+**✅ The opposite case — while the counts are still "…", the chooser MUST still work.** Open the
+page (or switch store / scope) so **Will print / export** and **Skipped (no barcode)** still read
+**"…"**. ✅ In that moment the four format cards are **fully usable** — click **Individual ·
+50 × 25 mm** and the highlight moves and the preview card changes, even though **Print** and both
+**Download** buttons are greyed (that is §I, and it is correct). This is **deliberate**: loading
+the counts builds **nothing** and risks **no media**, so the operator can line the format up with
+the roll that is already in the printer while she waits. ❌ Format cards greyed out **while only
+the counts are loading** **is** a bug — report it.
+
+**Why this matters:** printing an **A4 sheet layout onto a 50 × 25 mm thermal roll wastes the
+roll** (and a thermal job sent to the A4 printer wastes the sheet), so the format shown on screen
+must always be the format actually being built.
+
+> Covered by `haper-admin/src/pages/ShelfLabels/ShelfLabelsPage.test.tsx` (vitest) — the
+> **"format chooser during an in-flight run"** block asserts that a run prints the format picked
+> at click time, that all four buttons are disabled during a **Print** and during a **.csv** run,
+> and that the chooser **stays usable** while the pre-flight counts are loading.
+
 ---
 
 ## Edge cases to verify
@@ -572,6 +645,7 @@ Both thermal cards are visibly titled **"Individual"**, so the size line is what
 | **No "Shelf Labels" menu** at all | Your role isn't **super admin** or **store admin**. A **warehouse manager** is excluded **on purpose** — that is not a bug, see [Who can open this page](#who-can-open-this-page-roles). Otherwise the `haper-admin` build on `damin.haper.in` is behind (the role opening isn't deployed yet — a store admin used to be excluded). |
 | Page shows **"Select a specific store first"** | The store selector is on **"All Stores"** — pick a specific store. (Only a **super admin** has an "All Stores" option; a store admin is always pinned to their own store, so they should never see this card.) |
 | **Print / Download** buttons are greyed out | Counts still loading, or **Will print / export = 0** (nothing selected / nothing has a barcode in this scope). |
+| The **four Print format cards** are greyed out and won't respond | A **Print / .xlsx / .csv run is still building** — by design, so the screen can't show one format while another prints. They come back the moment the run ends (including when it fails). If they are greyed while **only the counts** are still **"…"**, that **is** a bug — see §V. |
 | Nothing happens on **Print** + a toast **"Allow pop-ups…"** | The browser blocked the print pop-up — allow pop-ups for `damin.haper.in` and retry. |
 | Barcode **lost its leading zero** in Excel | You opened a plain CSV without the text-formula handling, or edited/re-saved the cell as a number. Use the provided **.xlsx**, or the **.csv** as exported (it wraps the barcode as text). |
 | An item **isn't on any label** | It has **no barcode** — it's in the **Skipped** count and the **View skipped** list. Add a barcode on the **Items** page. |
