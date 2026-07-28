@@ -29,6 +29,23 @@ Colors now used (all from the app theme — `AppTheme` on iOS, `ui/theme/Color.k
 Copy: title `Update Required` → **`Time to update`**; added caption **`It only takes a few
 seconds`**. Button still `Update Now`.
 
+## Admin side — where you set the versions (updated 2026-07-28)
+
+`damin.haper.in/config` → **PLATFORM SETTINGS** group → the **Force Update** card (super admin only).
+The card is full width: **Min iOS version** and **Min Android version** on the **left**, **Update
+message** on the **right**. The customer-facing screen below is untouched.
+
+- ✅ The button now reads just **"Save"** (it used to read "Save Force Update").
+- ✅ It is **greyed out until you actually change one of the three fields.** On a freshly loaded page
+  nothing is clickable and the status line reads *"Use X.X.X format. Set 0.0.0 to disable."* Change
+  **Min Android version** → the line turns amber **"● Unsaved changes"** and Save lights up. Click Save
+  → it flashes **"Saved"**, then greys out again.
+- ✅ Editing any **other** card on that page (Support Contact, Not Serviceable Message, Store Controls,
+  Free Gift) must **not** light up Force Update's Save button, and vice versa.
+- ✅ Saving still sends exactly one `PUT /admin/config/force-update` with the same body as before.
+
+Full layout walkthrough: [`test-admin-ui.md` § Issue 12](./test-admin-ui.md#issue-12--config-page-layout-revamp).
+
 ## How to trigger it
 
 Make the server min version **higher** than the installed build:

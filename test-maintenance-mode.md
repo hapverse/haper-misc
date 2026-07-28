@@ -89,7 +89,8 @@ No client change required — response shape is identical, apps already gate the
 | # | Step | Expected | Result |
 |---|------|----------|--------|
 | A1 | Open sidebar → Settings → **Maintenance** | Dedicated page: global master card + store list, live countdowns tick | ✅ / ❌ |
-| A2 | Config page (`/config`) | Old inline maintenance panel gone; a **Maintenance Mode →** link card is shown instead | ✅ / ❌ |
+| A2 | Config page (`/config`) | Old inline maintenance panel gone. **Updated 2026-07-28:** the entry point is now a **single slim link row** at the **bottom of the PLATFORM SETTINGS group** — "Maintenance Mode · Take the whole app or a single store offline" with **Open ›** — not a card. Clicking it (or pressing Enter on it) still opens `/maintenance`; still super-admin only | ✅ / ❌ |
+| A2b | `/maintenance` in **LIGHT** theme on a slow network (dev tools → Slow 3G) | The store-list **loading skeletons are visible** as grey bars. They used to be white-on-white, i.e. invisible in light theme, so the page looked blank while loading (app-wide `.skeleton-bar` fix; see [`test-admin-ui.md` § Issue 12](./test-admin-ui.md#issue-12--config-page-layout-revamp)) | ✅ / ❌ |
 | A3 | Toggle **global** switch ON | ConfirmDialog "Take the ENTIRE app down?" with required **acknowledgement checkbox** (confirm disabled until ticked) | ✅ / ❌ |
 | A4 | Confirm global ON | Master card turns red **LIVE**, mono countdown "auto-lifts H:MM · HH:MM:SS"; store list greys (opacity .5) + amber banner; Manage disabled | ✅ / ❌ |
 | A5 | Global ON, leave `endTime` blank | Stored `endTime` ≈ now + 6h (backend default); hint "Blank = defaults to 6 hours" shown | ✅ / ❌ |
@@ -111,7 +112,7 @@ No client change required — response shape is identical, apps already gate the
 ## Ambiguities resolved (flag for reviewer)
 - Store editor **toggle seeds from the EFFECTIVE state** (what the row badge shows), while message/end-time seed from the stored values — so the admin edits exactly what they see. (Spec left stored-vs-effective open.)
 - **Scheduled** badge (future start) is coded but unused — reserved for a Phase-2 `startTime`; today ON is immediate (matches backend).
-- Shared `Switch`/`Panel`/`Field` extraction was **not** applied to `ConfigSettings.tsx` (spec said align with arijit-frontend-arch first). New `Switch` is additive; ConfigSettings keeps its local one to avoid an unreviewed refactor.
+- ~~Shared `Switch`/`Panel`/`Field` extraction was **not** applied to `ConfigSettings.tsx`.~~ **Resolved 2026-07-28:** the `/config` revamp deleted the page's local copy and `ConfigSettings.tsx` now imports the shared `components/common/Switch` (the same one this page uses), so both pages' switches are one component. `Panel`/`Field` are still per-page.
 - Auto-lift "green flash" (A.8) omitted — the badge simply flips to Off; no functional gap.
 
 ---
