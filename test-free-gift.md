@@ -46,8 +46,19 @@ a FREE badge and a "spend a little more to unlock…" nudge; old apps just see a
 - Cart preview: `GET /user/cart` returns an additive `giftOffer` object (`previewGiftForCart`).
 - The `isFreeGift` order-line flag (always emitted, default false) and the daily cap.
 
-**Later passes (NOT built now):** admin FE "Free Gift Tiers" screen, Android/iOS/web nudge + FREE tag,
-picker FREE tag, delivery FREE line, and the invoice Rs 0 "FREE (Gift with purchase)" line.
+**Admin FE (built this pass — see section ✅ I):**
+- "Free Gift on Order" section on the store-config page (`/config`, `ConfigSettings.tsx`) — master
+  switch (persisted via the store PUT) + tiers table + add/edit/delete tier modal with a searchable
+  active-item picker. Scoped to the store selected in the switcher.
+- Option-B controls in `OrderDetailsModal` — for a `PAYMENT_INITIATED` order the status / reassign /
+  edit-items controls are disabled with an inline "payment pending" note; the backend 400 is also
+  surfaced as a toast if anything slips through.
+- FREE-gift line treatment in the order-details items list + a "Free gift → FREE" bill row.
+
+**Later passes (NOT built now):** Android/iOS/web nudge + FREE tag, picker FREE tag, delivery FREE
+line, and the invoice Rs 0 "FREE (Gift with purchase)" line. The invoice is a **backend-generated PDF**
+(`shared/utils/invoice.utils.js`) that the admin only downloads — there is no admin-FE invoice line to
+tag, so that item stays a backend task.
 
 ---
 
@@ -199,6 +210,42 @@ Try to create/update a tier that is invalid:
   startDate." on a partial update (re-checked against the merged existing+patch dates).
 - **Duplicate threshold for the same store** → **400** "A gift tier already exists at this order value."
   (also enforced by a unique index as a backstop).
+
+### ✅ I. Admin FE walkthrough (`damin.haper.in`, this pass)
+
+**Surface 1 — "Free Gift on Order" on `/config` (Store Configuration).** Sign in with a store admin (or a
+super admin with a specific store — NOT "All Stores" — picked in the switcher).
+1. **Loading / error / empty:** on open the tier area shows 3 skeleton rows, then either the tiers
+   table or, when the master switch is ON with no tiers, the teaching empty state ("No gift tiers
+   yet" + "Add your first tier"). Kill the network and the area shows an error card with **Retry**.
+2. **Master OFF (default):** the tier area is dimmed (55%, not clickable) with "Turn on Free Gift to
+   add tiers"; the **+Add** control is hidden. Flip the switch ON → the footer shows "Unsaved switch
+   change"; click **Save** → toast "Free gift turned on" (persists via `PUT /admin/store/:id`).
+3. **Add a tier:** click **Add tier** → modal. Enter a threshold (integer > 0), search the item
+   picker (arrow keys + Enter work; each option shows thumbnail + weight + Rs price), pick start/end
+   dates, leave **Tier enabled** ON, **Add**. Row appears, rows sorted by threshold ascending, with a
+   status pill (**Active / Paused / Scheduled / Expired**).
+4. **Validation:** threshold `0` → inline red "Enter a whole order value above Rs 0"; a threshold that
+   already exists → "A tier at Rs N already exists"; end date before start → red banner "End date
+   can't be before the start date". **Save/Add stays disabled** while any error is present. A
+   backend reject (inactive item, etc.) surfaces as a toast and the modal stays open with input kept.
+5. **Edit / delete:** the ghost icon buttons (aria-labels "Edit Rs N tier" / "Delete Rs N tier").
+   Delete opens a confirm modal ("Remove this tier?"), **not** `window.confirm`.
+6. **All-Stores mode (super admin):** switch to "All Stores" → the section shows "Select a specific
+   store…" and no tier controls (the CRUD needs one concrete store id).
+
+**Surface 2 — Option-B in Order details.** Open a `PAYMENT_INITIATED` order in `OrderDetailsModal`.
+1. **Expect:** a yellow inline note "Payment pending — this order will resolve automatically and can't
+   be actioned manually." The **status select + Update Status**, **delivery-boy select + Assign**, and
+   **Edit Items** button are all **disabled**. Any **non**-`PAYMENT_INITIATED` order behaves exactly
+   as before (regression check — see section E4).
+2. If a control is somehow triggered, the backend 400 message is shown as a toast (no raw error).
+
+**Surface 3 — FREE gift line in Order details.** Open a delivered/normal order that received a gift.
+1. **Expect:** the gift line shows a green **FREE GIFT** pill next to its name, its price renders as
+   the struck MRP + green **FREE** (never a bare Rs 0), the line Total shows **FREE**, and the payment
+   card gains a **"Free gift → FREE"** row. Old orders (no `isFreeGift`, or `false`) render as normal
+   lines — only an explicit `true` gets gift treatment.
 
 ---
 
