@@ -395,6 +395,41 @@ Turn scheduling OFF for the store (PUT with `enabled: false`) after one or more 
 
 ---
 
+## PHASE 1D (customer web app — slot booking UI)
+
+**Area:** Web app checkout and order screen (`haper-web`) only. **First customer-facing piece.** Backend and admin already deployed.
+**Files (new):**
+- `packages/web/src/pages/checkout/DeliveryOptions.tsx` — two-choice card: "Deliver now" (default) and "Schedule"
+- `packages/web/src/pages/checkout/ScheduleSlotPicker.tsx` — date strip and slot list
+- `packages/web/src/pages/order-details/ScheduleInfo.tsx` — slot display and action deadlines
+
+**Deploy needed:** Web app only. Backend and admin are already live. Deployment is **manual and user-only**.
+
+### What shipped in 1D
+
+1. **At checkout, two delivery options** — `Deliver now` (default, 20–30 min, exactly as today) and `Schedule`. Choosing Schedule expands a date strip and slot list inside the same card.
+2. **Date strip** — today plus however many days the store allows. Unavailable dates are greyed, not hidden (hiding breaks the layout). Today's date is pre-selected.
+3. **Slot list** — each shows its time range. Unavailable slots are greyed with the reason: `Full` or `Too soon` (starts within the lead time). Nearly-full slots show `Only 3 left`.
+4. **Wallet-refund notice** shown **before payment** if anything could be refunded on this order — refunds come back as Haper wallet coins, not to card or UPI.
+5. **Order screen** displays the booked slot and two deadlines as dates and times: `You can change this slot until 4 Aug, 8:00 AM. One change allowed.` and `You can cancel until 4 Aug, 4:00 AM.` After the slot change is used, it reads `You have already used your one slot change.`
+6. **Change slot and cancel** work from the order screen within their deadlines, returning users to the same screen.
+
+### Critical checks
+
+- ✅ **Headline check:** Open checkout on a store with scheduling **OFF** → no Schedule button, no toggle, checkout is exactly as today.
+- ✅ Enable scheduling on a test store (admin Phase 1C) and return to web checkout → Schedule option now appears.
+- ✅ Tap Schedule → date strip and slot list expand. Select a date, then a slot → book succeeds, payment is captured, order shows at status Open.
+- ✅ Order screen shows the booked slot and both deadlines as dates and times in IST.
+- ✅ Tap Change Slot → fresh slot list, pick a new slot → succeeds once, then "You have already used your one slot change."
+- ✅ Tap Cancel → succeeds until the cancel deadline (8h before slot). After that, button is disabled or returns an error.
+- ✅ Unavailable dates are greyed but visible; the strip does not jump or collapse.
+- ✅ Unavailable slots show the reason (`Full`, `Too soon`). Filled slots show `Only 3 left`.
+- ✅ Wallet-refund notice appears **before** the "Pay" button. Customer sees it before taking any payment action.
+- ❌ Scheduling does **not** appear for store pickup (collect-yourself) orders — only delivery.
+- ❌ **Android and iOS are not built yet** — do not test them for this.
+
+---
+
 ## Edge cases worth probing
 
 ### Phase 0 cases
