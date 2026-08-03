@@ -359,6 +359,42 @@ Turn scheduling OFF for the store (PUT with `enabled: false`) after one or more 
 
 ---
 
+## PHASE 1C (admin screens — settings, tabs, and order view)
+
+**Area:** Admin panel (`haper-admin`) only. Backend and admin deploy together.
+**Files (new):**
+- `packages/admin/src/routes/store/controller.js` — slot-config endpoints (Phase 1B backend already here)
+- `packages/admin/src/pages/StoreSettingsSlots.tsx` — Delivery Slots settings page
+- `packages/admin/src/pages/OrderList.tsx` — three new tabs and scheduled badge
+- `packages/admin/src/pages/OrderDetailsModal.tsx` — slot info and change history
+
+**Deploy needed:** Backend **and admin together** (the screens call new endpoints). Deployment is **manual and user-only**.
+
+### What shipped in 1C
+
+1. **Delivery Slots settings page** — new item under Settings, per store. Toggles scheduling ON (default OFF). Shows slot length, weekday schedule, lead times, max orders per slot, blackout dates, and payment methods (cash COD is built but switched OFF).
+2. **Three tabs on the Orders page** — `Live` (excludes un-released scheduled orders, default view), `Scheduled` (upcoming bookings grouped by date), `Day Plan` (one day at a time, orders grouped by slot, opens on today).
+3. **Badge on scheduled order rows** — `SCHEDULED · 4 Aug, 12–2 PM` chip next to status. Normal orders have no badge.
+4. **Inverted age timer for scheduled rows** — counts **towards** the slot ("Releases in 2h 10m", "Due 4 Aug, 12–2 PM") instead of aging up. Turns red only if release is >15 min late **or** the slot ended with no delivery. Never red just for being old.
+5. **Dashboard and board counts exclude un-released bookings** — new "Scheduled ahead" tile and "waiting for their delivery slot" strip show them separately.
+6. **Order details** show the booked slot and change history (each change timestamped).
+
+### How to test — the critical checks
+
+- ✅ **Headline check:** Open the Orders page, ops board, and dashboard on a store with scheduling **OFF** → no tabs, no badge, no new tile, no strip. Screens are exactly as they are today.
+- ✅ Go to **Delivery Slots** and turn scheduling ON for a test store. Save.
+- ✅ Return to Orders → three tabs now appear. `Live` shows only un-released and released orders awaiting pickup. `Scheduled` shows upcoming bookings grouped by date. `Day Plan` opens on today.
+- ✅ Book a few scheduled orders via API (use Phase 1B Walkthrough C). They appear in the `Scheduled` tab with the date label.
+- ✅ Scheduled row has the badge `SCHEDULED · <date, time-slot>` and the inverted timer (e.g. "Releases in 45m").
+- ✅ After release, the order moves to `Live` and the timer becomes "Due 4 Aug, 12–2 PM". The badge stays.
+- ✅ Timer turns red only if release is delayed or the slot already ended. Not red just for the order sitting for hours.
+- ✅ Dashboard "Live" count does not include un-released scheduled orders; a new "Scheduled ahead" tile shows the count separately.
+- ✅ Click an order → details show the slot (`4 Aug, 12:00–13:00 IST`) and a "Change history" section listing each slot change with timestamp.
+- ❌ COD payment is never an option when booking a scheduled order from the app — the payment method drop-down is filtered or COD is greyed. It is built on the backend but deliberately disabled.
+- ❌ No "items to reserve" roll-up or per-slot inventory forecast — that is Phase 2+.
+
+---
+
 ## Edge cases worth probing
 
 ### Phase 0 cases
