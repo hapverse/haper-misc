@@ -189,6 +189,81 @@ cost stay truthful instead of everything piling into one shared `LEGACY` bucket:
    first** (B5 — shown when batch tracking is on) + **write-off / adjust** + **reorder
    policy** + movement history (full detail in §15c–§15d).
 
+### 3a. Bill-entry helpers (2026-08-03) — dedupe, verify, prefill, autosave
+
+Six additions to **+ Receive goods** that speed up copying a paper/screen supplier bill
+into the modal and stop double-entry:
+
+- **MRP column** — a new optional column between **Cost / piece** and **Expiry**. Fill
+  it in from the printed MRP on the bill for a visible cross-check; it's stored on the
+  `PURCHASE_IN` ledger row (`mrp` field) and returned by the two lookup endpoints below.
+- **Draft autosave (per-warehouse)** — the modal writes `invoiceNumber`, `supplierId` and
+  every line to `localStorage` (500 ms debounce, keyed to the warehouse). Re-open the
+  modal → a blue "You have an unsent draft from *X* ago — **Restore** / **Discard**"
+  banner appears if the saved draft has real content. Cleared on successful **Receive**
+  or an explicit **Discard**; a browser crash mid-entry no longer loses 100 lines.
+- **Invoice lookup panel** — pick a supplier **and** type the invoice number → after
+  ~400 ms the modal calls `GET /admin/procurement/receive/lookup?invoiceNumber=&supplierId=`.
+  If a receipt with that key already exists, a yellow warning card appears above the
+  grid: *"Invoice X from *supplier* was already received on *date* — N item(s). If this
+  is a duplicate entry, don't submit."* with **Show items entered** to expand a
+  read-only SKU / Batch / Qty / MRP table. **Use this to verify** each row on the paper
+  bill was already captured (or spot a wrong one), before touching the item grid.
+- **Repeat last from supplier** — button visible only while the grid is untouched
+  (single blank row) and a supplier is chosen. Calls `GET /admin/procurement/receive/last`
+  and pre-fills SKU / Name / Batch / Cost / Expiry / MRP for every line of the supplier's
+  last receipt; **quantity is left blank** so the clerk enters fresh numbers. Toast:
+  *"Prefilled N line(s) from *supplier*'s last receipt (*invoice*, *date*). Fill in
+  quantities."*
+- **Bill preview pane** — attach the bill (image or PDF) → the modal splits into a
+  form on the left and a live preview on the right (image via a temporary object URL,
+  PDF via `<embed>`, revoked on close). Read from the on-screen bill, not the paper.
+- **Past-expiry HARD BLOCK** — a line with `Expiry < today` no longer opens a JS
+  `confirm()`; **Receive** now shows a red toast and refuses to submit until the line
+  is fixed or removed.
+
+**Backend dedupe / lookup / last-receipt endpoints** (new, gated on `WAREHOUSE.RECEIVE_GOODS`):
+
+- `POST /admin/procurement/receive` — now returns **HTTP 409** with
+  `{ error, data: { existingReceivedAt, rowCount } }` when the same
+  `warehouseId + supplierId + invoiceNumber` combo already has a `PURCHASE_IN` row.
+  Skipped when `invoiceNumber` is blank OR `supplierId` is null (an invoice without a
+  supplier has no unique key). The UI's lookup panel prevents most 409s; the backend
+  guard is the safety net.
+- `GET /admin/procurement/receive/lookup?invoiceNumber=&supplierId=` — returns
+  `{ exists, receipts: [{ receivedAt, supplierId, supplierName, invoiceNumber, billUrl,
+  lines: [{ sku, batchNo, quantityDelta, mrp, note }] }] }`. Rows are grouped by
+  `refLabel + supplierId + createdAt` within a 5-second window (one receive-call =
+  one receipt). `invoiceNumber` is required (400 otherwise), `supplierId` optional.
+- `GET /admin/procurement/receive/last?supplierId=` — most recent receipt for that
+  supplier in this warehouse. `{ found, receipt: { …, lines: [{ sku, name, batchNo,
+  quantityDelta, mrp, costPrice, expiresAt }] } | null }`. Cost/expiry are joined from
+  `warehouse_batches` (fall back to `null` on legacy/non-batch warehouses); name from
+  `warehouse_stocks`.
+
+**Regression checks:**
+
+✅ Receive `INV-100 / ACME` once (2 lines) → **Receive goods** succeeds → re-open modal,
+   pick **ACME**, type `INV-100` → yellow warning card appears with **2 items**;
+   expanding shows the two SKU / batch / qty / MRP rows entered.
+✅ Try to submit the same invoice again → toast *"Invoice INV-100 from this supplier was
+   already received on <date>. Use the lookup to verify."* — nothing is written.
+✅ Same `INV-100` from a **different supplier** → succeeds (different unique key).
+✅ Same `INV-100` with **supplier = None** → succeeds (no unique key, dedupe skipped).
+✅ Type into the modal, hit browser refresh → re-open → blue draft banner offers
+   **Restore** (fills the fields) or **Discard** (clears localStorage).
+✅ **Repeat last from supplier** appears only on an untouched grid → prefills sku /
+   name / batch / cost / expiry / mrp with **Qty column blank**.
+✅ Attach a bill (JPG or PDF) → preview pane renders on the right; close the modal → no
+   `blob:` URL left in DevTools → **Memory**.
+✅ A line with **Expiry = yesterday** → **Receive** shows red toast *"N line(s) have an
+   expiry date in the past. Fix or remove them before receiving."* and does not submit.
+
+**Backend tests:** `packages/admin/__tests__/procurement-receive-lookup.test.js` — 8
+tests covering dedupe 409, different-supplier ok, blank-invoice skip, lookup grouping +
+mrp, lookup `exists:false`, lookup 400 on missing invoice, last with joined cost/expiry,
+last `found:false`.
+
 > **Link rule (for transfers later):** the warehouse **SKU** must equal the **barcode**
 > of the store item you'll transfer to. Keep `PB001` handy.
 
