@@ -52,10 +52,10 @@ Deployment is **manual and user-only**.
 
 | Not in this delivery — do not go looking for it | Where it comes |
 |---|---|
-| Slot picker UI at checkout (web / Android / iOS) | Phase 2+ (later) |
+| Slot picker UI at checkout (Android) | Phase 2+ (later) — web + iOS shipped in Phase 1D, see below |
 | Admin slot-settings screen (currently API only) | Phase 2+ (later) |
 | Admin Scheduled tab + day view on order list | Phase 2+ (later) |
-| Customer change-slot / cancel UI | Phase 2+ (later) |
+| Customer change-slot / cancel UI (Android) | Phase 2+ (later) — web + iOS shipped in Phase 1D, see below |
 | Customer reminder push notifications | Phase 1B built the backend; client apps to build in Phase 2+ |
 
 **Scheduling is off by default for every store.** A tester must enable it via the API to test Phase 1B. On live data with it off, every change here is a no-op.
@@ -426,7 +426,52 @@ Turn scheduling OFF for the store (PUT with `enabled: false`) after one or more 
 - ✅ Unavailable slots show the reason (`Full`, `Too soon`). Filled slots show `Only 3 left`.
 - ✅ Wallet-refund notice appears **before** the "Pay" button. Customer sees it before taking any payment action.
 - ❌ Scheduling does **not** appear for store pickup (collect-yourself) orders — only delivery.
-- ❌ **Android and iOS are not built yet** — do not test them for this.
+- ❌ **Android is not built yet** — do not test it for this. (iOS shipped in 1D too, see below.)
+
+---
+
+## PHASE 1D (customer iOS app — slot booking UI)
+
+**Area:** iOS checkout (`CheckoutView.swift`) and order detail (`OrderDetailView.swift`) only, `haper-ios`. Backend, admin and web already deployed/live.
+**Files (new):**
+- `haper/Models/ScheduleModels.swift` — `DeliverySlot` / `DeliveryDateOption` / `DeliverySlotsData` / `ScheduleErrorData`, decode-only, never computes availability
+- `haper/ViewModels/ScheduleDeliveryViewModel.swift` — slot fetch/selection state (one instance per screen — checkout and order-detail never share state)
+- `haper/Components/ScheduleDeliveryComponents.swift` — `SlotPicker` (date strip + slot grid, loading/error/empty states), `WalletRefundNotice`, IST deadline formatting
+- `haper/Views/OrderDetailView+ScheduledDelivery.swift` — the booked-slot card, change-slot flow
+
+**Files (edited):**
+- `haper/Models/OrderModels.swift` — `Order` gains `deliveryType` / `slot` / `scheduleActions`, all `decodeIfPresent`/`try?` (P1 decoder-safety requirement — see Phase 0 table, "old build decodes a missing key to null")
+- `haper/Models/AuthModels.swift` — `ErrorResponse` now also decodes `msg`/`code`/`data` (the scheduling 422 shape uses `msg`, not `message`)
+- `haper/Utils/NetworkManager.swift` — `NetworkError.httpError` carries the machine-readable `code` and, on `SLOT_UNAVAILABLE`, the fresh availability envelope
+- `haper/ViewModels/OrderViewModel.swift` — `placeOrder` gains optional `deliveryType`/`slotId` (both default `nil`, byte-identical request for a normal order); new `changeSlot(...)`
+- `haper/Views/CheckoutView.swift`, `haper/Views/OrderDetailView.swift` — wired in; see "What shipped" below
+
+**Deploy needed:** iOS app only (TestFlight/App Store build). Backend, admin and web already live. Deployment is **manual and user-only**.
+
+### What shipped in 1D (iOS)
+
+1. **Checkout**: a "Delivery Time" section between Address and Wallet — `Deliver now — 20–30 mins` (default) and `Schedule`, expanding the date strip + slot list in place. Renders **nothing** when `enabled: false` (or before the probe returns), so checkout for an unaffected store is pixel-identical to today.
+2. **Date strip / slot grid** — same rules as web: unavailable dates greyed not hidden, unavailable slots greyed **with the reason** (`Full` / `Too soon`), near-capacity slots show `Only 3 left`. Loading skeleton, error+"Try again", and empty ("No slots available for this day") states all present.
+3. **Wallet-refund notice** shown inside the Schedule section, before the Payment Method / Pay button.
+4. **Payment method gating** — `allowedPaymentMethods` from the slots payload is an array of **numbers** (0=COD, 1=RAZORPAY, matching the existing `PaymentMethod` enum), not strings. When Schedule is selected and COD isn't in the allowed set (the default), Cash on Delivery is shown disabled with "Not available for scheduled orders" instead of being selectable and rejected later.
+5. **Order screen** — a "Scheduled Delivery" card with the booked slot plus both deadlines as concrete IST dates/times (`You can change this slot until 4 Aug, 8:00 AM. One change allowed.` / `You can cancel until 4 Aug, 4:00 AM.`), and the "already used your one change" / "can no longer be changed or cancelled" copy for the in-between window.
+6. **Change slot** — reuses the same `SlotPicker`, confirms with "This is your only slot change. Continue?", branches on the 422 `code` (`SLOT_UNAVAILABLE` / `CHANGE_WINDOW_CLOSED` / `CHANGE_LIMIT_REACHED` / `SAME_SLOT` / `CHANGE_RETRY`) and re-renders from the fresh availability the server sends back on `SLOT_UNAVAILABLE`.
+7. **Cancel** — the existing DELETE endpoint, unchanged wire-format. A scheduled order's Cancel button is now gated on `scheduleActions.canCancelNow` (no 60-second countdown — that stays exclusive to normal orders, kept as an explicit separate code branch).
+
+### Critical checks
+
+- ✅ **Headline check:** open Checkout on a store with scheduling **OFF** → no "Delivery Time" section at all, checkout is exactly as today.
+- ✅ Enable scheduling on a test store (admin Phase 1C) → "Delivery Time" section appears with `Deliver now` pre-selected.
+- ✅ Tap `Schedule` → date strip + slot list expand. Pick a date, then a slot → Place Order sends `deliveryType: "scheduled", slotId: "<opaque>"`; a normal order's request body is unchanged (no `deliveryType`/`slotId` keys at all — verify with a proxy).
+- ✅ Order screen shows the booked slot + both deadlines in IST, `en-IN`-styled dates.
+- ✅ Change Slot → confirm dialog → succeeds once, then the card reads "You have already used your one slot change" and the button is gone.
+- ✅ Cancel is available until 8h before the slot; between 8h and 4h before, Change works but Cancel does not — the card explains why instead of a dead button.
+- ✅ Book the last seat in two simulators/devices at once (or fill the slot via API in between) → the losing customer's Place Order shows the server's `msg` inline next to the slot picker (not a generic alert), and the slot list re-renders showing that slot as `Full`.
+- ✅ **Decoder-safety regression** (the P1 risk): an account with an old order that has none of `deliveryType`/`slot`/`scheduleActions` still loads in the Orders list and detail screen, unaffected. Covered by `haperTests/OrderModelsTests.swift` (`testOrder_decodesScheduledOrderWithAllNewFields`, `testOrder_decodesPreFeatureOrderWithoutScheduledKeys`, `testOrderList_decodesMixOfScheduledAndLegacyOrders`) and `haperTests/ContractTests.swift` against `Fixtures/user_order_scheduled.json` / `Fixtures/user_order_legacy.json`.
+- ❌ Scheduling does **not** appear for store pickup — moot on iOS today: `CheckoutView` has no store-pickup mode at all (delivery-only already), so there is nothing to hide.
+- ❌ **Android is not built yet** — do not test it for this.
+
+**Gate run for this iOS pass:** `xcodebuild build -project haper.xcodeproj -scheme haper -destination 'generic/platform=iOS Simulator' -configuration Debug CODE_SIGNING_ALLOWED=NO` → **BUILD SUCCEEDED**, zero warnings in the touched files. `swiftlint lint --strict` → 0 violations in the touched/new files (2 pre-existing violations remain in `HomeViewModel.swift`, untouched by this change — unrelated parallel WIP). `xcodebuild test` was blocked by an unrelated pre-existing compile error in `haperTests/ViewModelsStateTests.swift` (`ProfileViewModel.updateLocalError` — a method that does not exist, also unrelated to this feature); the new decoder-safety tests were verified instead via a standalone `swift` runtime probe of the exact same JSON fixtures (all checks passed) — re-run `xcodebuild test` once that file is fixed.
 
 ---
 
