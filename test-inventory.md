@@ -269,6 +269,48 @@ last `found:false`.
 
 ---
 
+### 3b. Verify Bill — standalone invoice lookup (2026-08-05)
+
+A top-level page for checking a supplier invoice **without** opening **+ Receive goods** —
+built for an auditor verifying a bill from their desk, or a re-check after the goods
+were already received. Same backend endpoint as §3a's in-modal lookup panel
+(`GET /admin/procurement/receive/lookup?invoiceNumber=&supplierId=`), gated on the same
+`WAREHOUSE.RECEIVE_GOODS` permission.
+
+- **Sidebar** → **Inventory & Warehouse** → **Verify Bill** (sits right below
+  **Receive Goods**). Route: `/warehouse/verify-bill`.
+- **Search bar**: **Warehouse** (required — a warehouse-role admin's own warehouse is
+  auto-selected since the backend already scopes `GET /admin/warehouse` to what their
+  role can see), **Supplier** (optional, defaults to **— Any supplier —**), **Invoice /
+  bill number** (required text). **Search** is disabled until warehouse + invoice number
+  are both filled.
+- **Results**: one card per receipt (an invoice entered in more than one **Receive
+  goods** call, e.g. from two different suppliers by mistake, groups into multiple
+  cards). Each card shows invoice number, supplier, received date + relative time
+  (e.g. "3 hours ago"), a **Bill ↗** link if one was attached, and a read-only
+  SKU / Batch / Qty / MRP table with a line-count + total-units footer.
+
+**Regression checks:**
+
+✅ Sidebar → **Verify Bill** loads with an empty search bar and the helper card
+   *"Enter a warehouse and invoice number, then Search."*
+✅ Search an invoice number that was never received (e.g. `NOPE-999`) → muted card
+   *"No receipt with that invoice number was found in <warehouseName>."*
+✅ Search `INV-100` (from §3a's regression check, supplier = ACME) → info line
+   *"1 receipt in <warehouseName> match INV-100."* + one card with the 2 lines entered,
+   correct SKU / batch / qty / MRP, and a footer reading **2 lines · N units**.
+✅ Same `INV-100` entered again from a **different supplier** (§3a's third check) →
+   searching with **Supplier = — Any supplier —** returns **two** cards (one per
+   supplier); searching with a specific supplier selected returns only that supplier's
+   card.
+✅ A receipt with no attached bill shows no **Bill ↗** link; one with a bill shows it and
+   opens the file in a new tab.
+✅ Warehouse-role admin (staff/manager) sees only their own warehouse in the dropdown and
+   cannot query another warehouse's invoices (mirrors the same scoping as **Receive
+   Goods** / **Warehouses**).
+
+---
+
 ## 4. Build the shared catalogue  *(super admin)*
 
 Categories, sub-categories and products are now **one shared list for the whole
