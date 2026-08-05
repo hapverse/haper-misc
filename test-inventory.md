@@ -269,66 +269,108 @@ last `found:false`.
 
 ---
 
-### 3b. Verify Bill — standalone invoice lookup (2026-08-05)
+### 3b. Verify Bill — browsable bill list (2026-08-05 rework)
 
-A top-level page for checking a supplier invoice **without** opening **+ Receive goods** —
-built for an auditor verifying a bill from their desk, or a re-check after the goods
-were already received. Same backend endpoint as §3a's in-modal lookup panel
-(`GET /admin/procurement/receive/lookup?invoiceNumber=&supplierId=`), gated on the same
-`WAREHOUSE.RECEIVE_GOODS` permission.
+A top-level page for browsing every bill received into a warehouse — a super admin
+usually does NOT already know an invoice number, they pick a supplier and want to see
+what came in. Was a single exact-invoice-number lookup form until this rework
+(2026-08-05); now a live, paginated, searchable list. List endpoint: `GET
+/admin/procurement/receipt/list?supplierId=&q=&page=&limit=` (aggregates only — one row
+per receipt). Per-row line detail (SKU/batch/qty/mrp) still comes from the same `GET
+/admin/procurement/receive/lookup` endpoint §3a's in-modal panel uses, fetched on demand
+the first time a row is expanded (cached per row after that). Both endpoints gated on
+`WAREHOUSE.RECEIVE_GOODS`.
 
 - **Sidebar** → **Inventory & Warehouse** → **Verify Bill** (sits right below
-  **Receive Goods**). Route: `/warehouse/verify-bill`.
-- **Search bar**: **Warehouse** (required — a warehouse-role admin's own warehouse is
+  **Receive Goods**). Route: `/warehouse/verify-bill` (unchanged).
+- **Filter bar**: **Warehouse** (required — a warehouse-role admin's own warehouse is
   auto-selected since the backend already scopes `GET /admin/warehouse` to what their
-  role can see), **Supplier** (optional, defaults to **— Any supplier —**), **Invoice /
-  bill number** (required text). **Search** is disabled until warehouse + invoice number
-  are both filled.
-- **Results**: one card per receipt (an invoice entered in more than one **Receive
-  goods** call, e.g. from two different suppliers by mistake, groups into multiple
-  cards). Each card shows invoice number, supplier, received date + relative time
-  (e.g. "3 hours ago"), a **Bill ↗** link if one was attached, and a read-only
-  SKU / Batch / Qty / MRP table with a line-count + total-units footer.
+  role can see), **Supplier** (optional, defaults to **— Any supplier —** — picking one
+  also hides the redundant Supplier column in the table below), **Search** (free text
+  over invoice number, debounced 350ms, live-filters as you type — no Search button
+  anymore).
+- **Table** (20 bills/page, newest received first): Invoice # (mono) · Supplier (hidden
+  when a supplier filter is active) · Received · Items (line count) · Units (total qty)
+  · Bill (**📎 View**, only shown when a bill was attached) · a chevron. Click **anywhere
+  on the row** (or the chevron button) to expand an accordion below it with the SKU /
+  Batch / Qty / MRP table + a **Change supplier** button — the same detail content the
+  old exact-lookup cards used to show. Only one row is expanded at a time; expanding a
+  second collapses the first.
+- **📎 View** opens a modal previewing the attached bill: images render inline, PDFs
+  render inline via `<embed>`, and anything else (Word/Excel/unknown extension) shows a
+  "can't preview this" card with the parsed filename + an **Open / Download** button
+  instead of a broken embed. An **Open in new tab** link is always available alongside
+  the inline preview too.
+- **Pagination**: *"Showing X–Y of Z bills"* + **‹ Prev** / **Next ›** (disabled at the
+  boundary) + a **Page [ n ] of N** jump box you can type into (Enter or blur to jump;
+  out-of-range numbers clamp to the nearest valid page). Typing in Search or changing
+  page never clears the table first — a small "Updating…" indicator fades in where the
+  table is while the *old* rows stay on screen (no flicker/flash-of-empty-state).
 
 **Regression checks:**
 
-✅ Sidebar → **Verify Bill** loads with an empty search bar and the helper card
-   *"Enter a warehouse and invoice number, then Search."*
-✅ Search an invoice number that was never received (e.g. `NOPE-999`) → muted card
-   *"No receipt with that invoice number was found in <warehouseName>."*
-✅ Search `INV-100` (from §3a's regression check, supplier = ACME) → info line
-   *"1 receipt in <warehouseName> match INV-100."* + one card with the 2 lines entered,
-   correct SKU / batch / qty / MRP, and a footer reading **2 lines · N units**.
-✅ Same `INV-100` entered again from a **different supplier** (§3a's third check) →
-   searching with **Supplier = — Any supplier —** returns **two** cards (one per
-   supplier); searching with a specific supplier selected returns only that supplier's
-   card.
-✅ A receipt with no attached bill shows no **Bill ↗** link; one with a bill shows it and
-   opens the file in a new tab.
+✅ Pick a warehouse (or let it auto-select) → the list loads recent bills for that
+   warehouse, paginated 20/page, with no need to already know an invoice number.
+✅ Pick a **Supplier** → list filters to that supplier's bills only; the Supplier column
+   disappears from the table (redundant once filtered).
+✅ Type in **Search** (e.g. `INV-100` from §3a's regression check) → list live-filters by
+   invoice-number substring after a short pause (~350ms) — no Enter / Search button
+   needed.
+✅ Click anywhere on a bill row → accordion expands below it with the SKU/Batch/Qty/MRP
+   table (matches what **Receive goods** recorded) + a **N lines · N units total**
+   footer. Click the same row (or its chevron) again → collapses. Expanding a
+   **different** row collapses the first — only one open at a time. Re-expanding a row
+   already opened this page load does **not** re-fetch (cached).
+✅ Click **📎 View** on a bill with an **image** attachment → modal shows the image
+   inline + an **Open in new tab** link.
+✅ Click **📎 View** on a bill with a **PDF** attachment → modal shows it inline via
+   `<embed>` + **Open in new tab**.
+✅ Click **📎 View** on a bill with a **non-image/PDF** attachment (e.g. `.docx`,
+   `.xlsx`, or no extension at all) → modal shows the parsed filename + *"This file type
+   can't be previewed here."* + an **Open / Download** button (opens the file in a new
+   tab) — no broken embed, no crash.
+✅ A bill row with **no** attachment shows **—** in the Bill column (no View button).
+✅ No bills match the current warehouse/supplier/search → muted line: *"No bills
+   received in <warehouseName>[ from <supplierName>][ matching "<query>"] yet."* — the
+   bracketed clauses only appear when that filter is actually active.
+✅ On a warehouse with more than 20 bills: **Next ›** loads page 2 (**Prev** enables,
+   **Next** disables at the last page); typing **2** into **Page [ ] of N** + Enter (or
+   blurring the field) jumps straight to page 2.
+✅ Change supplier from an expanded row (see below) → the accordion closes and the list
+   **re-runs** so the changed row reflects the new supplier without a manual refresh.
 ✅ Warehouse-role admin (staff/manager) sees only their own warehouse in the dropdown and
-   cannot query another warehouse's invoices (mirrors the same scoping as **Receive
+   cannot browse another warehouse's bills (mirrors the same scoping as **Receive
    Goods** / **Warehouses**).
 
-**Change supplier (2026-08-05):** each result card has a **"Change supplier"** button
-(top-right, ghost style) so an auditor can fix a receipt where the wrong supplier was
-picked. Gated on `WAREHOUSE.MANAGE` (same permission as **Correct receipt** / write-off —
-super_admin, warehouse_manager; **not** staff). Backend: `PATCH
-/admin/procurement/receipt/supplier` — updates every ledger row of the invoice at once,
-recorded in the audit log.
+**Backend tests:** `packages/admin/__tests__/procurement-receive-lookup.test.js` — 8
+tests covering dedupe 409, different-supplier ok, blank-invoice skip, lookup grouping +
+mrp, lookup `exists:false`, lookup 400 on missing invoice, last with joined cost/expiry,
+last `found:false`. *(`GET /admin/procurement/receipt/list` — the new list endpoint —
+ships and is tested alongside the backend change that added it; see that change's own
+test file.)*
 
-✅ A **warehouse manager / super admin** sees **"Change supplier"** on every card → click
-   opens a modal titled *"Change supplier — Invoice #<invoiceNumber>"* showing
-   **Current supplier: <name>** (or **— none —**) and a **New supplier** dropdown
-   (**— None —** first, then active suppliers, defaulted to the current supplier).
+**Change supplier (2026-08-05):** each expanded row's accordion has a **"Change
+supplier"** button (top-right of the detail panel, ghost style) so an auditor can fix a
+receipt where the wrong supplier was picked. Gated on `WAREHOUSE.MANAGE` (same
+permission as **Correct receipt** / write-off — super_admin, warehouse_manager; **not**
+staff). Backend: `PATCH /admin/procurement/receipt/supplier` — updates every ledger row
+of the invoice at once, recorded in the audit log.
+
+✅ A **warehouse manager / super admin** sees **"Change supplier"** inside an expanded
+   row → click opens a modal titled *"Change supplier — Invoice #<invoiceNumber>"*
+   showing **Current supplier: <name>** (or **— none —**) and a **New supplier**
+   dropdown (**— None —** first, then active suppliers, defaulted to the current
+   supplier).
 ✅ Pick a **different** supplier → **Save change** → success toast (*"Supplier changed to
-   <name>. N ledger row(s) updated."*) → modal closes → results re-search and the card now
-   shows the new supplier name.
+   <name>. N ledger row(s) updated."*) → the accordion closes and the list refreshes —
+   the row now shows the new supplier name (or drops out of the list entirely if a
+   Supplier filter was active and no longer matches).
 ✅ Re-open the modal and leave the **same** supplier selected → **Save change** is
    disabled with tooltip *"Pick a different supplier"*.
 ✅ Pick **— None —** and Save → success toast *"Supplier cleared. N ledger row(s)
-   updated."* → card shows **"Unknown supplier"**.
-❌ A **warehouse staff** admin never sees the **"Change supplier"** button on any card
-   (FE gate mirrors **Correct receipt**). Calling
+   updated."* → the row shows **—** for supplier after the list refreshes.
+❌ A **warehouse staff** admin never sees the **"Change supplier"** button in any
+   expanded row (FE gate mirrors **Correct receipt**). Calling
    `PATCH /admin/procurement/receipt/supplier` directly as staff → **403** (backend
    safety net, independent of the FE gate).
 
