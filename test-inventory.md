@@ -334,6 +334,54 @@ recorded in the audit log.
 
 ---
 
+### 3c. Admin top-bar search coverage  (2026-08-05)
+
+The admin top-bar global search (Ctrl-K / ⌘-K on desktop, powered by `MenuSearch.tsx` and
+`useMenu.ts` in haper-admin) now covers real-world admin terms across all roles and can
+deep-link into specific **App Config** sections.
+
+**Widened search keywords on 12 existing sidebar items:** typing `write off` now surfaces
+**Items**; `change supplier` surfaces **Verify Bill**; `delivery radius` surfaces **Stores**;
+`reorder policy` and `correct receipt` surface **Warehouses**. Dashboard, New Sale, Order Activity,
+Item Lookup, Stock Health, App Config, Pickers, and Team pages got fresh synonym keywords too —
+so admins find what they need without remembering exact sidebar labels.
+
+**4 new deep-link anchors under `/config`:** selecting **force-update**, **support-contact**,
+**not-serviceable-message**, or **store-controls** from search navigates to `/config#<anchor>`,
+auto-scrolls the matching card into view, and briefly outlines it (~1.5s; respects
+`prefers-reduced-motion`). Permissions: anchors inherit the parent `/config` permission gate
+— non-super-admin roles (store admin, warehouse staff) that can't see `/config` won't see
+these anchors in search either.
+
+**Regression checks:**
+
+✅ Open admin → **Ctrl-K** (or **⌘-K** macOS) → type `write off` → **Items** page appears in
+   results. Click → lands on Items.
+✅ Type each of: `change supplier`, `delivery radius`, `reorder policy`, `correct receipt`,
+   `batch tracking`, `partial pick`, `mrp`, `dead stock`, `picker workflow` → each surfaces at
+   least one relevant page (Verify Bill, Stores, Warehouses, Warehouses, Warehouses, etc.).
+✅ Type `force update` → a card labeled **"force-update — App Config"** appears (marked "Section"
+   in the sublabel). Click → navigates to `/config#force-update`, scrolls to that card, and
+   highlights it with a border/shadow for ~1.5s.
+✅ Repeat for `support contact` / `not serviceable message` / `store controls` → each shows as
+   **"<Section> — App Config"** and scrolls + highlights on click.
+✅ While already on `/config` → type `force update` → click the result → scroll + highlight still
+   fires (already on the page, but link works).
+
+**Logged in as store admin (non-super):**
+✅ Type `force update` / `support contact` / `not serviceable` / `store controls` → **none**
+   appear (store admin lacks `/config` permission).
+✅ Type `delivery radius` → **no results** (Stores is super-admin-only).
+
+**Logged in as warehouse manager / staff:**
+✅ Type `write off` / `batch tracking` / `correct receipt` / `reorder policy` → each returns a
+   warehouse-visible page (Warehouses, Stock Health, Item Lookup).
+✅ Type `store admin` / `banner` / `promotion` → **no results** (super-admin pages only).
+
+**Deploy:** admin-only frontend change; no backend work. Ships with the next admin deploy.
+
+---
+
 ## 4. Build the shared catalogue  *(super admin)*
 
 Categories, sub-categories and products are now **one shared list for the whole
