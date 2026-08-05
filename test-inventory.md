@@ -374,6 +374,36 @@ of the invoice at once, recorded in the audit log.
    `PATCH /admin/procurement/receipt/supplier` directly as staff → **403** (backend
    safety net, independent of the FE gate).
 
+**Line detail enrichment (2026-08-05):** the expanded accordion's line table gained
+Product name/brand, a readable Expiry, and Cost/pc — a human verifying a bill against
+the paper copy previously had only a barcode and a batch code to go on. `lookupReceipt`'s
+`line` shape gained four nullable fields (`name`, `brand`, `costPrice`, `expiresAt` —
+joined from `warehouse_stocks` / `stock_movements` / `warehouse_batches`); the same
+enrichment also shows up in **Receive Goods**' dedupe-warning "Show items entered"
+mini-table (Name, Cost/pc, Expiry added there too — Brand omitted to keep it compact).
+
+✅ Receive a fresh bill (cost + expiry filled in) → **Verify Bill** → expand that row →
+   the accordion table now shows **Product** (bold name, brand pill if the item has one,
+   barcode underneath in small mono) / **Batch** / **Expiry** / **Qty** / **Cost/pc (₹)**
+   / **MRP (₹)**, plus **Total cost (billed): ₹X,XXX.XX** and **Total MRP: ₹X,XXX.XX**
+   under the line count in the footer.
+✅ An old receipt entered before this change (or any receipt on a legacy/pre-enrichment
+   warehouse) → an info banner *"Older receipt — product name, cost, and expiry weren't
+   captured on the ledger at the time. Only SKU / Batch / Qty / MRP are available."*
+   appears above the table; Product shows **— Unknown product —** + the barcode, Expiry
+   shows **—**, Cost/pc shows **—** on every line.
+✅ A line whose batch is an auto-named `AUTO-EXP-<expiry>` or `AUTO-RCV-<today>` code
+   (blank batch no. left on the goods-receipt form) renders as **Auto (exp)** / **Auto
+   (recv)** in the Batch column — hover it to see the full raw code as a tooltip.
+   Supplier-typed batches (e.g. `LOT-A`) render exactly as entered, unchanged.
+✅ A line whose expiry is already in the past → a red **expired** badge next to the date.
+   A line expiring within 30 days → an amber **soon** badge. Anything further out (or no
+   expiry) → no badge.
+✅ Open **Receive Goods** for a supplier/invoice pair that already has a receipt → the
+   dedupe-warning banner's **"Show items entered ▾"** mini-table now includes **Name**
+   (between SKU and Batch), **Expiry**, and **Cost/pc (₹)** columns alongside the
+   existing SKU/Batch/Qty/MRP.
+
 ---
 
 ### 3c. Admin top-bar search coverage  (2026-08-05)
