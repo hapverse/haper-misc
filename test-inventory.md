@@ -143,8 +143,9 @@ This puts stock into the warehouse.
    This **auto-fills** the line's **SKU/Barcode** (= that product's barcode) and **Name**,
    so the warehouse SKU always matches a real item (the SKU **is** the barcode in Haper —
    the same value the picker scan-gate and transfers use). You then fill only:
-   - **Batch no.** (leave blank = auto, or type the supplier's, e.g. `LOT-A`),
-     **Cost / unit (₹) — required, > 0**, **Expiry**, **Qty** (e.g. `100`).
+   - **Batch no.** (type the supplier's printed lot, e.g. `LOT-A`, **or leave blank to
+     auto-generate** — see the auto-batch rule below), **Cost / unit (₹) — required, > 0**,
+     **Expiry**, **Qty** (e.g. `100`).
    - *Uncatalogued goods:* you can still **type** SKU/Barcode + Name manually in the grid.
 4. **Receive**.
 
@@ -161,6 +162,21 @@ This puts stock into the warehouse.
    moment the lot is transferred (CH-3).
 ✅ Receive the **same SKU + same batch no.** again (e.g. 50) → quantity becomes **150**
    (merged into the lot, no duplicate).
+
+**Auto-batch when the "Batch no." is left blank** (batch-tracking warehouses only — with
+the flag OFF there are no batches at all). The lot is named by **shelf-life** so FEFO and
+cost stay truthful instead of everything piling into one shared `LEGACY` bucket:
+   - **With an Expiry** → the lot is named **`AUTO-EXP-<expiry YYYYMMDD>`**
+     (e.g. expiry 01-Sep-2026 → `AUTO-EXP-20260901`).
+   - **No Expiry** → named **`AUTO-RCV-<today YYYYMMDD>`** (IST receive date).
+✅ Receive the **same SKU, blank batch, same expiry** twice (e.g. 100 then 80) → they
+   **merge** into one `AUTO-EXP-…` lot (qty **180**, cost = weighted-average).
+✅ Receive the **same SKU, blank batch, a DIFFERENT expiry** → a **separate** `AUTO-EXP-…`
+   lot (each expiry keeps its own cost + FEFO position; nothing is flattened).
+✅ The auto code appears in the **stock detail modal → Batches (lots)**, the **Batch
+   Recall** trace, and the `PURCHASE_IN` **Stock Ledger** row (not a blank / `LEGACY`).
+❌ (Old, now fixed) blank batch no. used to dump every no-batch receipt into a single
+   `LEGACY` lot — flattening all expiries and blending all costs. It no longer does.
 ✅ Stock table columns: **Available / Reserved / In-transit / Free-to-promise** (CH-4)
    — at this point Reserved = In-transit = 0, Free-to-promise = Available. Hover the
    **Cost/unit** header → "weighted average of open lots"; **Expiry** → "earliest open
@@ -173,8 +189,238 @@ This puts stock into the warehouse.
    first** (B5 — shown when batch tracking is on) + **write-off / adjust** + **reorder
    policy** + movement history (full detail in §15c–§15d).
 
+### 3a. Bill-entry helpers (2026-08-03) — dedupe, verify, prefill, autosave
+
+Six additions to **+ Receive goods** that speed up copying a paper/screen supplier bill
+into the modal and stop double-entry:
+
+- **MRP column** — a new optional column between **Cost / piece** and **Expiry**. Fill
+  it in from the printed MRP on the bill for a visible cross-check; it's stored on the
+  `PURCHASE_IN` ledger row (`mrp` field) and returned by the two lookup endpoints below.
+- **Draft autosave (per-warehouse)** — the modal writes `invoiceNumber`, `supplierId` and
+  every line to `localStorage` (500 ms debounce, keyed to the warehouse). Re-open the
+  modal → a blue "You have an unsent draft from *X* ago — **Restore** / **Discard**"
+  banner appears if the saved draft has real content. Cleared on successful **Receive**
+  or an explicit **Discard**; a browser crash mid-entry no longer loses 100 lines.
+- **Invoice lookup panel** — pick a supplier **and** type the invoice number → after
+  ~400 ms the modal calls `GET /admin/procurement/receive/lookup?invoiceNumber=&supplierId=`.
+  If a receipt with that key already exists, a yellow warning card appears above the
+  grid: *"Invoice X from *supplier* was already received on *date* — N item(s). If this
+  is a duplicate entry, don't submit."* with **Show items entered** to expand a
+  read-only SKU / Batch / Qty / MRP table. **Use this to verify** each row on the paper
+  bill was already captured (or spot a wrong one), before touching the item grid.
+- **Repeat last from supplier** — button visible only while the grid is untouched
+  (single blank row) and a supplier is chosen. Calls `GET /admin/procurement/receive/last`
+  and pre-fills SKU / Name / Batch / Cost / Expiry / MRP for every line of the supplier's
+  last receipt; **quantity is left blank** so the clerk enters fresh numbers. Toast:
+  *"Prefilled N line(s) from *supplier*'s last receipt (*invoice*, *date*). Fill in
+  quantities."*
+- **Bill preview pane** — attach the bill (image or PDF) → the modal splits into a
+  form on the left and a live preview on the right (image via a temporary object URL,
+  PDF via `<embed>`, revoked on close). Read from the on-screen bill, not the paper.
+- **Past-expiry HARD BLOCK** — a line with `Expiry < today` no longer opens a JS
+  `confirm()`; **Receive** now shows a red toast and refuses to submit until the line
+  is fixed or removed.
+
+**Backend dedupe / lookup / last-receipt endpoints** (new, gated on `WAREHOUSE.RECEIVE_GOODS`):
+
+- `POST /admin/procurement/receive` — now returns **HTTP 409** with
+  `{ error, data: { existingReceivedAt, rowCount } }` when the same
+  `warehouseId + supplierId + invoiceNumber` combo already has a `PURCHASE_IN` row.
+  Skipped when `invoiceNumber` is blank OR `supplierId` is null (an invoice without a
+  supplier has no unique key). The UI's lookup panel prevents most 409s; the backend
+  guard is the safety net.
+- `GET /admin/procurement/receive/lookup?invoiceNumber=&supplierId=` — returns
+  `{ exists, receipts: [{ receivedAt, supplierId, supplierName, invoiceNumber, billUrl,
+  lines: [{ sku, batchNo, quantityDelta, mrp, note }] }] }`. Rows are grouped by
+  `refLabel + supplierId + createdAt` within a 5-second window (one receive-call =
+  one receipt). `invoiceNumber` is required (400 otherwise), `supplierId` optional.
+- `GET /admin/procurement/receive/last?supplierId=` — most recent receipt for that
+  supplier in this warehouse. `{ found, receipt: { …, lines: [{ sku, name, batchNo,
+  quantityDelta, mrp, costPrice, expiresAt }] } | null }`. Cost/expiry are joined from
+  `warehouse_batches` (fall back to `null` on legacy/non-batch warehouses); name from
+  `warehouse_stocks`.
+
+**Regression checks:**
+
+✅ Receive `INV-100 / ACME` once (2 lines) → **Receive goods** succeeds → re-open modal,
+   pick **ACME**, type `INV-100` → yellow warning card appears with **2 items**;
+   expanding shows the two SKU / batch / qty / MRP rows entered.
+✅ Try to submit the same invoice again → toast *"Invoice INV-100 from this supplier was
+   already received on <date>. Use the lookup to verify."* — nothing is written.
+✅ Same `INV-100` from a **different supplier** → succeeds (different unique key).
+✅ Same `INV-100` with **supplier = None** → succeeds (no unique key, dedupe skipped).
+✅ Type into the modal, hit browser refresh → re-open → blue draft banner offers
+   **Restore** (fills the fields) or **Discard** (clears localStorage).
+✅ **Repeat last from supplier** appears only on an untouched grid → prefills sku /
+   name / batch / cost / expiry / mrp with **Qty column blank**.
+✅ Attach a bill (JPG or PDF) → preview pane renders on the right; close the modal → no
+   `blob:` URL left in DevTools → **Memory**.
+✅ A line with **Expiry = yesterday** → **Receive** shows red toast *"N line(s) have an
+   expiry date in the past. Fix or remove them before receiving."* and does not submit.
+
+**Backend tests:** `packages/admin/__tests__/procurement-receive-lookup.test.js` — 8
+tests covering dedupe 409, different-supplier ok, blank-invoice skip, lookup grouping +
+mrp, lookup `exists:false`, lookup 400 on missing invoice, last with joined cost/expiry,
+last `found:false`.
+
 > **Link rule (for transfers later):** the warehouse **SKU** must equal the **barcode**
 > of the store item you'll transfer to. Keep `PB001` handy.
+
+---
+
+### 3b. Verify Bill — browsable bill list (2026-08-05 rework)
+
+A top-level page for browsing every bill received into a warehouse — a super admin
+usually does NOT already know an invoice number, they pick a supplier and want to see
+what came in. Was a single exact-invoice-number lookup form until this rework
+(2026-08-05); now a live, paginated, searchable list. List endpoint: `GET
+/admin/procurement/receipt/list?supplierId=&q=&page=&limit=` (aggregates only — one row
+per receipt). Per-row line detail (SKU/batch/qty/mrp) still comes from the same `GET
+/admin/procurement/receive/lookup` endpoint §3a's in-modal panel uses, fetched on demand
+the first time a row is expanded (cached per row after that). Both endpoints gated on
+`WAREHOUSE.RECEIVE_GOODS`.
+
+- **Sidebar** → **Inventory & Warehouse** → **Verify Bill** (sits right below
+  **Receive Goods**). Route: `/warehouse/verify-bill` (unchanged).
+- **Filter bar**: **Warehouse** (required — a warehouse-role admin's own warehouse is
+  auto-selected since the backend already scopes `GET /admin/warehouse` to what their
+  role can see), **Supplier** (optional, defaults to **— Any supplier —** — picking one
+  also hides the redundant Supplier column in the table below), **Search** (free text
+  over invoice number, debounced 350ms, live-filters as you type — no Search button
+  anymore).
+- **Table** (20 bills/page, newest received first): Invoice # (mono) · Supplier (hidden
+  when a supplier filter is active) · Received · Items (line count) · Units (total qty)
+  · Bill (**📎 View**, only shown when a bill was attached) · a chevron. Click **anywhere
+  on the row** (or the chevron button) to expand an accordion below it with the SKU /
+  Batch / Qty / MRP table + a **Change supplier** button — the same detail content the
+  old exact-lookup cards used to show. Only one row is expanded at a time; expanding a
+  second collapses the first.
+- **📎 View** opens a modal previewing the attached bill: images render inline, PDFs
+  render inline via `<embed>`, and anything else (Word/Excel/unknown extension) shows a
+  "can't preview this" card with the parsed filename + an **Open / Download** button
+  instead of a broken embed. An **Open in new tab** link is always available alongside
+  the inline preview too.
+- **Pagination**: *"Showing X–Y of Z bills"* + **‹ Prev** / **Next ›** (disabled at the
+  boundary) + a **Page [ n ] of N** jump box you can type into (Enter or blur to jump;
+  out-of-range numbers clamp to the nearest valid page). Typing in Search or changing
+  page never clears the table first — a small "Updating…" indicator fades in where the
+  table is while the *old* rows stay on screen (no flicker/flash-of-empty-state).
+
+**Regression checks:**
+
+✅ Pick a warehouse (or let it auto-select) → the list loads recent bills for that
+   warehouse, paginated 20/page, with no need to already know an invoice number.
+✅ Pick a **Supplier** → list filters to that supplier's bills only; the Supplier column
+   disappears from the table (redundant once filtered).
+✅ Type in **Search** (e.g. `INV-100` from §3a's regression check) → list live-filters by
+   invoice-number substring after a short pause (~350ms) — no Enter / Search button
+   needed.
+✅ Click anywhere on a bill row → accordion expands below it with the SKU/Batch/Qty/MRP
+   table (matches what **Receive goods** recorded) + a **N lines · N units total**
+   footer. Click the same row (or its chevron) again → collapses. Expanding a
+   **different** row collapses the first — only one open at a time. Re-expanding a row
+   already opened this page load does **not** re-fetch (cached).
+✅ Click **📎 View** on a bill with an **image** attachment → modal shows the image
+   inline + an **Open in new tab** link.
+✅ Click **📎 View** on a bill with a **PDF** attachment → modal shows it inline via
+   `<embed>` + **Open in new tab**.
+✅ Click **📎 View** on a bill with a **non-image/PDF** attachment (e.g. `.docx`,
+   `.xlsx`, or no extension at all) → modal shows the parsed filename + *"This file type
+   can't be previewed here."* + an **Open / Download** button (opens the file in a new
+   tab) — no broken embed, no crash.
+✅ A bill row with **no** attachment shows **—** in the Bill column (no View button).
+✅ No bills match the current warehouse/supplier/search → muted line: *"No bills
+   received in <warehouseName>[ from <supplierName>][ matching "<query>"] yet."* — the
+   bracketed clauses only appear when that filter is actually active.
+✅ On a warehouse with more than 20 bills: **Next ›** loads page 2 (**Prev** enables,
+   **Next** disables at the last page); typing **2** into **Page [ ] of N** + Enter (or
+   blurring the field) jumps straight to page 2.
+✅ Change supplier from an expanded row (see below) → the accordion closes and the list
+   **re-runs** so the changed row reflects the new supplier without a manual refresh.
+✅ Warehouse-role admin (staff/manager) sees only their own warehouse in the dropdown and
+   cannot browse another warehouse's bills (mirrors the same scoping as **Receive
+   Goods** / **Warehouses**).
+
+**Backend tests:** `packages/admin/__tests__/procurement-receive-lookup.test.js` — 8
+tests covering dedupe 409, different-supplier ok, blank-invoice skip, lookup grouping +
+mrp, lookup `exists:false`, lookup 400 on missing invoice, last with joined cost/expiry,
+last `found:false`. *(`GET /admin/procurement/receipt/list` — the new list endpoint —
+ships and is tested alongside the backend change that added it; see that change's own
+test file.)*
+
+**Change supplier (2026-08-05):** each expanded row's accordion has a **"Change
+supplier"** button (top-right of the detail panel, ghost style) so an auditor can fix a
+receipt where the wrong supplier was picked. Gated on `WAREHOUSE.MANAGE` (same
+permission as **Correct receipt** / write-off — super_admin, warehouse_manager; **not**
+staff). Backend: `PATCH /admin/procurement/receipt/supplier` — updates every ledger row
+of the invoice at once, recorded in the audit log.
+
+✅ A **warehouse manager / super admin** sees **"Change supplier"** inside an expanded
+   row → click opens a modal titled *"Change supplier — Invoice #<invoiceNumber>"*
+   showing **Current supplier: <name>** (or **— none —**) and a **New supplier**
+   dropdown (**— None —** first, then active suppliers, defaulted to the current
+   supplier).
+✅ Pick a **different** supplier → **Save change** → success toast (*"Supplier changed to
+   <name>. N ledger row(s) updated."*) → the accordion closes and the list refreshes —
+   the row now shows the new supplier name (or drops out of the list entirely if a
+   Supplier filter was active and no longer matches).
+✅ Re-open the modal and leave the **same** supplier selected → **Save change** is
+   disabled with tooltip *"Pick a different supplier"*.
+✅ Pick **— None —** and Save → success toast *"Supplier cleared. N ledger row(s)
+   updated."* → the row shows **—** for supplier after the list refreshes.
+❌ A **warehouse staff** admin never sees the **"Change supplier"** button in any
+   expanded row (FE gate mirrors **Correct receipt**). Calling
+   `PATCH /admin/procurement/receipt/supplier` directly as staff → **403** (backend
+   safety net, independent of the FE gate).
+
+---
+
+### 3c. Admin top-bar search coverage  (2026-08-05)
+
+The admin top-bar global search (Ctrl-K / ⌘-K on desktop, powered by `MenuSearch.tsx` and
+`useMenu.ts` in haper-admin) now covers real-world admin terms across all roles and can
+deep-link into specific **App Config** sections.
+
+**Widened search keywords on 12 existing sidebar items:** typing `write off` now surfaces
+**Items**; `change supplier` surfaces **Verify Bill**; `delivery radius` surfaces **Stores**;
+`reorder policy` and `correct receipt` surface **Warehouses**. Dashboard, New Sale, Order Activity,
+Item Lookup, Stock Health, App Config, Pickers, and Team pages got fresh synonym keywords too —
+so admins find what they need without remembering exact sidebar labels.
+
+**4 new deep-link anchors under `/config`:** selecting **force-update**, **support-contact**,
+**not-serviceable-message**, or **store-controls** from search navigates to `/config#<anchor>`,
+auto-scrolls the matching card into view, and briefly outlines it (~1.5s; respects
+`prefers-reduced-motion`). Permissions: anchors inherit the parent `/config` permission gate
+— non-super-admin roles (store admin, warehouse staff) that can't see `/config` won't see
+these anchors in search either.
+
+**Regression checks:**
+
+✅ Open admin → **Ctrl-K** (or **⌘-K** macOS) → type `write off` → **Items** page appears in
+   results. Click → lands on Items.
+✅ Type each of: `change supplier`, `delivery radius`, `reorder policy`, `correct receipt`,
+   `batch tracking`, `partial pick`, `mrp`, `dead stock`, `picker workflow` → each surfaces at
+   least one relevant page (Verify Bill, Stores, Warehouses, Warehouses, Warehouses, etc.).
+✅ Type `force update` → a card labeled **"force-update — App Config"** appears (marked "Section"
+   in the sublabel). Click → navigates to `/config#force-update`, scrolls to that card, and
+   highlights it with a border/shadow for ~1.5s.
+✅ Repeat for `support contact` / `not serviceable message` / `store controls` → each shows as
+   **"<Section> — App Config"** and scrolls + highlights on click.
+✅ While already on `/config` → type `force update` → click the result → scroll + highlight still
+   fires (already on the page, but link works).
+
+**Logged in as store admin (non-super):**
+✅ Type `force update` / `support contact` / `not serviceable` / `store controls` → **none**
+   appear (store admin lacks `/config` permission).
+✅ Type `delivery radius` → **no results** (Stores is super-admin-only).
+
+**Logged in as warehouse manager / staff:**
+✅ Type `write off` / `batch tracking` / `correct receipt` / `reorder policy` → each returns a
+   warehouse-visible page (Warehouses, Stock Health, Item Lookup).
+✅ Type `store admin` / `banner` / `promotion` → **no results** (super-admin pages only).
+
+**Deploy:** admin-only frontend change; no backend work. Ships with the next admin deploy.
 
 ---
 
@@ -270,10 +516,18 @@ You can add stock two ways — test both.
 2. **Stock In (add):** enter a quantity (e.g. `20`); optionally a **Batch no.**,
    **Cost/unit** (super admin only) and **Expiry** → Save.
    ✅ Quantity rises (0 → 20); a toast shows the new total.
+   ✅ **Blank "Batch no." on a batch-tracking store** auto-names the lot by shelf-life,
+     exactly like warehouse goods-receipt (§3): with an **Expiry** → `AUTO-EXP-<expiry>`
+     (same expiry merges, different expiry = its own lot); **no Expiry** →
+     `AUTO-RCV-<today>`. It no longer piles into the shared `LEGACY` bucket. The code
+     shows in the item's **Batches (lots)** and the `MANUAL_ADJUST` **Stock Ledger** row.
+   ✅ **Flag-OFF store:** a blank batch just `$inc`s the quantity — **no** batch, **no**
+     auto code (unchanged legacy behaviour).
 3. **Adjust down (remove):** switch to *Adjust down*, enter a quantity.
    ✅ Entering **more than current stock** disables the button with a warning. A normal
    reduction lowers the quantity. (If stock changed underneath you and the server
-   rejects it, you get a clear **"exceeds available stock"** toast.)
+   rejects it, you get a clear **"exceeds available stock"** toast.) Adjust-down FEFO-
+   decrements existing lots — it never creates an auto batch.
 
 ### 8b. Bring stock from the warehouse (transfer)  *(super admin)*  (CH-3, CH-4)
 First make the link: **Items → the item → set Barcode = `PB001`** (same as the warehouse SKU).
@@ -642,6 +896,11 @@ A **real shelf code can hold only one item per store** — you can't assign the 
 shelf to two different items. The `DefaultShelf1` placeholder (the migration's
 "unassigned" value) and an empty shelf are **exempt**. Matched **case-insensitively**
 (`A3` == `a3`). Enforced in admin item **create** + **edit**.
+
+> **Also fires from the Items list now.** The **Shelf** column on `/items` is
+> **click-to-edit** (type a code, press Enter) and it goes through the *same*
+> `PUT /admin/item/:itemId`, so the same 409 message appears as an error toast and the
+> cell reverts. Full walkthrough: **[`test-admin-ui.md` → Issue 11](./test-admin-ui.md)**.
 
 Steps (admin):
 - ✅ Give item A shelf `A3`, save. Give item B shelf `A3` → **blocked, 409**:

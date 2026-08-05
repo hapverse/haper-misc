@@ -72,12 +72,17 @@ rows; the missing master is skipped, not 404'd.
 3. On the **Shelf Labels** page the item now **prints** (it was skipped before), as a real **EAN-13**;
    scanning it at POS resolves the item.
 
-### ✅ D. Bulk "Generate missing barcodes" (global)
-1. Click the toolbar **Generate missing barcodes** button → confirm the prompt.
-2. **Expect** a toast like **"Generated 180, skipped 0, failed 0"**, and the list refreshes. It's
-   **global** (all product masters missing a barcode, not one store). If more than one batch remains it
-   appends **"— run again for the rest"** (`remaining > 0`); click again to continue. It **never
-   silently truncates**.
+### ✅ D. Filter to products with **no barcode** ("Missing barcode only")
+1. In the Product Master toolbar, tick **"Missing barcode only"** → the list narrows to products that
+   still have **no barcode** (barcode **absent, null, or empty** all count). Untick to show everything
+   again. Combines with the search box and the status dropdown.
+2. Typical use: tick it to see exactly what needs a code, then mint each with the per-row **Generate**
+   action (B). The empty-state reads "No products match the filters" when nothing is missing a barcode.
+3. **Note — the bulk button is hidden.** The old toolbar **"Generate missing barcodes"** button is
+   **no longer shown**. The backend `POST /admin/product/generate-missing-barcodes` endpoint is
+   **unchanged and still works** (see below) — it's just not surfaced in the UI. The current workflow is
+   **this filter + per-row Generate**. (To bring the button back, restore the toolbar block in
+   `ProductsList.tsx` — it's in git history.)
 
 ### ✅ E. Already has a barcode → no-op (409)
 1. Trigger Generate on a product that **already has a barcode**.
@@ -112,6 +117,10 @@ rows; the missing master is skipped, not 404'd.
 - EAN util: `haper-backend/packages/shared/utils/ean.utils.js` (`buildEan13FromIId`, `checkDigit`, `isValidEan13`).
 - Repo fan-out + missing-master helpers: `haper-backend/packages/shared/repositories/product.repository.js` (`generateBarcodeForIId`, `missingBarcodeMasters`, `countMissingBarcodeMasters`).
 - Endpoints: `haper-backend/packages/admin/src/routes/product/{controller,router,validator}.js`.
-- Admin UI: `haper-admin/src/pages/Products/{ProductsList,BarcodeModal}.tsx`, `haper-admin/src/api/products.ts`.
+- **`missingBarcode` list filter:** `product/controller.js` `list` reads `?missingBarcode=true`;
+  `product.repository.js` `list` applies `{ barcode: { $in: [null, ""] } }` (matches absent/null/empty).
+- Admin UI: `haper-admin/src/pages/Products/{ProductsList,BarcodeModal}.tsx`, `haper-admin/src/api/products.ts`
+  (the "Missing barcode only" toggle + `missingBarcode` param; the bulk-generate toolbar button is hidden).
 - EAN-13 label rendering: `haper-admin/src/utils/shelfLabelPrint.ts` (`isValidEan13` / `optionsFor`).
-- Backend tests: `haper-backend/packages/admin/__tests__/product-barcode.test.js`, `ean.utils.test.js`.
+- Backend tests: `haper-backend/packages/admin/__tests__/product-barcode.test.js`, `ean.utils.test.js`,
+  and `product-master-crud.test.js` (the `missingBarcode` filter).
