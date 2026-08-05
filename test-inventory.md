@@ -309,6 +309,29 @@ were already received. Same backend endpoint as §3a's in-modal lookup panel
    cannot query another warehouse's invoices (mirrors the same scoping as **Receive
    Goods** / **Warehouses**).
 
+**Change supplier (2026-08-05):** each result card has a **"Change supplier"** button
+(top-right, ghost style) so an auditor can fix a receipt where the wrong supplier was
+picked. Gated on `WAREHOUSE.MANAGE` (same permission as **Correct receipt** / write-off —
+super_admin, warehouse_manager; **not** staff). Backend: `PATCH
+/admin/procurement/receipt/supplier` — updates every ledger row of the invoice at once,
+recorded in the audit log.
+
+✅ A **warehouse manager / super admin** sees **"Change supplier"** on every card → click
+   opens a modal titled *"Change supplier — Invoice #<invoiceNumber>"* showing
+   **Current supplier: <name>** (or **— none —**) and a **New supplier** dropdown
+   (**— None —** first, then active suppliers, defaulted to the current supplier).
+✅ Pick a **different** supplier → **Save change** → success toast (*"Supplier changed to
+   <name>. N ledger row(s) updated."*) → modal closes → results re-search and the card now
+   shows the new supplier name.
+✅ Re-open the modal and leave the **same** supplier selected → **Save change** is
+   disabled with tooltip *"Pick a different supplier"*.
+✅ Pick **— None —** and Save → success toast *"Supplier cleared. N ledger row(s)
+   updated."* → card shows **"Unknown supplier"**.
+❌ A **warehouse staff** admin never sees the **"Change supplier"** button on any card
+   (FE gate mirrors **Correct receipt**). Calling
+   `PATCH /admin/procurement/receipt/supplier` directly as staff → **403** (backend
+   safety net, independent of the FE gate).
+
 ---
 
 ## 4. Build the shared catalogue  *(super admin)*
