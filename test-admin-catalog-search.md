@@ -181,9 +181,101 @@ results:
    (`packages/admin/src/routes/transfer/controller.js`, lines ~29-38) lets a `?storeId=` /
    `?warehouseId=` query param **override the tenancy lock for every role** — a store admin can read
    another store's transfers, a warehouse user another warehouse's discrepancy report. Deferred here
-   only because that file already carries unrelated unreviewed work-in-progress.
+   only because that file already carries unrelated unreviewed work-in-progress. — **FIXED
+   2026-08-09, see the section below.**
 2. `getAdminCatalogSummary` (the counts endpoint next to this list) was **not** given the same store
    scoping. Harmless today, but counts could contradict the rows shown if someone adds the parameter
    there later.
 3. A shared `assertStoreServedByWarehouse` helper should be extracted — the same check is copied
    across several controllers, and one remaining copy still has the uppercase-hex bug fixed here.
+
+---
+
+## Fix (2026-08-09): Stock Transfers list & Transfer Discrepancies report weren't locked to your own store/warehouse
+
+**Area:** two admin API endpoints — same class of bug as the fix above, different endpoints.
+- `GET /admin/transfer` — Warehouse → **Stock Transfers** list
+- `GET /admin/transfer/discrepancies` — Warehouse → **Transfer Discrepancies** report
+- `packages/admin/src/routes/transfer/controller.js`
+
+**PR/deploy:** backend only, `dapi.haper.in`. **No admin FE change** — neither screen sends
+`storeId`/`warehouseId` today, so nothing on screen changes for anyone. Already committed and
+pushed to `dev`, inside commit `45be680` — it got swept into an unrelated feature commit by a
+parallel commit of the whole tree, so it doesn't have its own commit; look inside `45be680` for the
+diff.
+
+### The bug (what a hand-crafted web address could do)
+Both endpoints support optional `?storeId=` and `?warehouseId=` filters, meant only for the super
+admin to narrow results. The code applied them for **every** role, and they **overwrote** the normal
+lock that keeps you inside your own store or warehouse. Nothing had to be hacked — just a different
+id typed into the browser address bar.
+
+Two real examples of what used to work:
+- A **store admin** for one store could open `.../admin/transfer?storeId=<another store's id>` and
+  read **that other store's** transfer list — item names, SKUs, quantities, the other store's name.
+- A **warehouse staff** member could open
+  `.../admin/transfer/discrepancies?warehouseId=<another warehouse's id>` and read that other
+  warehouse's shortfall report — **which shows rupee values**.
+
+### Rules now enforced (identical on both endpoints)
+
+| Who is logged in | What they can filter to |
+|---|---|
+| Super admin | Anything — unchanged. Any store, any warehouse, or no filter (sees everything). |
+| Store admin / manager / support | Always locked to their own store. Their **own** store id works exactly like passing no filter at all. Another store's id → ❌ "You do not have access to this store." |
+| Warehouse manager / staff | Always locked to their own warehouse. Their **own** warehouse id works; another warehouse's id → ❌ "You do not have access to this warehouse." They may narrow further to a store their warehouse **serves**; a store served by a **different** warehouse → ❌ "Store is not served by this warehouse." |
+
+Fixed in passing: a store id typed in **UPPERCASE** used to be wrongly rejected — it now works the
+same as lowercase (the same underlying quirk as the catalog-search fix above).
+
+### Steps — backend jest (in-memory)
+`cd packages/admin && NODE_ENV=test npx jest transfer-list-scope.test.js`
+- ✅ 24 cases covering both endpoints (one set per row of the table above, ×2 endpoints, plus the
+  uppercase-id case), all green.
+- Full backend regression: **66 suites / 1139 tests** passing.
+
+### Manual verification (API only — neither screen sends these params)
+Since no screen sends `storeId`/`warehouseId` today, there's nothing to click through in the admin
+FE for the fix itself. Verify with a direct API call (Postman/curl, logged-in session) against
+`dapi.haper.in`:
+1. ✅ **The original attack, store side (most important):** log in as a store admin → call
+   `GET /admin/transfer?storeId=<a different store's id>` → blocked: "You do not have access to this
+   store."
+2. ✅ **The original attack, warehouse side (most important):** log in as warehouse staff → call
+   `GET /admin/transfer/discrepancies?warehouseId=<a different warehouse's id>` → blocked: "You do
+   not have access to this warehouse."
+3. ✅ Same store admin → call with **their own** store id → identical rows to calling with no
+   `storeId` at all.
+4. ✅ Same warehouse staff → call with `storeId=<a store their warehouse serves>` → narrowed to that
+   store, still succeeds.
+5. ❌ Same warehouse staff → call with `storeId=<a store a DIFFERENT warehouse serves>` → "Store is
+   not served by this warehouse."
+6. ✅ Log in as super admin → call either endpoint with any `storeId`/`warehouseId`, or with none at
+   all → unchanged, works exactly as before.
+
+### Regression check — normal screens must look untouched
+None of these send `storeId`/`warehouseId`, so nothing on screen should change for anyone:
+- ✅ Warehouse → **Stock Transfers** list
+- ✅ **Warehouse Dashboard**
+- ✅ Warehouse → **Transfer Discrepancies**
+
+### Edge cases / notes
+- A store a warehouse serves but which is currently **deactivated** quietly disappears from the
+  allowed list — naming it explicitly still gives "Store is not served by this warehouse." This is
+  known, existing behaviour (same as the catalog-search fix above), not a new bug — don't re-report
+  it.
+
+### Not fixed in this pass (flagged for a future session; reviewer-rated)
+1. **HIGH — same bug, stock-movement ledger:** `packages/admin/src/routes/ledger/controller.js:28-29`.
+   `VIEW_LEDGER` is held by both warehouse manager and warehouse staff, so
+   `GET /admin/ledger?storeId=<another store>` returns another tenant's full stock-movement history.
+2. **HIGH — same bug, worse, in replenishment:**
+   `packages/admin/src/routes/replenishment/controller.js:63-67`. The lock is wrongly applied even to
+   the **super admin** (narrows them by mistake), and then every role can override both filters.
+   Reachable by store roles and warehouse roles.
+3. **MEDIUM — no tenancy check at all on "get one by id":**
+   `packages/admin/src/routes/replenishment/controller.js:75-83` and
+   `packages/admin/src/routes/transfer/controller.js:665-673`. Knowing a record's id is enough to
+   read it, regardless of which tenant it belongs to.
+4. The role-check logic is now hand-copied in **four places** (this fix, ledger, replenishment ×2).
+   It should become one shared helper — the day one copy drifts, one endpoint is wrong.
