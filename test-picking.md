@@ -333,6 +333,84 @@ On **Order B**, mark one line out of stock:
    not stranded) and the picker gets a new-task push.
 6. ❌ A **legitimately OPEN** order is never removed by any of this — only cancelled/failed orders.
 
+### T. Test Barcode tool  (feat: test-barcode — read-only verification)
+> **What this is:** a **read-only** tool for a picker to scan barcodes and check what the system
+> says each one is — no picks recorded, no stock changed, no actions. The picker walks the store,
+> scans, and **judges by eye** whether the barcode matches the product actually on the shelf.
+> **Not every picker gets it** — an admin switches it on per picker.
+>
+> **Why:** shelf location codes are often missing or wrong (1,296 of 1,580 items are `DefaultShelf1`,
+> 110 are blank); this tool lets a picker verify stock placement without creating fake picks.
+1. **Admin setup:** Admin → **Pickers** → edit a picker → scroll to **"Test Barcode"** checkbox
+   (off by default). ✅ Checkbox only appears when **editing** an existing picker, not on create.
+   ✅ Only visible to admins who can edit pickers. Click to toggle, save.
+2. Picker opens the app (already logged in). Navigate to **Settings → Tools**.
+   - ✅ If flag is **ON**, a **"Test Barcode"** entry appears.
+   - ❌ If flag is **OFF**, the entry is **not** shown.
+3. Tap **Test Barcode** → ✅ the screen **opens** and **downloads this store's barcode list**
+   (roughly 769 items in a real store). Downloads take ~2 seconds; results are then instant (local
+   cache, no signal needed).
+4. ✅ **Last five scans** stay on screen, most recent first, in memory only. Leave the screen →
+   they vanish.
+5. ✅ **Pull to refresh** re-downloads the barcode list mid-walk.
+
+#### Known barcode
+1. Scan a barcode you know is in the list (any item the store stocks).
+   - ✅ Result appears **instantly** (no network needed); shows **product name, image, weight + unit,
+     MRP**.
+   - ✅ **Shelf location shows only when it is a real value** (e.g. `A3`, `D6`). Hidden for:
+     `DefaultShelf1` (the placeholder on ~1,296 items), empty/blank (110 items). Only ~174 items
+     have a genuine shelf code. (Because shelf is often wrong/empty in production, hiding it avoids
+     misinformation.)
+
+#### Unknown barcode (never existed)
+1. Scan a barcode that is **not** in the system.
+   - ✅ After the server checks, a clear **"Not recognised"** message appears.
+
+#### Barcode added *after* the download
+1. An item is **added to the system** (new item in catalog). Its barcode is added to the master
+   list.
+2. A picker has already downloaded the list (old snapshot). Then they scan the **new item's** barcode.
+   - ✅ The app asks the server once. ✅ Server finds it and shows the result (not wrongly reported
+     as unknown).
+   - Note: it is **not** cached into the local list — next refresh re-downloads and includes it.
+
+#### No signal
+1. Picker is walking in a basement or area with **no network**.
+   - ✅ Scan a **known barcode** → result appears instantly (local list, no network needed).
+   - ✅ Scan an **unknown** barcode → instead of false "Not recognised", a clear **"Couldn't check online"** appears (picker knows it's a network fault, not that the barcode is genuinely unknown).
+
+#### Unbarcoded stock
+> Note: about **half** of all items have no barcode on file; only `~400 of ~800` items carry one.
+1. Walk past / try to scan a shelf section with **unbarcoded stock** (common in the store).
+   - ✅ Scanning empty air → nothing matches (expected). Tester should move on; unbarcoded stock is
+     normal and expected, not a fault.
+
+#### Access control
+1. **Flag is OFF** for a picker. No Test Barcode entry in Settings → Tools.
+2. Manually call the backend API (`GET /picking/test-barcode/list` or similar) as that picker.
+   - ✅ Returns **403** (forbidden). The server is the security boundary, not just the UI.
+3. **Admin enables the flag**, saves. Picker's app is **still open** (doesn't need to logout/re-login).
+4. Picker brings app to foreground, goes back to **Settings → Tools**.
+   - ✅ **"Test Barcode"** now appears **immediately**. (The menu list refreshes on return from
+     settings or re-fetches the flag.)
+
+#### Store isolation
+1. A picker is assigned to **Store A**. Open Test Barcode and scan a barcode.
+   - ✅ Only **Store A's items** appear; results are instant.
+   - ✅ Scan a barcode for an item in **Store B** (a different store).
+   - ❌ Store B's item is **never** returned (picker only sees their assigned store's catalog).
+
+#### Security notes
+- ✅ **Cost price is never shown** — even in this tool. A picker has no need for cost data.
+- ✅ Results are **read-only** — no pick recorded, no stock changed. A picker cannot adjust
+  anything from this screen.
+
+#### Deployment requirements
+- **Backend:** API endpoint for downloading the store's barcode list (~769 items, ~2s download), the single-item fallback lookup when a barcode is not in the cached list, and the permission check (only pickers with the flag can access).
+- **Admin:** the **"Test Barcode"** checkbox on the Pickers edit form, with the helper text "Lets this picker scan any barcode to check it against the catalogue. View only — no stock changes."
+- **Picker app build:** new release (app store) to ship the Test Barcode tool screen, the Settings → Tools menu entry, barcode-list download + caching, local scan matching, pull-to-refresh, and the three-outcome UI (Found / Not recognised / Couldn't check).
+
 ---
 
 ## Negative / edge cases to confirm
@@ -347,6 +425,10 @@ On **Order B**, mark one line out of stock:
 - **Mixed order**: one line OOS (red), others in-stock (normal) → visually distinct.
 - **Empty states**: "No orders waiting", "You have no active pickings", "No completed
   pickings yet".
+- **(Test Barcode) Flag ON, app too old** → app doesn't have the feature, so no entry in Settings → Tools (expected; picker app store build is needed).
+- **(Test Barcode) Flag revoked mid-session** → picker is still on the Test Barcode screen; next scan or pull-to-refresh returns **403** and a **"Capability disabled"** or **"Access revoked"** message.
+- **(Test Barcode) Scan while offline, then online** → if a barcode is in the local cache (from the last download), it shows instantly (no network call); if not in cache and network comes back, the next scan triggers the server lookup and succeeds.
+- **(Test Barcode) Try to edit or note a scan** → no buttons to edit, pick, or comment; results are display-only.
 
 ---
 
@@ -366,6 +448,7 @@ On **Order B**, mark one line out of stock:
 | **Claim a ghost** (task PENDING but order already cancelled) | claim returns **409 "This order was cancelled and is no longer available."** and the task is **CANCELLED** (self-clean), not released back to the queue |
 | **Close a PACKED order** | succeeds (no "Failed to close"); status CLOSED; `invoiceNumber` (`INV-…`) set **post-commit**; customer "Delivered 🎉" push fires **once, after commit** |
 | **Any failed/rolled-back status op** (close, assign, cancel) | order keeps its prior status **and** the customer gets **no** push — order-status pushes are queued on the txn session and flushed only after a successful commit (`order-event.utils.js`) |
+| **Scan in Test Barcode tool** | **no audit log, no stock change** — picker is checking, not picking. Barcode list is downloaded from backend; unknown barcode triggers a single server lookup; results are purely informational. Zero rows appear in `order_audit_logs` / `pick_tasks` / `item_stock`. |
 
 ---
 

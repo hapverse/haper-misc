@@ -222,16 +222,30 @@ super admin with a specific store — NOT "All Stores" — picked in the switche
    add tiers"; the **+Add** control is hidden. Flip the switch ON → the footer shows "Unsaved switch
    change"; click **Save** → toast "Free gift turned on" (persists via `PUT /admin/store/:id`).
 3. **Add a tier:** click **Add tier** → modal. Enter a threshold (integer > 0), search the item
-   picker (arrow keys + Enter work; each option shows thumbnail + weight + Rs price), pick start/end
+   picker (arrow keys + Enter work; each option shows thumbnail + weight + Rs price + stock — `"12 in stock"`,
+   `"Out of stock"` in muted red, or blank if the item has no stock field), pick start/end
    dates, leave **Tier enabled** ON, **Add**. Row appears, rows sorted by threshold ascending, with a
    status pill (**Active / Paused / Scheduled / Expired**).
 4. **Validation:** threshold `0` → inline red "Enter a whole order value above Rs 0"; a threshold that
    already exists → "A tier at Rs N already exists"; end date before start → red banner "End date
    can't be before the start date". **Save/Add stays disabled** while any error is present. A
    backend reject (inactive item, etc.) surfaces as a toast and the modal stays open with input kept.
-5. **Edit / delete:** the ghost icon buttons (aria-labels "Edit Rs N tier" / "Delete Rs N tier").
+5. **Stock validation (gift-item picker):**
+   - An **out-of-stock item** row stays **visible and greyed** (not hidden). It **cannot** be selected by mouse
+     click or keyboard Enter.
+   - **Arrow keys move the highlight onto** an out-of-stock row (so screen readers announce the item and its
+     "Out of stock" state); pressing **Enter on that row does nothing** — the item is not picked.
+   - An item with **no stock field** at all shows **no stock text** and remains **selectable** — unknown is not
+     treated as zero.
+   - **Newly choosing an out-of-stock item is blocked** with an inline error below the search box.
+6. **Editing a tier whose gift has since sold out:** open the edit modal for an existing tier and verify its
+   gift item has **sold to zero stock**. The modal shows an **amber warning** (non-blocking): *"This gift is
+   currently out of stock — customers won't receive it until it's restocked."* The **Save button stays
+   enabled** — a tier can be paused or re-dated without changing the gift item, so an admin can still take
+   action if a live promotion's gift ran out of stock.
+7. **Edit / delete:** the ghost icon buttons (aria-labels "Edit Rs N tier" / "Delete Rs N tier").
    Delete opens a confirm modal ("Remove this tier?"), **not** `window.confirm`.
-6. **All-Stores mode (super admin):** switch to "All Stores" → the section shows "Select a specific
+8. **All-Stores mode (super admin):** switch to "All Stores" → the section shows "Select a specific
    store…" and no tier controls (the CRUD needs one concrete store id).
 
 **Surface 2 — Option-B in Order details.** Open a `PAYMENT_INITIATED` order in `OrderDetailsModal`.
