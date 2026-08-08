@@ -9,19 +9,32 @@ Clients: web renders below price on search/category/home; Android and iOS displa
 
 ## Why
 Shoppers can't compare pack sizes across brands from price alone — is a ₹28 70g pack cheaper per-gram than a
-₹40 200g pack? The backend now computes a normalised comparison price **once, server-side** (countable → per
-piece; weight → per kg or per 100g; volume → per L or per 100ml) so all three clients render the exact same
-number without recomputing it themselves.
+₹40 200g pack? The backend now computes a normalised comparison price **once, server-side** so all three
+clients render the exact same number without recomputing it themselves.
+
+**Denominator rule (business-decided, replacing an earlier magnitude-threshold rule that shipped and was then
+reverted): FIXED denominators, no magnitude thresholds, no step-down, no exceptions.**
+- weight (`g`/`kg`) → always **per 100g**
+- volume (`ml`/`L`) → always **per 100ml**
+- countable (`unit(s)`) → always **per piece**
+
+The earlier rule (per kg when ≥1000g else per 100g, same idea for L/ml, with a "step-down" that dropped a
+level if the computed value exceeded the pack price) was found to make **16 of 17 live categories show mixed
+denominators on one screen** (Snacks showed per-g, per-100g, per-kg AND per-piece side by side) — numbers a
+shopper can't compare at a glance, defeating the point of the feature. The fixed rule trades that away: a
+small/expensive pack (Nestle Munch, 10g @ ₹4.5) now legitimately shows **₹45/100g**, a unit price *higher*
+than the pack price — this is normal and expected (supermarkets worldwide print exactly this), not suppressed.
 
 **The rule that matters most: anything the backend can't confidently parse shows NOTHING, never a wrong
 number.** `pricePerUnit` is always present as a key (`{ value, unit }` or `null`) so a missing key never decodes
 to a client-side default — but the *value* is only ever set when every guard is satisfied. A messy weight
 field ("5g", "0", "217.8/"), an unrecognised unit, or a name that reads like a multipack ("2x70g", "Pack of 2",
-"Set of 3") all suppress the field rather than risk showing a number that's wrong.
+"Set of 3") all suppress the field rather than risk showing a number that's wrong. A unit price *higher* than
+the pack price is **not** one of these cases anymore — see above.
 
 ## Client implementation
 
-The unit price line appears **only on browsing surfaces** — search results, category listings, home-by-category, and suggested items. It sits directly beneath the selling price in small, muted text. Example: a product priced at ₹307 shows ₹61.4/kg on the line below.
+The unit price line appears **only on browsing surfaces** — search results, category listings, home-by-category, and suggested items. It sits directly beneath the selling price in small, muted text. Example: a product priced at ₹307 for 5kg shows ₹6.14/100g on the line below (not ₹61.4/kg — see denominator rule above).
 
 **Web:** rendered below the selling price on item cards in search results and category pages.
 
@@ -41,10 +54,11 @@ The unit price line appears **only on browsing surfaces** — search results, ca
    computation is skipped rather than guessed.
 4. `weight` must be a strictly plain positive decimal string (`^\d+(\.\d+)?$` after trimming) — `"1e3"`,
    `"0x10"`, `"1,000"`, `"+5"` are all rejected even though plain `Number()` would silently accept them.
-5. **Final-value invariant** (closes 3 bugs with one guard): the computed price must be finite, `> 0`, and
-   `<= the pack's own sellingPrice`. This catches a sub-gram/sub-ml weight (e.g. 0.5g saffron) that would
-   otherwise price HIGHER than the pack itself, a huge weight typo that would round down to a free-looking
-   "₹0", and an extreme `sellingPrice` that would overflow to `Infinity`.
+5. **Final-value invariant** (now only 2 conditions — the 3rd, "must not exceed the pack price", was removed
+   when the denominator rule changed to fixed 100g/100ml/piece, since exceeding the pack price is now normal
+   and expected, see above): the computed price must be **finite** (an extreme `sellingPrice` can overflow
+   `round2()` to `Infinity`, which `JSON.stringify` would silently turn into `{"value":null,...}`) and **> 0**
+   (a huge weight typo can round down to a free-looking "₹0").
 
 ## Multipack name patterns (all suppress `pricePerUnit` → `null`)
 | Pattern | Examples |
@@ -89,38 +103,54 @@ too — fails safe, not a bug).
 - ✅ Category page with multiple products: one has invalid `pricePerUnit`, others are valid → first card safe, neighbours show their lines; page does not break.
 
 ## Steps (backend jest, in-memory — `cd packages/user && NODE_ENV=test npx jest unit-price.utils.test.js item.test.js home.test.js item-search-fallback.test.js`)
-- ✅ Worked examples compute correctly and round to 2dp: Atta 5kg @ ₹307 → `{ value: 61.4, unit: "kg" }`;
-  eggs 12 @ ₹110 → `{ value: 9.17, unit: "piece" }`; water 10L @ ₹130 → `{ value: 13, unit: "L" }`.
-- ✅ **Step-down guard:** a 50ml perfume @ ₹251 would read ₹502/100ml (more than the bottle costs) → steps
-  down to `{ value: 5.02, unit: "ml" }` instead.
-- ✅ **The critical bug this round fixed** — "Maggi 2x70g" @ ₹28 with `weight: "70"` (the per-cake size, the
-  exact ambiguity the multipack guard exists for): before the fix the compact `2x70g` spelling wasn't
-  recognised as a multipack, so it silently computed **₹40/100g** — double the real ₹20/100g. Now: `null`.
-- ✅ Sub-gram weight (0.5g saffron @ ₹150) → `null`, not ₹300/g (twice the pack price).
-- ✅ A huge weight typo (100,000,000g @ ₹25) → `null`, not "₹0/kg" (which reads as free).
+- ✅ Worked examples compute correctly and round to 2dp, ALWAYS on the fixed denominator: Atta 5kg @ ₹307 →
+  `{ value: 6.14, unit: "100g" }` (not ₹61.4/kg); eggs 12 @ ₹110 → `{ value: 9.17, unit: "piece" }`; water 10L
+  @ ₹130 → `{ value: 1.3, unit: "100ml" }` (not ₹13/L).
+- ✅ **No magnitude threshold, at any pack size:** 999g, 1000g, 1001g, 5000g all resolve to `"100g"` — never
+  flips to `"kg"`. Same for ml/`"100ml"` vs `"L"`.
+- ✅ **The 43% case renders, is not suppressed:** a unit price ABOVE the pack price is normal and expected —
+  Nestle Munch 10g @ ₹4.5 → `{ value: 45, unit: "100g" }` (not `null`); a 50ml perfume @ ₹251 → `{ value: 502,
+  unit: "100ml" }` (previously step-down-guarded to a near-null-adjacent `5.02/ml` — now renders as-is); a 20g
+  saffron sachet @ ₹150 → `{ value: 750, unit: "100g" }`.
+- ✅ **The critical bug an earlier round fixed** — "Maggi 2x70g" @ ₹28 with `weight: "70"` (the per-cake size, the
+  exact ambiguity the multipack guard exists for): the compact `2x70g` spelling is recognised as a multipack,
+  so it stays `null` (never the wrong ₹40/100g a naive gram calc would compute).
+- ✅ A huge weight typo (100,000,000g @ ₹25) → `null`, not "₹0/100g" (which reads as free) — the `value > 0`
+  guard, now load-bearing on its own with the step-down guard removed.
 - ✅ An extreme `sellingPrice` (1e308) → `null`, not `Infinity` (which `JSON.stringify` would otherwise turn
-  into `{"value":null,"unit":"g"}` — a shape no client decoder expects).
+  into `{"value":null,"unit":"g"}` — a shape no client decoder expects) — the `Number.isFinite` guard, likewise
+  now load-bearing on its own.
 - ✅ `calculatePricePerUnit(null)` and `calculatePricePerUnit()` never throw — always `null`.
 - ✅ The 10 real prod "bad rows" as of 2026-08-08 (weight `"0"`, various multipack names) all → `null`.
 - ✅ `GET /user/item/`, `GET /user/item/:itemId`, `GET /user/item/search/:query/:page` (incl. the no-match
   recommended-items fallback), `GET /user/home/items` (suggested), `GET /user/home/items/:cat/:sub/:page` —
   every response includes `pricePerUnit` on every item, correctly computed for good data and `null` (key
   present) for bad data.
-- ✅ Regression: 480+ `packages/user` tests still pass; `costPrice` still never leaks on any of the 5 paths.
+- ✅ Regression: `packages/user` full suite — 530/530 passing, 24/24 suites (was 526/24 before this round).
 
-## Why ~177 items show no line (not a bug)
+## Why ~354 of 3,211 active items show no line (not a bug)
 
-About 177 of 1,605 active catalogue items correctly show no unit price line. These are not regressions:
+Measured against the local prod-dump snapshot (`prod-dump/haper-prod/items.bson`, 2026-08-08 — offline BSON
+analysis, no live DB touched): **2,857 of 3,211 active items (89%) render a `pricePerUnit`; 354 (11%) are
+correctly suppressed.** These are not regressions:
 
-**Multipacks:** The stored `weight` field is unreliable — sometimes it holds the per-piece size, sometimes the whole-pack size. Real examples now suppressed: `Dettol Reg ( 4+1 ) 100 g`, `Margo ( 3+1 ) - 75 g`, `Dettol Handwash 180 + 180 Ml`, `Godrej No-1 sandal Turmeric - (4 Unit x 43gm)`, `Maggi 2x70g`, `Pack of 2`, `Pro-ease XL Sanitary Pad (6Pads)`. Before this was caught, those showed prices 2× to 10× too high — the Dettol 4+1 read ₹3.64/g against a true ₹0.364/g.
+**Multipacks (~172 items):** The stored `weight` field is unreliable — sometimes it holds the per-piece size, sometimes the whole-pack size. Real examples suppressed: `Dettol Reg ( 4+1 ) 100 g`, `Margo ( 3+1 ) - 75 g`, `Dettol Handwash 180 + 180 Ml`, `Godrej No-1 sandal Turmeric - (4 Unit x 43gm)`, `Maggi 2x70g`, `Pack of 2`, `Pro-ease XL Sanitary Pad (6Pads)`. Before this was caught, those showed prices 2× to 10× too high — the Dettol 4+1 read ₹3.64/g against a true ₹0.364/g.
 
-**No selling price:** Items currently out of stock with `sellingPrice: null` or zero — around 5 such items. No line, as intended.
+**No/invalid selling price (~170 items):** Items currently out of stock or otherwise priced at `sellingPrice: null`/`0`. No line, as intended.
 
-**Weight zero or unparseable:** About 10 items have `weight: "0"` or a non-numeric string. These are pending manual correction in the catalogue — no line shown, guards working correctly.
+**Weight zero or unparseable (~12 items):** `weight: "0"` or a non-numeric string. Pending manual catalogue correction — no line shown, guards working correctly.
 
-## Denominator may change (expected, not a regression)
+Of the **2,857 rendered** items, **~1,081 (~34% of all active items, ~38% of rendered items)** have a computed
+value ABOVE their pack's `sellingPrice` — this is the "43% of the catalogue" case referenced in the plan (that
+figure came from an earlier snapshot/scope; both measurements land in the same range and confirm the same
+finding: a large minority of the catalogue was being wrongly suppressed under the old step-down rule and now
+renders correctly, e.g. every low-gram, high-margin chocolate/spice SKU).
 
-The backend may change which unit it uses as the denominator for whole product categories — for example, switching baby formula from `kg` to `100g` to show smaller, clearer numbers. Clients render whatever denominator the backend sends in each response. **If you see a denominator change after a backend deploy, this is expected; you do not need to file a regression.**
+## Denominator is now FIXED — no more "may change per category"
+
+The earlier version of this doc said the denominator "may change per category" as an expected, non-regression
+behaviour. That is now false: the rule is fixed at 100g / 100ml / piece for every item, unconditionally. If you
+see `"kg"` or `"L"` as a `pricePerUnit.unit` value after this change, that IS a regression — file it.
 
 ## Edge cases / notes
 - `pricePerUnit` is computed at the **controller**, not baked into the DB — it reflects the *current*

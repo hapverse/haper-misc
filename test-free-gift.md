@@ -6,8 +6,16 @@
 admin tier CRUD `packages/admin/src/routes/store/{router,controller,validator}.js`
 **Permission (admin):** `STORE_CONFIG.VIEW` to list tiers, `STORE_CONFIG.EDIT` to create/update/delete
 (the same permission that already guards store config — no new permission, so no FE/BE mirror drift)
-**Phase:** **backend only.** Dark by default (master flag OFF for every store). Client apps, admin FE
-screen, picker/delivery FREE tag, and the invoice FREE line are **later passes** (see the bottom).
+**Branch:** all of this now lives on **`feat/gift-with-purchase`**. Every repo — `haper-backend`,
+`haper-admin`, `haper-android`, `haper-ios`, `haper-web`, `haper-picker`, `haper-delivery` — is a
+**separate git repo carrying a branch of the same name**. Check out `feat/gift-with-purchase` in each
+repo you build.
+**Phase:** backend + admin FE + **all client + ops surfaces are now built** — the customer cart nudge /
+FREE preview / order-details tag on **Android + iOS + web**, the **picker** FREE-GIFT pill, the
+**delivery** manifest FREE line, and the **invoice** FREE-GIFT line (sections ✅ J–M). Still **dark by
+default**: the per-store master flag is OFF for every store, so nothing shows until a store turns it on.
+The only remaining backend later-pass item is the admin order-edit `consolidateItems` gift-safety fix
+(§ Open questions #6).
 
 ## What this is (a real example)
 
@@ -55,10 +63,21 @@ a FREE badge and a "spend a little more to unlock…" nudge; old apps just see a
   surfaced as a toast if anything slips through.
 - FREE-gift line treatment in the order-details items list + a "Free gift → FREE" bill row.
 
-**Later passes (NOT built now):** Android/iOS/web nudge + FREE tag, picker FREE tag, delivery FREE
-line, and the invoice Rs 0 "FREE (Gift with purchase)" line. The invoice is a **backend-generated PDF**
-(`shared/utils/invoice.utils.js`) that the admin only downloads — there is no admin-FE invoice line to
-tag, so that item stays a backend task.
+**Client + ops surfaces (built this pass — see sections ✅ J–M):**
+- **Customer apps** (`haper-android`, `haper-ios`, `haper-web`): a cart nudge driven by
+  `GET /cart` → `data.giftOffer` (unlocked / add-more / cap-reached), a display-only FREE gift
+  **preview line** in the cart, and the real FREE-gift line + "Free gift → FREE" bill row in order
+  details.
+- **Picker** (`haper-picker`): a green **FREE GIFT** pill on the gift pick line (pre-scan and
+  revealed); still packed as a normal qty-1 line.
+- **Delivery** (`haper-delivery`): **FREE** + a **FREE GIFT** pill on the rider's manifest gift line
+  instead of a price.
+- **Invoice** (`shared/utils/invoice.utils.js`, a **backend-generated PDF** the admin downloads — no
+  admin-FE line to tag): the Rs 0 gift line prints **"(FREE GIFT)"** after the item name plus a
+  footnote *"Includes complimentary gift item(s) at Rs 0."*
+
+**Later passes (still NOT built):** only the admin order-edit `consolidateItems` gift-safety fix
+(§ Open questions #6).
 
 ---
 
@@ -261,6 +280,114 @@ super admin with a specific store — NOT "All Stores" — picked in the switche
    card gains a **"Free gift → FREE"** row. Old orders (no `isFreeGift`, or `false`) render as normal
    lines — only an explicit `true` gets gift treatment.
 
+### ✅ J. Customer apps — cart nudge + FREE preview + order-details tag (Android / iOS / web)
+
+The same three-state nudge and the same FREE preview line ship in all three customer apps
+(`haper-android`, `haper-ios`, `haper-web`) — the copy and layout are deliberately identical. Build each
+from `feat/gift-with-purchase`. Enable the feature on one store (see "How to enable") with the example
+tiers (Rs 100 Parle-G, Rs 500 Haldiram).
+
+**The nudge is 100% driven by `GET /cart` → `data.giftOffer`.** It sits just above Bill Details.
+Fail-open: if `giftOffer` is missing or `enabled:false`, the nudge renders **nothing** (no empty box).
+While the cart is loading it shows a skeleton.
+
+1. **State A — unlocked (green).** Build a cart whose item-subtotal crosses a tier (e.g. **Rs 120**).
+   **Expect:** a green banner **"You've unlocked a free Parle-G!"** with the gift thumbnail. Because a
+   higher tier still exists, a slim secondary line invites the next tier (e.g. *"Add ₹380 more for
+   Haldiram namkeen instead"*). A **FREE gift preview line** also appears in the cart list (see below).
+2. **State B — below the next tier (amber).** Drop the cart below the first tier (e.g. **Rs 60**).
+   **Expect:** an amber banner **"Add ₹40 more to get Parle-G free"** with a **progress bar** reading
+   **₹60 / ₹100**. No preview line (nothing is unlocked yet).
+3. **State C — cap already used (muted green).** After the customer has already claimed today's gift.
+   **Expect:** **"You've already claimed today's free gift"** — no thumbnail, no progress bar, no
+   preview line.
+
+> The banner text uses the server's `giftOffer.message` when present, falling back to the copy above.
+> The progress bar's fill and its "₹X / ₹Y" label both derive from `minOrderValue − amountToUnlock`
+> (the server numbers), never the client subtotal, so bar / label / screen-reader always agree.
+
+**FREE gift preview line (display-only).** In State A the cart list gains one extra line for the gift the
+customer will receive, **synthesized from `giftOffer.currentGift`** — it is **not** a real cart item (the
+gift only joins the order at checkout, and real cart items never carry `isFreeGift`).
+**Expect:** a **FREE GIFT** pill, a green **"FREE"** (no Rs 0), a **static "1"** (no qty stepper), and
+**"Added free — no charge."** It **cannot** be edited, swiped, or removed.
+
+**Order details.** Place the State-A order, then open it in order history.
+**Expect:** the real gift line (`isFreeGift:true`) shows a **FREE GIFT** badge next to its name, its
+price renders as **FREE** (never a bare Rs 0), and the bill / payment card gains a **"Free gift → FREE"**
+row. Every non-gift line is unchanged.
+
+**What to deploy:** ship the customer app build from `feat/gift-with-purchase` (Android first, then iOS,
+then web). The backend must already be deployed — it owns `giftOffer` and the `isFreeGift` order line.
+
+### ✅ K. Picker — FREE GIFT pill on the gift pick line (`haper-picker`)
+
+Build `haper-picker` from `feat/gift-with-purchase`. Place a gift-bearing app order (section J) and let
+it flow to a pick task.
+
+1. Open the pick task and find the gift line.
+   **Expect:** a green **FREE GIFT** pill on that line — shown in **both** states: **before the scan**
+   (while the card still reads "Scan to reveal product" — the pill is safe here because it reveals only
+   *that* the line is a freebie, not the product identity) **and after** the scan reveals the product.
+2. Pack it.
+   **Expect:** it behaves as a **normal qty-1 line** — the scan gate, partial-pick stepper, and OOS
+   handling are all **unchanged**. The pill is a label only; it changes no picking logic.
+
+**What to deploy:** ship the `haper-picker` build from `feat/gift-with-purchase`.
+
+### ✅ L. Delivery — FREE + FREE GIFT pill on the manifest (`haper-delivery`)
+
+Build `haper-delivery` from `feat/gift-with-purchase`. Assign a gift-bearing order to a rider and open
+its manifest.
+
+1. Find the gift line on the order manifest.
+   **Expect:** instead of a price, it shows a bold green **"FREE"** followed by a green **FREE GIFT**
+   pill, so the rider reads the Rs 0 as intentional (not a missing-price glitch). The qty (×1) still
+   shows.
+2. Check a normal line in the same order.
+   **Expect:** it shows its usual price (`formatCurrency(salePrice)`) — only the gift line is
+   special-cased.
+
+**What to deploy:** ship the `haper-delivery` build from `feat/gift-with-purchase`.
+
+### ✅ M. Invoice — "(FREE GIFT)" line + footnote (backend PDF)
+
+The invoice is a **backend-generated PDF** (`packages/shared/utils/invoice.utils.js`) the admin
+downloads — there is no FE to touch. Download the invoice of a gift-bearing order.
+
+1. **Expect:** the Rs 0 gift line prints the item name followed by **"(FREE GIFT)"** — plain text, so it
+   is **black-and-white / print safe** (no colour or badge needed) — at price **Rs 0**.
+2. **Expect:** a footnote under the items — **"Includes complimentary gift item(s) at Rs 0."** — that
+   appears **only** when the order actually carries a gift line.
+3. **Expect:** all totals (subtotal, GST, grand total) are **unchanged** — the gift adds Rs 0, so it
+   never moves the math.
+
+**What to deploy:** **backend redeploy** (the invoice util ships with the backend, not a client app).
+
+### ✅/❌ N. Back-compat for the new surfaces — old builds & old orders render normally
+
+The new UI must light up **only** on updated builds and **only** for orders that actually carry the
+flag. Nothing here may crash or misrender on old data.
+
+1. **✅ Old app build (not updated).** Run an **old** customer / picker / delivery build against the
+   gift-enabled store.
+   **Expect:** no nudge, no preview line, no FREE GIFT pill/badge — the old build doesn't know the fields
+   exist. The Rs 0 gift line still renders as a plain Rs 0 item and does **not** crash. (`giftOffer`
+   absent → the cart just has no nudge; a missing `isFreeGift` key decodes to **null / nil**, treated as
+   *not a gift*.)
+2. **✅ Old order (placed before the feature).** On an **updated** build, open an order whose lines
+   predate `isFreeGift`.
+   **Expect:** every line renders as a **normal** line — no FREE GIFT badge, no "Free gift → FREE" bill
+   row, no manifest special-case. Only an explicit `isFreeGift:true` gets gift treatment; `null` /
+   `false` is a normal line.
+3. **✅ Old pick task.** Pick-task reads are `.lean()`, so tasks built before the feature simply **lack**
+   the `isFreeGift` field.
+   **Expect:** the picker treats the missing field as **false** → no pill, normal picking.
+
+> Why it's safe: on every client the decode is null-tolerant (Gson missing key → `null`, Swift
+> `decodeIfPresent` → `nil`, TS optional → `undefined`) and the render guard is `isFreeGift === true`.
+> A missing or `false` flag can only ever mean "normal line" — never a crash.
+
 ---
 
 ## Old-app / backward-compatibility (hard requirement)
@@ -332,9 +459,11 @@ cd packages/admin && NODE_ENV=test npx jest gift-tier   # 20 tests, all green
 - **Enable per store** via the flag; dark-launch **one store first**, verify, then expand.
 - **Rollback = flip `giftWithPurchaseEnabled` OFF** for the store. Instant, no data migration to
   reverse. With the flag off the code is inert (checkout / cart / POS unchanged).
-- **Client apps** (Android priority, then iOS, then web), the **admin FE tier screen**, the
-  **picker/delivery FREE tag**, and the **invoice Rs 0 FREE line** are **later passes** — none is
-  required for the backend to be safe to ship.
+- **Client + ops builds are now built** on `feat/gift-with-purchase` and ship per app: the
+  **customer apps** (`haper-android` → `haper-ios` → `haper-web`), the **picker** (`haper-picker`), and
+  the **delivery** app (`haper-delivery`). The **admin FE tier screen** and the **invoice FREE-GIFT
+  line** ship with the admin FE / backend redeploys respectively. None is required for the backend to be
+  safe — with the master flag OFF they all render exactly as before.
 
 ---
 
