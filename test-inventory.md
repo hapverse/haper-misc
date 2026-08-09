@@ -264,6 +264,54 @@ tests covering dedupe 409, different-supplier ok, blank-invoice skip, lookup gro
 mrp, lookup `exists:false`, lookup 400 on missing invoice, last with joined cost/expiry,
 last `found:false`.
 
+#### Invoice numbers: case/space-proof matching + stored in CAPS (fix, 2026-08-09)
+
+**The bug it fixes (seen in real production data):** bill `TS6826` was received (18
+lines). Days later a clerk went to add a missed 19th line to the SAME bill but typed
+`ts6826` in lowercase. Mongo compares strings case-sensitively, so the duplicate check
+found **zero** matching rows — no "already received" warning, and the system quietly
+created a **second, disconnected** bill record instead of pointing at the original. The
+same thing happened when a clerk **pasted** a number and brought stray spaces with it
+(`"  TS6826  "`).
+
+Two things changed, in two steps:
+
+1. **Matching** (`POST /receive` duplicate guard + `GET /receive/lookup`) ignores
+   upper/lower case **and** leading/trailing spaces, while still matching the **whole**
+   number — `TS6826` does **not** match `TS6826-A`.
+2. **Storage** (final step, this change): the invoice number a clerk types on
+   **Receive Goods** is now saved **trimmed and in CAPS**. Type `ts6826`, paste
+   `  ts6826  `, or type `TS6826` — the bill is saved as `TS6826` either way, on every
+   line of that receipt. Blank / spaces-only is saved as "no invoice", same as before.
+
+So from now on every new bill is stored in one consistent form, which also makes the
+Verify Bill list group them together properly.
+
+**Not changed:** bills received **before** this fix keep whatever casing/spacing they
+were saved with — there is **no** clean-up of old records. That is exactly why matching
+stays case- and space-tolerant: it is what still finds those older bills. Admin-only
+path; nothing changes for any customer app.
+
+**Regression checks:**
+
+✅ Receive `TS6826 / ACME`, then try to receive `ts6826 / ACME` again → same
+   *"already received"* 409 toast you'd get for an exact-case repeat; nothing is written.
+✅ Receive with the invoice pasted as `  ts6826  ` → saved bill reads **`TS6826`**
+   (no spaces, all caps) on **every** line of that receipt.
+✅ Receive with a clean `TS6826` → still reads `TS6826` (nothing mangled).
+✅ **Verify Bill** / lookup panel: search `ts6826` → the `TS6826` bill is found.
+✅ Search `TS6826` (exact case) → still works exactly as before.
+✅ An **older** bill saved as `ts6826` (before this fix) is still findable by searching
+   `TS6826` or `ts6826`, and still shows on screen with its original casing.
+❌ Search `TS6826` when only `TS6826-A` exists → **no** match (whole-number match, so a
+   short number can't silently swallow a longer, genuinely different bill).
+
+**Backend tests:** `packages/admin/__tests__/procurement-invoice-case.test.js` — 9 tests:
+different-case dedupe 409, padded-vs-clean dedupe 409, different-case lookup, exact-case
+lookup regression, whole-number (non-substring) matching, and four storage tests
+(trim+uppercase, lowercase uppercased, already-clean unchanged on every line of the
+receipt, spaces-only saved as no-invoice).
+
 > **Link rule (for transfers later):** the warehouse **SKU** must equal the **barcode**
 > of the store item you'll transfer to. Keep `PB001` handy.
 
@@ -275,11 +323,14 @@ A top-level page for browsing every bill received into a warehouse — a super a
 usually does NOT already know an invoice number, they pick a supplier and want to see
 what came in. Was a single exact-invoice-number lookup form until this rework
 (2026-08-05); now a live, paginated, searchable list. List endpoint: `GET
-/admin/procurement/receipt/list?supplierId=&q=&page=&limit=` (aggregates only — one row
-per receipt). Per-row line detail (SKU/batch/qty/mrp) still comes from the same `GET
-/admin/procurement/receive/lookup` endpoint §3a's in-modal panel uses, fetched on demand
-the first time a row is expanded (cached per row after that). Both endpoints gated on
-`WAREHOUSE.RECEIVE_GOODS`.
+/admin/procurement/receipt/list?supplierId=&q=&page=&limit=&view=` (per-receipt totals
+only, no line items — `view` picks one row per invoice+supplier or one row per
+receive-click, see **View toggle** below). Per-row line detail (SKU/batch/qty/mrp) still
+comes from the same `GET /admin/procurement/receive/lookup` endpoint §3a's in-modal
+panel uses, fetched on demand the first time a row is expanded (cached per row after
+that — the cache is dropped whenever a filter changes, including the View toggle, since
+the very same row can have a different answer under the other view). Both endpoints
+gated on `WAREHOUSE.RECEIVE_GOODS`.
 
 - **Sidebar** → **Inventory & Warehouse** → **Verify Bill** (sits right below
   **Receive Goods**). Route: `/warehouse/verify-bill` (unchanged).
@@ -289,13 +340,18 @@ the first time a row is expanded (cached per row after that). Both endpoints gat
   also hides the redundant Supplier column in the table below), **Search** (free text
   over invoice number, debounced 350ms, live-filters as you type — no Search button
   anymore).
-- **Table** (20 bills/page, newest received first): Invoice # (mono) · Supplier (hidden
+- **Table** (20 bills/page, most recently received at the top — in **Aggregated** a bill
+  counts as "recent" by its *latest* receive-action, so a Monday bill topped up on Friday
+  sorts by Friday while still showing Monday's date): Invoice # (mono) · Supplier (hidden
   when a supplier filter is active) · Received · Items (line count) · Units (total qty)
   · Bill (**📎 View**, only shown when a bill was attached) · a chevron. Click **anywhere
   on the row** (or the chevron button) to expand an accordion below it with the SKU /
   Batch / Qty / MRP table + a **Change supplier** button — the same detail content the
   old exact-lookup cards used to show. Only one row is expanded at a time; expanding a
-  second collapses the first.
+  second collapses the first. **Exception:** an **Aggregated** row that really does
+  combine 2+ receive-events shows a short "this invoice combines N separate
+  receive-events — switch to Individual" panel *instead of* the line table and the
+  **Change supplier** button (see **View toggle** below for why).
 - **📎 View** opens a modal previewing the attached bill: images render inline, PDFs
   render inline via `<embed>`, and anything else (Word/Excel/unknown extension) shows a
   "can't preview this" card with the parsed filename + an **Open / Download** button
@@ -320,7 +376,9 @@ the first time a row is expanded (cached per row after that). Both endpoints gat
    table (matches what **Receive goods** recorded) + a **N lines · N units total**
    footer. Click the same row (or its chevron) again → collapses. Expanding a
    **different** row collapses the first — only one open at a time. Re-expanding a row
-   already opened this page load does **not** re-fetch (cached).
+   already opened this page load does **not** re-fetch (cached) — *unless* you changed
+   the warehouse, supplier, search text or View in between, which collapses the open row
+   and drops the cache so the next expand fetches fresh.
 ✅ Click **📎 View** on a bill with an **image** attachment → modal shows the image
    inline + an **Open in new tab** link.
 ✅ Click **📎 View** on a bill with a **PDF** attachment → modal shows it inline via
@@ -348,6 +406,57 @@ mrp, lookup `exists:false`, lookup 400 on missing invoice, last with joined cost
 last `found:false`. *(`GET /admin/procurement/receipt/list` — the new list endpoint —
 ships and is tested alongside the backend change that added it; see that change's own
 test file.)*
+
+**View toggle: Aggregated (default) vs Individual — which bill photo shows**
+
+The filter bar has a **View** pair of buttons: **Aggregated** (default) merges every
+receive-action that used the exact same invoice number + supplier into ONE row with the
+totals summed; **Individual** is the old behaviour, one row per actual receive-click
+(so one bill received over two days shows twice). Real example: bill `INV-77` received
+Monday (10 items) and topped up Friday (4 more) → **Aggregated** shows one row,
+14 items, dated Monday (the original receive), sitting near the top of the list because
+it was *touched* Friday; **Individual** shows two rows.
+
+**A genuinely merged row hides its line detail (2026-08-09).** Expanding the `INV-77`
+row in **Aggregated** does NOT show the item table or **Change supplier** — it shows
+*"This invoice combines 2 separate receive-events…Switch to **Individual** view above to
+see and correct each receipt separately."* Reason: the detail lookup returns one entry
+per receive-action, so the panel could only ever show Monday's 10 items and silently
+hide Friday's 4 — and **Change supplier** would rewrite only ONE of the two events,
+splitting the bill across two suppliers (wrong COGS on a live warehouse ledger) and
+un-merging the row on the next reload. In **Individual** the same two rows expand
+normally, each with its own items and its own working **Change supplier**.
+
+✅ `INV-77` (Monday + Friday) in **Aggregated** → expand → the "combines 2 separate
+   receive-events" message, **no** item table, **no** Change supplier button.
+✅ Switch to **Individual** → expand the Monday row → its 10 items **and** a working
+   **Change supplier** (it targets exactly that one receive-action).
+✅ A normal one-receive bill in **Aggregated** → expands to its item table + Change
+   supplier as usual (the message is only for real merges, and a same-number bill from a
+   *different* supplier, or the same number typed in a different case, does not count as
+   a merge).
+✅ Expand a row, then flip the View toggle **while it is still loading**, then expand the
+   same invoice again → you get the correct panel for the view you are now in. (The
+   half-finished lookup from the old view is discarded rather than being shown — before
+   2026-08-09 it could land late and leave a merged row showing one event's items plus a
+   live Change supplier button.)
+
+On a merged row there can be several receive-actions but only one bill photo, because a
+clerk usually uploads the photo once and doesn't re-scan it for a top-up. The rule
+(backend, fixed 2026-08-09): the merged row shows the **earliest receive-action that
+actually has a photo** — never a blank when a photo exists anywhere on that bill.
+
+✅ Monday receive **with** a bill photo → Friday top-up **without** one → **Aggregated**
+   row still shows **📎 View** with Monday's photo.
+✅ Monday receive **without** a bill photo → Friday top-up **with** one → **Aggregated**
+   row shows **📎 View** with Friday's photo (before the fix this row showed **—** and
+   the only copy of the bill was unreachable from this page).
+✅ Both receives have a photo → the **Monday** (original) one is shown, not Friday's
+   re-scan.
+✅ Neither receive has a photo → the Bill column shows **—** (no View button).
+✅ Switch to **Individual** on any of the above → each row still shows **its own**
+   receive-action's photo (the Friday-only-photo row shows 📎, the photo-less row shows
+   **—**). This view is unchanged by the fix.
 
 **Change supplier (2026-08-05):** each expanded row's accordion has a **"Change
 supplier"** button (top-right of the detail panel, ghost style) so an auditor can fix a
@@ -564,6 +673,9 @@ First make the link: **Items → the item → set Barcode = `PB001`** (same as t
 1. Store-switcher = the store. Sidebar → **Transfers** → **+ New transfer**.
 2. **Source warehouse** = your warehouse → search the item → set **Qty** `30` → **Create transfer**.
    ✅ Status **CREATED**; no stock moved yet.
+   ✅ Clear a line's **Qty** to blank and click **Create transfer** → blocked with an error naming the item (nothing saves; previously omitted silently).
+   ✅ Type a non-whole number (e.g. `2.5`) into **Qty** → blocked with "must be a whole number" error.
+   ✅ Next to **Qty**, a hint shows the warehouse's current available stock (e.g. "12 in stock"). Entering more turns it red ("exceeds available — 12 in stock") and blocks **Create transfer**. This **client-side warning** is best-effort; **Dispatch** enforces the real stock (unchanged). If the stock can't be fetched at that moment, the save is allowed through (fails open).
 3. **Dispatch** the transfer.
    ✅ Warehouse **Available** drops by 30; **store item quantity is unchanged** (golden rule).
    ✅ Expand the transfer → each line shows **Batches (shipped)** (the lots that went out) (CH-3).
@@ -885,6 +997,7 @@ with it.
 | Item search 403s inside **New Transfer** (warehouse mgr) | Known pending — uses the `items.view` catalog endpoint (§15b); super admin works |
 | Warehouse mgr missing Replenishment/Transfers/Recall/Receive Goods in sidebar; clicking *Jump to* bounces back | Admin build behind — `hasPermission()` used to deny **all** permission-gated UI for warehouse roles (only manager/support were checked). Fixed in admin `1969703`; deploy latest admin + hard refresh (⇧⌘R). Note role-gated items (Stock Health, Item Lookup, Warehouses, Suppliers) showed fine even while this bug was live |
 | Order modal shows no "Order Activity" trail | Expected if that order had **no** edits/cancels/refunds/picker short-pick-OOS — it now shows a **"No activity recorded yet"** line. Do an item edit/cancel, or test a picker short-pick, to see rows (or open the **Order Activity** page) |
+| Transfer Qty shows "exceeds available" hint / **Create transfer** blocked | Working as intended — the warehouse's stock is lower than the entered quantity; adjust the quantity or check **Stock Health** / **Item Lookup** for the real available count |
 
 ---
 

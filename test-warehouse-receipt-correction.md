@@ -188,6 +188,62 @@ SKU. The **"Correct receipt…"** button lives in the write-off / adjust panel o
 
 ---
 
+## Walkthrough (Edit line on Verify Bill screen)
+
+**Area:** Admin panel → Warehouses → a warehouse → Receipts (or direct `/warehouse/verify-bill`)
+**Permission:** Pencil icon (edit action) visible only to `warehouse.manage` (manager / super admin).
+`warehouse.receive_goods` (staff) do NOT see the Actions column; instead a caption notes "Ask a manager to correct this bill."
+**Deploy needed:** admin **web deploy**. Backend routes already exist from the Stock Detail correction feature.
+
+On the **Verify Bill** screen (`/warehouse/verify-bill`), expanding a bill's accordion now shows an **Actions** column with an edit (pencil) icon on each line item. This is a second UI entry point to the same correction system, optimized for fixing bills at receipt time (before closing the goods-receipt workflow) rather than hunting through Stock Detail later.
+
+### 1. Permission check — manager sees pencil, staff sees caption
+- ✅ Log in as a **warehouse manager** (or super admin). Expand any bill on Verify Bill. The **Actions** column is visible with a **pencil icon** on each line.
+- ✅ Log in as a **warehouse staff** account (`receive_goods` only). Expand the same bill. The **Actions column is hidden entirely.** Instead, a small caption appears: *"Only managers can correct bill lines. Ask a manager for help."* (or similar wording).
+
+### 2. Single-delivery lot — correction form opens directly
+- ✅ Click the **pencil icon** on a line for a SKU + batch that has been **received exactly once** (that is, the batch lot was created by a single invoice / goods-receipt).
+- ✅ A brief **loading state** displays while the system fetches the lot's current stock, batch data, and movement history.
+- ✅ The **Correct receipt** form opens directly with fields pre-filled from the current lot: **Received qty**, **Expiry date**, **Batch code** (batch warehouse only), **Cost / piece**, and a required **Reason** dropdown. No warning screen.
+- ✅ Edit at least one field and click **Apply** → a confirm dialog → on success the form closes, the bill **remains expanded** (does not collapse), and a note appears under that line: *"Stock for lot [X] was corrected just now. This bill line still shows what was originally entered — that's the audit record."*
+
+### 3. Pooled-lot interstitial — warning screen before form opens
+- ✅ Set up a SKU + batch that has been received **more than once** (e.g., receive `PB001` / `LOT-A` on two separate bills). Expand the second receipt bill and click the **pencil** on the `PB001` line.
+- ✅ A **loading state** appears, then an **interstitial warning screen** displays with a comparison table:
+  - **This invoice's numbers**: shows the received qty, expiry, batch, and cost from **this specific bill**.
+  - **Lot's current total**: shows the **pooled total** across all deliveries that contributed to the lot.
+  - **Impact explanation**: in plain arithmetic (e.g., *"To change this invoice's 40 units to 45, set the lot's total to 101"*) — the manager sees why correcting one invoice changes the lot-wide numbers.
+- ✅ After reading, the manager clicks **Continue** (or **Edit**, or similar) to proceed to the **Correct receipt** form.
+- ✅ The form opens with the same fields as step 2; editing and applying work identically (bill stays expanded, note appears).
+
+### 4. LEGACY / non-batch warehouse — edit works normally
+- ✅ On a **LEGACY / non-batch warehouse** (batch tracking OFF), click the **pencil** on any line.
+- ✅ The system resolves the line to the **LEGACY lot** (the shared placeholder for pre-batch stock in that warehouse / SKU).
+- ✅ The loading state completes and the correction form opens (without the Batch code field, since legacy stock has no batch code).
+- ✅ Correct the qty, cost, or expiry and apply. The correction lands successfully; no *"Lot not found"* or *"Batch not recognized"* error appears.
+
+### 5. Batch-mode warehouse + pre-batch line — pencil is disabled (expected)
+- ✅ On a **batch-mode warehouse** (batch tracking ON), find an older bill line with **no batch code** assigned. This line predates batch tracking on this warehouse and was received as LEGACY stock, not a proper batch lot.
+- ✅ The **pencil icon is dimmed** (visually disabled, dashed border or grayed out).
+- ✅ **Hover or keyboard-focus** the pencil to see the tooltip: *"This receipt predates batch tracking on this warehouse — it can't be corrected from here yet."*
+- ✅ **Click the pencil.** Zero network requests fire (verifiable in browser DevTools → Network tab). No correction form opens, and no error toast appears. This is expected and intentional — correcting these historical pre-batch lines is not yet supported. It requires a future backend change.
+
+### 6. Post-correction state — note, reload behavior, stock visibility
+- ✅ After a successful correction, the note *"Stock for lot [X] was corrected just now. This bill line still shows what was originally entered — that's the audit record."* appears under the corrected line **within the same session** (page NOT reloaded yet).
+- ✅ The **bill line's own displayed numbers** (Received qty, Expiry, Cost, Batch code) **do NOT visually change** — they still show the original entry as it was keyed. This is intentional: the bill is a **frozen historical record**. The actual warehouse stock HAS changed (verifiable via **Warehouses → click the item → Stock detail**), but the receipt document itself is immutable.
+- ✅ **Reload the page** (e.g., `Cmd+R`). The note **disappears** — this is expected and by design, not a bug (session-only state). The bill line still shows the original numbers (the correction is durable, just not shown inline anymore).
+- ✅ Open **Warehouses → the same item → Stock detail**. The lot's current qty, cost, and batch reflect the correction. The **Stock Ledger** shows a `RECEIPT_CORRECTION` movement if a qty was changed, or an audit-log entry if only cost / expiry / batch-name was edited.
+
+### 7. Error handling — proper error distinct from "lot not found"
+- ❌ Simulate a **network error** or **backend failure** (e.g., take the browser offline after clicking pencil, or mock a 500 response). An error message displays, e.g., *"Could not fetch lot data. Please try again."* — distinct from and less final than a "lot not found" error.
+- ❌ The **pencil resets** (loading state clears, icon is clickable again) so the manager can retry without leaving the bill or refreshing.
+- ❌ If the lot **genuinely cannot be found** (e.g., it was renamed or deleted since the page loaded), a separate error reads *"Lot not found"* or *"No lot found for that batch"* — distinct from the transient network error.
+
+### 8. Scope note — "Add item" is a separate, future feature
+- **NOT TESTED IN THIS GUIDE:** The ability to **add a missed line** to an existing bill from the Verify Bill screen is a separate, not-yet-built feature phase. This guide covers **Edit (pencil) only**. When "Add item" ships, it will have its own test section.
+
+---
+
 ## Reading it back
 
 - **Stock Ledger** page (`Warehouse → Stock Ledger`): the movement-type filter now includes

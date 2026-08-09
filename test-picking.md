@@ -98,6 +98,7 @@ Pick tasks are a **shared store pull-queue**, so a new order pings **every** pic
 - ❌ Non-picking store (picking disabled) → no task, no push.
 - Note: notification is **fire-and-forget** — if FCM is down the order/task still creates fine.
   (Covered by `packages/picking/__tests__/auto-create.test.js`.)
+- **CI fix (2026-08-09):** Pick-task creation fires twice — the app calls `ensurePickTaskForOrder()` directly, **and** an `open-order-created` event listener runs in the background when an OPEN order is saved. Tests asserting on the picker notification must **poll** for it (up to 2 seconds) instead of checking instantly after `await`, or they flake ~10% of the time (the background listener wins the race and notifies a moment later). **No behaviour changed:** pickers still get exactly one push per task (unique index on `orderId` guarantees one creator). Test-harness fix only; no production code changed, no re-testing needed.
 
 ### C. Claim an order  (feat: existing flow)
 1. Open **Order A** → **Start picking**.
