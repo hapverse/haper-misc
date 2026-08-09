@@ -1,9 +1,13 @@
 # Test guide — bulk warehouse → Bhagwan Bazar clearance transfer
 
-One-off operation that moves **all** stock held in the Chhapra warehouse into the
+Operation that moves **all** stock held in the Chhapra warehouse into the
 "Haper - Bhagwan Bazar" store as a **single** stock transfer, driven through the
 normal `CREATE → DISPATCH → RECEIVE` lifecycle so the bookkeeping is identical to
 a transfer a human would build in the admin UI.
+
+It is **repeatable**: the warehouse keeps receiving new goods, so the script can
+be run again on a later day to clear whatever has arrived since. Each day's run
+is its own transfer (see [Repeatable clearances](#repeatable-clearances--one-transfer-per-run-not-one-forever)).
 
 **Scripts**
 - `haper-backend/scripts/migrations/bulk-transfer-warehouse-to-bhagwan-bazar.js` — real run (dry-run by default, `--apply` to write)
@@ -14,7 +18,10 @@ a transfer a human would build in the admin UI.
 
 Every `warehouse-stocks` row of the resolved warehouse with `availableQty > 0`
 becomes one line of one transfer. As of the last dump that is **450 lines /
-7,808 units**.
+7,808 units** (the real first run moved 455 lines / 7,916 units as `TR000009`).
+The plan is recomputed **live on every run**, so a later run automatically covers
+only the goods that have arrived since — the numbers below are illustrative, not
+fixed.
 
 It does **not** re-implement the transfer logic. It calls the real admin
 controllers (`packages/admin/src/routes/transfer/controller.js`) with a synthetic
@@ -49,6 +56,11 @@ node scripts/migrations/bulk-transfer-warehouse-to-bhagwan-bazar.js
 It prints the DB **host** and **name** it connected to (never the URI, never
 credentials) and shouts `⚠️` if either looks like production. **Read those two
 lines before doing anything else.**
+
+The banner also prints the **marker** this run belongs to (today's date in IST
+unless `--marker=` is given). The plan itself is read live from `warehouse-stocks`
+each time, so a dry run always reflects the stock in the warehouse *right now*,
+including goods received since the last clearance.
 
 Then it prints the resolved warehouse/store, the plan counts, the sample payload,
 a transaction-size estimate, and confirms the payload passes the real
@@ -98,6 +110,10 @@ plan report, and runs the same gates. ✅ Ends with `All gates pass.`
 cd haper-backend
 SEED_ACTOR_ID=<super admin _id> \
   node scripts/migrations/bulk-transfer-warehouse-to-bhagwan-bazar.js --apply
+
+# second clearance on the same day (rare):
+SEED_ACTOR_ID=<super admin _id> \
+  node scripts/migrations/bulk-transfer-warehouse-to-bhagwan-bazar.js --apply --marker=2026-08-10-batch2
 ```
 
 It re-prints the plan, then asks for an interactive `yes` naming the DB and host.
@@ -126,11 +142,50 @@ server's `transactionLifetimeLimitSeconds` (60s by default on Atlas), the step
 **aborts cleanly and completely** — nothing is half-applied — and the script can
 simply be re-run. Prefer a quiet period. The dry run prints the estimate.
 
-## Resumability — it cannot create a duplicate transfer
+## Repeatable clearances — one transfer per run, not one forever
 
-The transfer's `note` carries a stable marker, `[bulk-wh-clearance-v1]`. Every
-run first searches for a transfer with this warehouse + store + marker and
-resumes from its status:
+The transfer's `note` carries a **date-scoped marker**, built from **today's date
+in IST**:
+
+```
+[bulk-wh-clearance-2026-08-10] Bulk warehouse clearance transfer — 2026-08-10 IST
+```
+
+Every run searches for a transfer with this warehouse + store + **this run's
+marker**, and resumes it. That gives both properties at once:
+
+| Situation | Marker | Result |
+|---|---|---|
+| second run the **same** day (crash / timeout retry) | same | **resumes** the same transfer — never a duplicate for the same batch |
+| run on a **later** day (new goods have arrived) | different | **new** transfer for whatever stock is in the warehouse now |
+
+Options that control the marker:
+
+| Flag | Meaning |
+|---|---|
+| *(none)* | marker = today's date, IST — the normal case |
+| `--marker=2026-08-10-batch2` | a **second** clearance on the same day (e.g. a big goods receipt landed in the afternoon) |
+| `--marker=2026-08-09` | resume a run that **started before midnight** and has to be finished after it — pass the day it started |
+
+The suffix must be 1–40 characters of letters/digits/`.`/`-`/`_`; anything else
+(spaces, brackets, regex characters) is **rejected before the script touches the
+database**.
+
+The banner at the top of every run prints the marker it is using, so it is always
+clear which generation of clearance a run belongs to:
+
+```
+║  MARKER    : [bulk-wh-clearance-2026-08-10]  (today, IST)                  ║
+```
+
+> **History.** The first production run (2026-08-10, `TR000009`, 455 lines /
+> 7,916 units) was made before date-scoping and carries the old fixed marker
+> `[bulk-wh-clearance-v1]`. No date-scoped marker matches it, so it is never
+> resumed, re-received, or double-applied.
+
+### Resumability — it cannot create a duplicate transfer within one run
+
+Against **this run's** marker:
 
 | Found | Behaviour |
 |---|---|
@@ -138,21 +193,36 @@ resumes from its status:
 | `CREATED` | skip create; DISPATCH → RECEIVE |
 | `DISPATCHED` | skip create + dispatch; RECEIVE only |
 | `RECEIVED` | prints "already complete", exits `0`, writes nothing |
-| `CANCELLED` | **aborts** — a human must decide whether to start a fresh run |
+| `CANCELLED` | **aborts** — start a fresh clearance with a different `--marker=<suffix>` |
 | 2+ matches | **aborts** — never guesses which one to continue |
 
 Because each step is individually atomic, a crash or timeout leaves the transfer
 in its previous status, and a re-run picks up exactly there. Nothing is applied
 twice.
 
-✅ To test this without a real failure: run `--apply`, let it finish, then run
-`--apply` again. The second run must print `✅ Already RECEIVED` and write
-nothing — **not** create `TR0000NN+1`.
+✅ **Same-day re-run is a no-op.** Run `--apply`, let it finish, then run
+`--apply` again the same day. The second run must print `✅ Already RECEIVED` and
+write nothing — **not** create `TR0000NN+1`. Even if new stock has landed in the
+warehouse meanwhile, that stock stays put; it is picked up by the next day's run.
+
+✅ **Next day's run is a fresh transfer.** With new stock in the warehouse, a run
+on a later calendar day must create a **new** `TR0000NN+1` (marker = that day's
+date) and move exactly the newly-arrived quantities. Yesterday's transfer must
+stay `RECEIVED` and untouched.
+
+✅ **Two clearances in one day.** After a completed run, `--marker=<today>-batch2`
+must create a second, separate transfer for the stock that arrived after the
+first one.
+
+These three behaviours are covered by the persisted in-memory-Mongo suites
+`haper-backend/packages/admin/__tests__/bulk-warehouse-transfer-apply.test.js`
+and `…-core.test.js`.
 
 ## How to verify in admin
 
 1. **Transfer list** — Inventory → Transfers. One new row, status `RECEIVED`,
-   store "Haper - Bhagwan Bazar", 450 lines, note starting `[bulk-wh-clearance-v1]`.
+   store "Haper - Bhagwan Bazar", note starting with **this run's** marker
+   (e.g. `[bulk-wh-clearance-2026-08-11]`).
    Open it: every line shows `receivedQty == quantity` and carries
    `batchAllocations` (the FEFO lots picked at dispatch).
 2. **Warehouse stock** — Warehouse → Stock. Every SKU that was in the run shows
