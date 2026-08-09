@@ -264,6 +264,39 @@ tests covering dedupe 409, different-supplier ok, blank-invoice skip, lookup gro
 mrp, lookup `exists:false`, lookup 400 on missing invoice, last with joined cost/expiry,
 last `found:false`.
 
+#### Invoice number matching is CASE-INSENSITIVE (fix, 2026-08-09)
+
+**The bug it fixes (seen in real production data):** bill `TS6826` was received (18
+lines). Days later a clerk went to add a missed 19th line to the SAME bill but typed
+`ts6826` in lowercase. Mongo compares strings case-sensitively, so the duplicate check
+found **zero** matching rows — no "already received" warning, and the system quietly
+created a **second, disconnected** bill record instead of pointing at the original.
+
+Both the duplicate guard (`POST /receive`) and the lookup (`GET /receive/lookup`) now
+match the invoice number ignoring upper/lower case, still matching the **whole** number
+(not a substring — `TS6826` does **not** match `TS6826-A`). What gets **saved** is
+unchanged: the invoice number is stored exactly as the clerk typed it. Only the
+comparison ignores case. Nothing changes for any customer app (admin-only path).
+
+**Regression checks:**
+
+✅ Receive `TS6826 / ACME`, then try to receive `ts6826 / ACME` again → same
+   *"already received"* 409 toast you'd get for an exact-case repeat; nothing is written.
+✅ **Verify Bill** / lookup panel: search `ts6826` → the `TS6826` bill is found, and the
+   invoice number on screen still reads **`TS6826`** (original typing preserved).
+✅ Search `TS6826` (exact case) → still works exactly as before.
+❌ Search `TS6826` when only `TS6826-A` exists → **no** match (whole-number match, so a
+   short number can't silently swallow a longer, genuinely different bill).
+
+⚠️ **Known gap, NOT fixed here:** leading/trailing **spaces** are still stored as typed
+(`"  TS6826  "` is saved with its spaces), so a bill entered with stray spaces still
+won't match a later clean `TS6826` — the same silent-duplicate problem, space flavour.
+Pinned by a test so it stays visible; scheduled with the grouping rework.
+
+**Backend tests:** `packages/admin/__tests__/procurement-invoice-case.test.js` — 5 tests:
+different-case dedupe 409, different-case lookup returns original casing, exact-case
+lookup regression, whole-number (non-substring) matching, and the stored-whitespace gap.
+
 > **Link rule (for transfers later):** the warehouse **SKU** must equal the **barcode**
 > of the store item you'll transfer to. Keep `PB001` handy.
 
