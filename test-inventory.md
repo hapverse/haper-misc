@@ -417,18 +417,29 @@ Monday (10 items) and topped up Friday (4 more) → **Aggregated** shows one row
 14 items, dated Monday (the original receive), sitting near the top of the list because
 it was *touched* Friday; **Individual** shows two rows.
 
-**A genuinely merged row hides its line detail (2026-08-09).** Expanding the `INV-77`
-row in **Aggregated** does NOT show the item table or **Change supplier** — it shows
+**A genuinely merged row hides its correction controls (2026-08-09).** Expanding the
+`INV-77` row in **Aggregated** does NOT show **Change supplier** — it shows
 *"This invoice combines 2 separate receive-events…Switch to **Individual** view above to
-see and correct each receipt separately."* Reason: the detail lookup returns one entry
-per receive-action, so the panel could only ever show Monday's 10 items and silently
-hide Friday's 4 — and **Change supplier** would rewrite only ONE of the two events,
-splitting the bill across two suppliers (wrong COGS on a live warehouse ledger) and
-un-merging the row on the next reload. In **Individual** the same two rows expand
-normally, each with its own items and its own working **Change supplier**.
+see and correct each receipt separately."* Reason: **Change supplier** would rewrite
+only ONE of the two events, splitting the bill across two suppliers (wrong COGS on a
+live warehouse ledger) and un-merging the row on the next reload. In **Individual** the
+same two rows expand normally, each with its own items and its own working
+**Change supplier**.
+
+**Merged rows now show a read-only item table too (hotfix, 2026-08-09).** Previously
+expanding `INV-77` in Aggregated showed only the explanation text above, no item detail
+at all. Now it also shows a table of every item across **all** the merged
+receive-events, with columns **Product / Batch / Expiry / Received / Qty / Cost/pc /
+MRP** (**Received** is which receive-event/day that line came from — e.g. Monday or
+Friday). It's purely informational: no **Change supplier** button and no per-line
+Edit/Correct pencil on this table. Switching to **Individual** is still how you correct
+a specific receipt.
 
 ✅ `INV-77` (Monday + Friday) in **Aggregated** → expand → the "combines 2 separate
-   receive-events" message, **no** item table, **no** Change supplier button.
+   receive-events" message, **no** Change supplier button.
+✅ Expand a merged Aggregated row (invoice with 2+ receive-events) → item list from ALL
+   events shows read-only (Product/Batch/Expiry/Received/Qty/Cost/MRP) — no
+   Change-supplier or Edit buttons present.
 ✅ Switch to **Individual** → expand the Monday row → its 10 items **and** a working
    **Change supplier** (it targets exactly that one receive-action).
 ✅ A normal one-receive bill in **Aggregated** → expands to its item table + Change
