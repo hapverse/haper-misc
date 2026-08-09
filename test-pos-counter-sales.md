@@ -65,13 +65,23 @@ the sale fails at the counter.
 
 ---
 
+## Thermal receipt print — paper waste fix
+
+**Symptom:** After switching to a new thermal printer, printing cash sale receipts wastes paper — the printer feeds and ejects a long blank tail after the receipt content completes.
+
+**Why, in plain words.** The receipt-print CSS used `@page { size: 58mm auto; }` to specify 58mm width and auto-adjusting height based on content. The new printer's driver ignored the `auto` height and defaulted to a full fixed page length (typically 8.5 inches / A4 size), causing the printer to feed far more paper than the receipt actually needed.
+
+**The fix** (in `haper-admin/src/utils/thermalPrint.ts` and `src/pages/POS/NewSalePage.tsx`):
+1. **Measure content height exactly.** The receipt-print function now calculates the actual rendered height of the receipt DOM and applies an explicit `@page` height in the CSS, replacing the unreliable `auto` setting. This ensures printers receive correct dimensions and feed only the paper required.
+2. **Paper-width selector (58mm / 80mm).** A new dropdown "Paper: 58mm / 80mm" appears in the POS page header (visible before any sale is rung up) and is persisted to `localStorage`. Both the POS "Print receipt" button and the Order Details Modal's thermal-print flow read this same shared setting, so users configure it once and it applies everywhere.
+3. **Thermal prints only.** This fix affects only the "Print receipt" (browser thermal print) path in `thermalPrint.ts`. It does **not** affect "Print invoice" or "Download invoice" (which generate a backend PDF via a separate code path).
+
+---
+
 ## What deploy this needs
 
-- **Backend redeploy only** (dev: `dapi.haper.in`). The fix is entirely in
-  `packages/admin/src/routes/pos/controller.js`.
-- **No DB migration, no schema change, no API-shape change.** Fully backward compatible.
-- After the backend is deployed, POS and app orders **share the Redis counter** and the
-  E11000 error stops.
+- **Thermal receipt print fix:** Frontend only (`haper-admin` build). The receipt now measures content height and applies exact `@page` dimensions. The paper-width selector (58mm/80mm) is persisted to `localStorage` and shared across POS and Order Details thermal prints. **No backend deploy needed.**
+- **Invoice sequence fix (from earlier):** Backend redeploy only (dev: `dapi.haper.in`). The fix is entirely in `packages/admin/src/routes/pos/controller.js`. **No DB migration, no schema change, no API-shape change.** After the backend is deployed, POS and app orders **share the Redis counter** and the E11000 error stops.
 
 Source (for reference):
 - Endpoint: `packages/admin/src/routes/pos/{router,controller,validator}.js`.
@@ -130,7 +140,41 @@ Source (for reference):
 2. **Expect:** **400 "Insufficient stock…"**, **no order created**, stock **untouched**
    (the transaction rolls back).
 
-### ❌ E. The regression this prevents
+### ✅ E. Thermal receipt print — short page (no paper waste)
+1. Go to POS counter sales on `damin.haper.in`.
+2. Add one in-stock item to a sale and click **Record sale** → the sale closes.
+3. Click **Print receipt** (thermal print).
+4. In the browser print preview (e.g., Chrome's print dialog), observe the page dimensions.
+5. **Expect:**
+   - The preview shows a **single short page** sized to the receipt content (e.g., ~150mm tall
+     for a typical receipt).
+   - **No long blank space** at the bottom (which was the symptom of the old `auto` height bug).
+   - If you print to an actual 58mm thermal printer, it feeds only the receipt, no blank tail.
+
+### ✅ F. Paper-width selector persists to localStorage
+1. Before starting a sale, locate the **"Paper: 58mm / 80mm"** dropdown in the POS page header.
+2. Select **80mm** from the dropdown.
+3. Refresh the page (or navigate away and back to POS).
+4. **Expect:** the dropdown still shows **80mm** — the choice is persisted to `localStorage`.
+5. Now start a sale, add an item, click **Record sale**, and then **Print receipt**.
+6. In the browser print preview, **Expect:** the page width corresponds to 80mm (wider than 58mm).
+7. Switch back to **58mm** in the dropdown and repeat step 5 — the preview should narrow to 58mm.
+
+### ✅ G. Order Details Modal thermal print honors paper-width setting
+1. From an existing closed order (e.g., the one from step E), open the **Order Details Modal**.
+2. In the modal header, confirm the **"Paper: 58mm / 80mm"** dropdown shows the value from step F (it is the same setting shared across POS and order details).
+3. Click the thermal print or **"Print receipt"** button in the modal.
+4. In the browser print preview, **Expect:**
+   - The page width matches the selected paper width (58mm or 80mm from step F).
+   - The page height is short, sized to content (no blank tail).
+
+### ❌ H. Thermal print scope — does not affect PDF invoice
+1. Go to the same order and click **Print invoice** (or **Download invoice**).
+2. **Expect:** the PDF-based invoice download/preview is **unaffected** by the "Paper: 58mm / 80mm" selector.
+   - The PDF invoice is generated server-side and does not use the `thermalPrint.ts` logic.
+   - Changing the paper-width selector does not change the invoice PDF dimensions.
+
+### ❌ I. The regression this prevents (invoice number duplicate)
 - A POS cash sale fails with `E11000 … invoiceNumber_1 dup key`. This must **not** happen
   after the fix — if you see it, the backend box is a build behind (redeploy needed), or
   see the prod reconcile fallback below.
@@ -151,6 +195,10 @@ Source (for reference):
 - **Order shape stays stable.** POS orders are always `channel: "pos"`, `status: CLOSED`,
   `paymentMethod: COD`, `addressId: null`, `deliveredOn` set, `meta.id = "pos_<invoice>"`.
   Reports and other apps that read orders must keep working (backward compatible).
+- **Thermal print paper-width scope.** The "Paper: 58mm / 80mm" selector applies only to
+  browser thermal prints (POS "Print receipt" and Order Details Modal thermal print). It does
+  **not** affect backend-generated PDFs like "Print invoice" / "Download invoice" (which are
+  separate server-side PDF flows).
 
 ---
 
