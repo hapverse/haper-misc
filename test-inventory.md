@@ -564,6 +564,9 @@ First make the link: **Items → the item → set Barcode = `PB001`** (same as t
 1. Store-switcher = the store. Sidebar → **Transfers** → **+ New transfer**.
 2. **Source warehouse** = your warehouse → search the item → set **Qty** `30` → **Create transfer**.
    ✅ Status **CREATED**; no stock moved yet.
+   ✅ Clear a line's **Qty** to blank and click **Create transfer** → blocked with an error naming the item (nothing saves; previously omitted silently).
+   ✅ Type a non-whole number (e.g. `2.5`) into **Qty** → blocked with "must be a whole number" error.
+   ✅ Next to **Qty**, a hint shows the warehouse's current available stock (e.g. "12 in stock"). Entering more turns it red ("exceeds available — 12 in stock") and blocks **Create transfer**. This **client-side warning** is best-effort; **Dispatch** enforces the real stock (unchanged). If the stock can't be fetched at that moment, the save is allowed through (fails open).
 3. **Dispatch** the transfer.
    ✅ Warehouse **Available** drops by 30; **store item quantity is unchanged** (golden rule).
    ✅ Expand the transfer → each line shows **Batches (shipped)** (the lots that went out) (CH-3).
@@ -885,6 +888,7 @@ with it.
 | Item search 403s inside **New Transfer** (warehouse mgr) | Known pending — uses the `items.view` catalog endpoint (§15b); super admin works |
 | Warehouse mgr missing Replenishment/Transfers/Recall/Receive Goods in sidebar; clicking *Jump to* bounces back | Admin build behind — `hasPermission()` used to deny **all** permission-gated UI for warehouse roles (only manager/support were checked). Fixed in admin `1969703`; deploy latest admin + hard refresh (⇧⌘R). Note role-gated items (Stock Health, Item Lookup, Warehouses, Suppliers) showed fine even while this bug was live |
 | Order modal shows no "Order Activity" trail | Expected if that order had **no** edits/cancels/refunds/picker short-pick-OOS — it now shows a **"No activity recorded yet"** line. Do an item edit/cancel, or test a picker short-pick, to see rows (or open the **Order Activity** page) |
+| Transfer Qty shows "exceeds available" hint / **Create transfer** blocked | Working as intended — the warehouse's stock is lower than the entered quantity; adjust the quantity or check **Stock Health** / **Item Lookup** for the real available count |
 
 ---
 
