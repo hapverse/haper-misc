@@ -9,7 +9,7 @@
 
 POS = "point of sale". A customer walks into the store, picks up 3 packets of atta, and
 pays cash at the counter. The store admin opens the admin panel, adds those 3 packets,
-optionally types the customer's phone, and taps **Record sale**. The backend:
+**must type the customer's phone (now required)**, and taps **Record sale**. The backend:
 
 1. Resolves the customer (see below).
 2. Decrements stock **atomically** (oldest-expiry-first when batches are on — FEFO).
@@ -19,11 +19,18 @@ optionally types the customer's phone, and taps **Record sale**. The backend:
 6. Returns **HTTP 201** with `{ order, invoiceNumber }`.
 
 **Customer resolution:**
-- **Phone given** → find-or-create a user keyed exactly like the app OTP login
+- **Phone is now REQUIRED** (2026-08-10 change): a valid 10-digit Indian mobile matching
+  `/^[6-9]\d{9}$/`. The request is **rejected with 400** before it reaches the controller if
+  the phone is missing or malformed — no order is created, nothing is decremented.
+- Given a valid phone → find-or-create a user keyed exactly like the app OTP login
   (`{ sType: PHONE, phone }`), so if that customer later logs into the app they land on
   the same account and see this purchase.
-- **No phone (walk-in)** → one shared "Walk-in Customer" account (sentinel phone
-  `POS-GUEST`, non-numeric so a real OTP login can never match it).
+- **Legacy note:** there used to be a "no phone → shared Walk-in Customer" fallback
+  (sentinel phone `POS-GUEST`, non-numeric so a real OTP login can never match it). That
+  code path (`resolveCustomer`'s guest branch in `controller.js`) is now **unreachable** via
+  the API — the validator rejects phone-less requests first — but is left in place as
+  dead-but-harmless code. The `POS-GUEST` account and its **historical** orders still exist
+  in prod, untouched; no data migration happened, only the new-sale path changed.
 
 ---
 
@@ -129,11 +136,23 @@ Source (for reference):
 1. **With phone:** record a sale with a customer phone (e.g. `9990001111`). **Expect:** the
    order links to the `{ sType: PHONE, phone: 9990001111 }` user — creating it if new,
    reusing it if that app user already exists (no duplicate account).
-2. **Walk-in (no phone):** record a sale with **no** phone. **Expect:** it links to the
-   **shared** `POS-GUEST` "Walk-in Customer" account; `order.customer.phone` is `null`.
-3. **Customer search:** `GET /admin/pos/customer-search?q=<3+ digits>` finds a user **by
+2. **Customer search:** `GET /admin/pos/customer-search?q=<3+ digits>` finds a user **by
    phone globally** — even one who has never ordered at this store (useful for a brand-new
    store). Fewer than 3 characters returns an empty list.
+
+### ❌ C2. Phone is mandatory (2026-08-10) — missing/malformed phone is rejected
+1. On the admin **New Sale** page, add an item to the cart but leave the customer phone
+   field empty. **Expect:** the **"Complete sale"** button stays **disabled**, and the phone
+   field shows a red border + inline hint ("Enter a valid 10-digit phone number") once you've
+   typed something invalid.
+2. Type a malformed phone (too short, e.g. `12345`, or starting with a digit outside `6-9`,
+   e.g. `0123456789`). **Expect:** same disabled-button + red-hint state — the sale cannot be
+   submitted from the UI.
+3. Type a valid 10-digit phone (e.g. `9876543210`). **Expect:** the red hint clears and
+   "Complete sale" becomes enabled.
+4. **Direct API check (optional):** `POST /admin/pos/sale` with `customerPhone` omitted, or
+   set to `"12345"` / `"0123456789"`. **Expect: HTTP 400**, validation error mentioning phone,
+   and **no order created** (nothing decremented, no ledger row).
 
 ### ✅ D. Insufficient stock is rejected cleanly
 1. Try to sell more units than are in stock.
@@ -220,10 +239,13 @@ cd packages/admin && NODE_ENV=test npx jest pos-invoice-sequence pos-sale
   - It **spies Redis** (`distributedCacheUtils.incr`/`seedIfNeeded`) to simulate the
     Redis-ahead / Mongo-lagging split, because the in-memory env has no real Redis (without
     the spy both counters would agree and the bug wouldn't reproduce).
-- **`packages/admin/__tests__/pos-sale.test.js`** (existing happy-path suite): cash sale +
-  stock decrement + `SALE` ledger row + customer-by-phone linking, existing-user reuse,
-  shared walk-in customer, insufficient-stock rejection, and `orders.create_pos` permission
-  gating on both endpoints.
+- **`packages/admin/__tests__/pos-sale.test.js`** (existing happy-path suite, updated
+  2026-08-10 for mandatory phone): cash sale + stock decrement + `SALE` ledger row +
+  customer-by-phone linking, existing-user reuse, insufficient-stock rejection, and
+  `orders.create_pos` permission gating on both endpoints. Now also covers:
+  - **Missing phone → 400**, no order created (replaces the old "shared walk-in customer"
+    success case, which is no longer reachable).
+  - **Malformed phone → 400** (e.g. `"12345"`, `"0123456789"`), no order created.
 
 ---
 
@@ -290,6 +312,7 @@ db.sequences.updateOne(
 |---|---|
 | POS sale returns **403** | The admin account lacks `orders.create_pos`. |
 | POS sale returns **400 "Store context required."** | No `x-store-id` header / no store selected. |
+| POS sale returns **400 "Customer phone is required (10-digit mobile number)"** | Phone was omitted or doesn't match `/^[6-9]\d{9}$/` (mandatory since 2026-08-10). On the admin UI this shows as a disabled "Complete sale" button, not a toast. |
 | POS sale returns **400 "Only cash sales…"** | `paymentMode` was not `"cash"` (online is Phase B). |
 | POS sale returns **400 "Insufficient stock…"** | Not enough on-hand for a line; nothing is decremented (transaction rolled back). |
 | POS sale fails with **E11000 … invoiceNumber_1** | The fix is not deployed on this box (redeploy the backend). If it persists **after** deploy, use the prod reconcile fallback above (user-run). |
