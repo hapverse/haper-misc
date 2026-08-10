@@ -57,6 +57,25 @@ Quick sanity that the retry/idempotency wrapper didn't change existing behavior:
   second Cancel on the same order returns the **"already Cancelled"** note (no double refund).
 - ✅ Cancelled order → **Open** (reopen) → wallet clawback + stock re-deducted as before.
 
+## 6. Orders list page tiles only count live orders  (money-display bug fix)
+The admin **Orders → Live tab** shows four/five tiles above the table: **Orders on page**,
+**Revenue on page**, **Profit on page** (super admin only), **Ongoing**, **Failed / canceled**.
+Previously "Revenue on page"/"Profit on page" summed **every** order on the page regardless of
+status — reported via a screenshot where a page of 8 orders (7 cancelled/failed, 1 live ₹166
+order) showed **₹1,346 revenue** instead of ₹166.
+1. Admin → **Orders** (Live tab), filter/browse to a page mixing live and dead orders (e.g. a
+   few Open/Closed orders alongside some Cancelled/Payment Failed/Admin Cancelled ones).
+   ✅ **Revenue on page** / **Profit on page** only sum orders whose status is one of:
+   `OPEN, PICKING, PACKED, ASSIGNED, PROCESSING, OUT_FOR_DELIVERY, CLOSED, PAYMENT_SUCCESS`.
+   ✅ **Failed / canceled** counts orders whose status is one of:
+   `CANCELED, FAILED, UN_DELIVERED, ADMIN_CANCELED, PAYMENT_FAILED, PAYMENT_CANCELLED`.
+   ❌ A page full of cancelled/failed orders should show **₹0** revenue/profit, not a sum of
+   their `totalAmount`.
+2. A refunded order (`REFUND_INITIATED` / `REFUND_FAILED` / `REFUND_SUCCESS`) is deliberate:
+   ✅ it counts toward **neither** the revenue/profit tiles **nor** "Failed / canceled" — it was
+   a real sale but isn't page revenue. (Revisit only if admins ask for a dedicated Refunds tile.)
+   ✅ **Orders on page** still counts it (it's still an order on the page).
+
 ---
 
 ### Notes for devs
@@ -67,3 +86,8 @@ Quick sanity that the retry/idempotency wrapper didn't change existing behavior:
   bounded retry loop (fresh session per attempt) and short-circuits when the order is already in
   the requested status.
 - Covered by `packages/admin/__tests__/order-close-notification.test.js` (Issue 2 + Issue 5).
+- §6 (page-tiles bug) logic lives in `haper-admin/src/utils/orders.ts`
+  (`REVENUE_COUNTED_STATUSES`, `FAILED_ORDER_STATUSES`, `computeOrdersPageSummary`) — extracted
+  out of `OrdersList.tsx`'s `useMemo` so it's unit-testable without rendering the page. Covered
+  by `haper-admin/src/utils/orders.test.ts` (`describe('computeOrdersPageSummary', ...)`), which
+  pins the exact reported 8-order fixture.
