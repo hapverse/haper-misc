@@ -74,14 +74,28 @@ the sale fails at the counter.
 
 ## Thermal receipt print — paper waste fix
 
-**Symptom:** After switching to a new thermal printer, printing cash sale receipts wastes paper — the printer feeds and ejects a long blank tail after the receipt content completes.
+**Symptom:** After switching to a new thermal printer, printing cash sale receipts wastes paper — the printer feeds and ejects a long blank tail after the receipt content completes. Additionally, the rightmost columns of the receipt (e.g., "Total" headers or item amounts) could be clipped on some printers.
 
 **Why, in plain words.** The receipt-print CSS used `@page { size: 58mm auto; }` to specify 58mm width and auto-adjusting height based on content. The new printer's driver ignored the `auto` height and defaulted to a full fixed page length (typically 8.5 inches / A4 size), causing the printer to feed far more paper than the receipt actually needed.
 
+Additionally, **real thermal printers physically print narrower than their nominal paper size** (e.g., a 58mm printer prints approximately 48mm, not 55mm). This mismatch caused the rightmost content to clip on the right edge. Two different printers (a 50mm Bluetooth label printer and a 58mm Seznik Veer model 0472) were affected.
+
 **The fix** (in `haper-admin/src/utils/thermalPrint.ts` and `src/pages/POS/NewSalePage.tsx`):
 1. **Measure content height exactly.** The receipt-print function now calculates the actual rendered height of the receipt DOM and applies an explicit `@page` height in the CSS, replacing the unreliable `auto` setting. This ensures printers receive correct dimensions and feed only the paper required.
-2. **Paper-width selector (58mm / 80mm).** A new dropdown "Paper: 58mm / 80mm" appears in the POS page header (visible before any sale is rung up) and is persisted to `localStorage`. Both the POS "Print receipt" button and the Order Details Modal's thermal-print flow read this same shared setting, so users configure it once and it applies everywhere.
-3. **Thermal prints only.** This fix affects only the "Print receipt" (browser thermal print) path in `thermalPrint.ts`. It does **not** affect "Print invoice" or "Download invoice" (which generate a backend PDF via a separate code path).
+
+2. **Corrected printable-width defaults for built-in presets.** The app now uses conservative, real-world printable widths (with safe margins against clipping):
+   - **50mm preset** → approximately 44mm printable (previously assumed ~47mm)
+   - **58mm preset** → approximately 48mm printable (previously assumed ~55mm)
+   - **80mm preset** → approximately 72mm printable (previously assumed ~77mm)
+   
+   Existing users on these presets get the fix automatically on their next print — **no configuration action needed**. Receipt content will print slightly narrower (more centered) than before, but will no longer clip the right edge.
+
+3. **Paper-width selector with Custom calibration.** A new dropdown "Paper: 50mm / 58mm / 80mm / Custom…" appears in the POS page header (visible before any sale is rung up) and is persisted to `localStorage`. 
+   - The built-in **50mm**, **58mm**, and **80mm** options use the corrected defaults above.
+   - A new **Custom…** option lets users enter the exact printable width of their specific printer model (allowable range: 44–100mm). The custom value is persisted to `localStorage` and used for every future print until changed. If a user types an out-of-range value and blurs the input, it automatically snaps back to the last valid calibrated value (never accepting an unsafe width for printing).
+   - The same setting is shared across POS "Print receipt" and the Order Details Modal's thermal-print flow, so users configure it once and it applies everywhere.
+
+4. **Thermal prints only.** This fix affects only the "Print receipt" (browser thermal print) path in `thermalPrint.ts`. It does **not** affect "Print invoice" or "Download invoice" (which generate a backend PDF via a separate code path).
 
 ---
 
@@ -158,7 +172,7 @@ first in that stale list.
 - **Barcode scanner fix (from this session):** Frontend only (`haper-admin` build). The
   fix is entirely in `haper-admin/src/pages/POS/NewSalePage.tsx` — no backend/API contract
   change. **No backend deploy needed.**
-- **Thermal receipt print fix:** Frontend only (`haper-admin` build). The receipt now measures content height and applies exact `@page` dimensions. The paper-width selector (58mm/80mm) is persisted to `localStorage` and shared across POS and Order Details thermal prints. **No backend deploy needed.**
+- **Thermal receipt print fix:** Frontend only (`haper-admin` build). The receipt now measures content height and applies exact `@page` dimensions. Printable-width defaults are corrected for 50mm/58mm/80mm presets. The paper-width selector (50mm/58mm/80mm/Custom…) with custom calibration is persisted to `localStorage` and shared across POS and Order Details thermal prints. **No backend deploy needed.**
 - **Invoice sequence fix (from earlier):** Backend redeploy only (dev: `dapi.haper.in`). The fix is entirely in `packages/admin/src/routes/pos/controller.js`. **No DB migration, no schema change, no API-shape change.** After the backend is deployed, POS and app orders **share the Redis counter** and the E11000 error stops.
 
 Source (for reference):
@@ -242,29 +256,47 @@ Source (for reference):
    - If you print to an actual 58mm thermal printer, it feeds only the receipt, no blank tail.
 
 ### ✅ F. Paper-width selector persists to localStorage
-1. Before starting a sale, locate the **"Paper: 58mm / 80mm"** dropdown in the POS page header.
+1. Before starting a sale, locate the **"Paper: 50mm / 58mm / 80mm / Custom…"** dropdown in the POS page header.
 2. Select **80mm** from the dropdown.
 3. Refresh the page (or navigate away and back to POS).
 4. **Expect:** the dropdown still shows **80mm** — the choice is persisted to `localStorage`.
 5. Now start a sale, add an item, click **Record sale**, and then **Print receipt**.
 6. In the browser print preview, **Expect:** the page width corresponds to 80mm (wider than 58mm).
 7. Switch back to **58mm** in the dropdown and repeat step 5 — the preview should narrow to 58mm.
+8. **Note on corrected defaults:** You may notice the printed content appears slightly narrower (more centered) than before on 58mm/80mm presets. This is expected — the app now uses the true printable widths of real thermal printers (58mm preset prints ~48mm, 80mm prints ~72mm) instead of the old optimistic assumptions, so no rightmost column clipping occurs. **No user action is needed** — existing 50mm/58mm/80mm settings automatically get the safer defaults on the next print.
 
-### ✅ G. Order Details Modal thermal print honors paper-width setting
+### ✅ G. Custom paper width — calibrate and persist across page refresh
+1. In the POS page header, open the paper-width dropdown and select **Custom…**. **Expect:** a number input field appears labeled "Printable width (mm)".
+2. Clear the input and type a valid custom width, e.g., `65` (representing 65mm for a specific printer model).
+3. Press Tab or click elsewhere to blur the input field. **Expect:** the value stays at 65, the dropdown still shows "Custom…", and no error or warning appears.
+4. Refresh the page. **Expect:** the dropdown still shows "Custom…" and the input still displays `65` — the value is persisted to `localStorage`.
+5. Start a new cash sale, add an in-stock item, and click **Record sale**.
+6. Click **Print receipt** and observe the browser print preview. **Expect:** the page width is approximately 65mm (narrower than 80mm, wider than the default 58mm preset).
+7. Optionally: open an existing closed order's details, verify the paper-width dropdown there also shows "Custom…" with the same 65mm value, and print a receipt to confirm the same 65mm width is used in both places (shared setting).
+
+### ❌ H. Custom paper width — out-of-range values are clamped, not accepted
+1. In the paper-width dropdown, select **Custom…** to reveal the number input.
+2. Type `30` in the input field (below the 44mm minimum).
+3. Press Tab or click elsewhere to blur the field. **Expect:** the value **snaps back** to the last valid value (e.g., 44mm or whatever was previously calibrated) — it does **not** stay at 30.
+4. Try the high side: type `150` in the input (above the 100mm maximum).
+5. Blur the field. **Expect:** the value snaps back to the last valid value (e.g., 100mm or whatever was previously calibrated) — it does **not** stay at 150.
+6. **Verify safety:** start a sale, add an item, record it, and print a receipt. **Expect:** the print uses the clamped valid value, not the rejected out-of-range value — confirming the app silently rejected the unsafe input and restored a safe default for printing.
+
+### ✅ I. Order Details Modal thermal print honors paper-width setting
 1. From an existing closed order (e.g., the one from step E), open the **Order Details Modal**.
-2. In the modal header, confirm the **"Paper: 58mm / 80mm"** dropdown shows the value from step F (it is the same setting shared across POS and order details).
+2. In the modal header, confirm the **"Paper: 50mm / 58mm / 80mm / Custom…"** dropdown shows the value from step F or G (it is the same setting shared across POS and order details).
 3. Click the thermal print or **"Print receipt"** button in the modal.
 4. In the browser print preview, **Expect:**
-   - The page width matches the selected paper width (58mm or 80mm from step F).
+   - The page width matches the selected paper width (50mm, 58mm, 80mm, or the custom calibrated value).
    - The page height is short, sized to content (no blank tail).
 
-### ❌ H. Thermal print scope — does not affect PDF invoice
+### ❌ J. Thermal print scope — does not affect PDF invoice
 1. Go to the same order and click **Print invoice** (or **Download invoice**).
-2. **Expect:** the PDF-based invoice download/preview is **unaffected** by the "Paper: 58mm / 80mm" selector.
+2. **Expect:** the PDF-based invoice download/preview is **unaffected** by the "Paper: 50mm / 58mm / 80mm / Custom…" selector.
    - The PDF invoice is generated server-side and does not use the `thermalPrint.ts` logic.
    - Changing the paper-width selector does not change the invoice PDF dimensions.
 
-### ❌ I. The regression this prevents (invoice number duplicate)
+### ❌ K. The regression this prevents (invoice number duplicate)
 - A POS cash sale fails with `E11000 … invoiceNumber_1 dup key`. This must **not** happen
   after the fix — if you see it, the backend box is a build behind (redeploy needed), or
   see the prod reconcile fallback below.
@@ -285,10 +317,11 @@ Source (for reference):
 - **Order shape stays stable.** POS orders are always `channel: "pos"`, `status: CLOSED`,
   `paymentMethod: COD`, `addressId: null`, `deliveredOn` set, `meta.id = "pos_<invoice>"`.
   Reports and other apps that read orders must keep working (backward compatible).
-- **Thermal print paper-width scope.** The "Paper: 58mm / 80mm" selector applies only to
+- **Thermal print paper-width scope.** The "Paper: 50mm / 58mm / 80mm / Custom…" selector applies only to
   browser thermal prints (POS "Print receipt" and Order Details Modal thermal print). It does
   **not** affect backend-generated PDFs like "Print invoice" / "Download invoice" (which are
   separate server-side PDF flows).
+- **Custom width validation.** When a cashier types an out-of-range value (below 44mm or above 100mm) in the Custom printable-width input and blurs the field, the value automatically snaps back to the last valid calibrated value. The app never persists or prints at an unsafe width — this is a silent correction, not an error toast.
 
 ---
 
