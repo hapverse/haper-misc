@@ -85,8 +85,79 @@ the sale fails at the counter.
 
 ---
 
+## Barcode scanner — wrong item re-added on fast scans (fixed)
+
+**Symptom:** on the **New Sale** page, scanning a barcode with a USB/Bluetooth scanner
+(which types + hits Enter in well under 100ms) could add the **PREVIOUS** scanned item
+instead of the new one. A missed match also left the search box uncleared, so the next
+scan's characters concatenated onto the stale text.
+
+**Why, in plain words.** The Enter-handler trusted the 300ms-debounced `results` list from
+`useItemSearch`. A scanner is faster than 300ms, so on the next scan that list could still
+be showing the *previous* query's matches when Enter fired — and the code added whatever was
+first in that stale list.
+
+**The fix** (in `haper-admin/src/pages/POS/NewSalePage.tsx`):
+1. Enter now **unconditionally clears the search box** and does its own **direct,
+   authoritative barcode lookup** (`GET /admin/item/catalog?q=<value>`) — it no longer
+   trusts the debounced `results` list.
+2. A miss now shows a **`No item found for barcode <value>` error toast** instead of
+   silently clearing.
+3. An **epoch/generation guard** (`saleEpoch`) was added: if a barcode lookup is still
+   in flight when the sale is completed or the cart is cleared, its result can **never**
+   land in the cart afterward. This closed a critical regression found during review of
+   the first fix attempt.
+4. Clicking a search-result row also clears the search box now, so a stray Enter/scan
+   right after a manual click can't re-add the same item.
+
+**Known, intentionally deferred — not part of this fix, do not re-report as a bug:**
+- Typing a product **name** (not a barcode) with exactly one matching result used to
+  auto-add on Enter; that convenience fallback was the root cause of the bug and has been
+  **removed, not reinstated**. Only an **exact barcode match** auto-adds on Enter — a
+  name-search result must be **clicked** to add it.
+- A scan that resolves **after** the sale has already closed is now silently dropped with
+  **no toast** telling the cashier it didn't make it in. Narrow-window edge case, flagged
+  as a known follow-up.
+
+### ✅ J. Back-to-back fast scans add two separate lines (the primary regression check)
+1. On the **New Sale** page, scan item A with a real barcode scanner, then **immediately**
+   scan item B (back-to-back, as fast as the scanner allows).
+2. **Expect:** the cart shows **item A qty 1** and **item B qty 1** as **two separate
+   lines** — item B must never overwrite or duplicate item A's line, and item A must never
+   reappear under item B's row.
+
+### ✅ K. Unknown barcode shows an error, cart unchanged
+1. Scan (or type + Enter) a barcode that doesn't match any item.
+2. **Expect:** a **`No item found for barcode <value>`** error toast. The cart is
+   **unchanged**, and the search box is cleared (ready for the next scan).
+
+### ✅ L. Scan in flight when the sale completes must not land in the cart afterward
+1. Add one item to the cart the normal way, then scan a **second** item and, **before its
+   lookup visibly resolves**, click **Record sale** to complete the sale.
+2. **Expect:** the sale completes normally for the first item only. After the sale closes
+   and the cart resets, the second (in-flight) scan does **not** appear in the cart — it
+   is silently dropped, not added to the next customer's sale.
+
+### ❌ M. Name-search no longer auto-adds on Enter (known gap, not a defect)
+1. Type a product **name** (not a barcode) that matches **exactly one** item, and press
+   Enter.
+2. **Expect:** the item is **NOT** added — this convenience fallback was removed as part
+   of the barcode fix (it was the root cause). The cashier must **click** the result row
+   to add an item found by name search.
+
+### ❌ N. Very-late scan after sale-complete is silently dropped (known gap, not a defect)
+1. Scan an item, then complete or clear the sale before the lookup resolves (see step L).
+2. **Expect:** no toast/warning appears telling the cashier the scan was dropped — this is
+   a known, narrow-window limitation. If a cashier is unsure whether an item was rung up,
+   they should just re-scan it on the next sale.
+
+---
+
 ## What deploy this needs
 
+- **Barcode scanner fix (from this session):** Frontend only (`haper-admin` build). The
+  fix is entirely in `haper-admin/src/pages/POS/NewSalePage.tsx` — no backend/API contract
+  change. **No backend deploy needed.**
 - **Thermal receipt print fix:** Frontend only (`haper-admin` build). The receipt now measures content height and applies exact `@page` dimensions. The paper-width selector (58mm/80mm) is persisted to `localStorage` and shared across POS and Order Details thermal prints. **No backend deploy needed.**
 - **Invoice sequence fix (from earlier):** Backend redeploy only (dev: `dapi.haper.in`). The fix is entirely in `packages/admin/src/routes/pos/controller.js`. **No DB migration, no schema change, no API-shape change.** After the backend is deployed, POS and app orders **share the Redis counter** and the E11000 error stops.
 

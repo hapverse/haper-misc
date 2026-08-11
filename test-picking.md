@@ -354,19 +354,36 @@ On **Order B**, mark one line out of stock:
 4. ✅ **Last five scans** stay on screen, most recent first, in memory only. Leave the screen →
    they vanish.
 5. ✅ **Pull to refresh** re-downloads the barcode list mid-walk.
+6. **Scan flow is Done-gated, not continuous:** tap **Start scanning** → camera opens → scan **one**
+   barcode → camera closes automatically and the result card appears on the landing screen → picker
+   reviews it → taps **"Done — scan next"** on that (newest) card → camera reopens for the next scan.
+   - ✅ The camera does **not** stay open firing off scan after scan — every scan needs its own
+     Done tap before the next one can happen. This gives the picker time to actually read each
+     result instead of the camera racing ahead.
+   - ✅ While a scan's server lookup is still pending (spinner card "Checking last scan…"), the
+     **Start scanning** button is hidden — it only comes back once that card resolves, so the
+     picker can't kick off a second scan whose result would misleadingly outrank the one still
+     in flight.
 
 #### Known barcode
 1. Scan a barcode you know is in the list (any item the store stocks).
    - ✅ Result appears **instantly** (no network needed); shows **product name, image, weight + unit,
-     MRP**.
+     MRP, and Qty** (stock quantity — e.g. "Qty: 12"). ✅ If the backend has no quantity data for
+     that item, it shows **"Qty: —"** (dash), not a misleading "Qty: 0" (0 is a real "confirmed no
+     stock" value, "—" means "unknown").
    - ✅ **Shelf location shows only when it is a real value** (e.g. `A3`, `D6`). Hidden for:
      `DefaultShelf1` (the placeholder on ~1,296 items), empty/blank (110 items). Only ~174 items
      have a genuine shelf code. (Because shelf is often wrong/empty in production, hiding it avoids
      misinformation.)
+   - ✅ Tap **"Done — scan next"** on the card → camera reopens for the next scan.
 
 #### Unknown barcode (never existed)
 1. Scan a barcode that is **not** in the system.
    - ✅ After the server checks, a clear **"Not recognised"** message appears.
+   - ✅ **One tone only** — a distinct error tone (not a success beep followed by an error tone).
+     The camera itself stays silent on capture in this tool; the app decides success vs error
+     once it knows the actual result, so the picker never hears a misleading "success" beep for
+     a barcode that turns out unknown or fails to look up.
 
 #### Barcode added *after* the download
 1. An item is **added to the system** (new item in catalog). Its barcode is added to the master
