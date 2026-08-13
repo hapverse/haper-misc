@@ -440,3 +440,75 @@ vitest.config.ts
 + src/components/layout/AdminLayout.test.tsx (new — Fix 6 proven through the real Sign out
   button, not by calling the store's logout() directly)
 ```
+
+---
+
+## Fix 8 (2026-08-13) — Product Master is super-admin only
+
+**What changed (business decision, not a bug):** creating/editing products in the global
+catalogue is now centralized at the company level. **Product Master** used to be open to
+`super_admin` **and** `warehouse_manager`; it is now **`super_admin` only** — both the
+sidebar item and the `/products` URL. The backend now matches: **every** route on
+`/admin/product` (list, detail, create, assign, upload-image, set-barcode, generate-barcode,
+generate-missing-barcodes, edit, status) is `requireRole(SUPER_ADMIN)` — done 2026-08-13 in
+`haper-backend`, `packages/admin/src/routes/product/router.js`. The old "anyone with the
+`CATEGORIES.VIEW` catalogue permission may browse the master" fallback is gone too, so a
+`manager` / `support` / `store_admin` now gets 403 on the list as well.
+
+**The thing most likely to break here:** in the admin code, `/products` and
+`/warehouse-staff` used to sit behind **one shared role gate**. Restricting Product Master
+by editing that shared gate would have *also* locked the warehouse manager out of
+**Warehouse Staff**, which must NOT happen. The gate was split into two, so Warehouse
+Staff is worth testing explicitly even though nothing about it was meant to change.
+
+### ✅ Steps — warehouse_manager loses Product Master
+1. Log in as `warehouse_manager`. Look under the **Catalog** section of the sidebar.
+2. **Expect:** **Product Master** is **not** listed (one fewer sidebar item than before).
+   ❌ Old: it was listed and opened normally.
+3. Open the top search / command box and type `product master`, `catalogue`, `onboard`.
+   **Expect:** no Product Master result.
+4. Type the URL directly while still logged in as `warehouse_manager`:
+   `damin.haper.in/products`.
+   **Expect:** it redirects straight back to the **Dashboard** — no error page, no
+   half-loaded product list.
+
+### ✅ Steps — Warehouse Staff is UNCHANGED for warehouse_manager (regression guard)
+1. Still logged in as `warehouse_manager`, look under **Inventory & Warehouse**.
+2. **Expect:** **Warehouse Staff** is still listed.
+3. Open it (or go to `damin.haper.in/warehouse-staff` directly).
+   **Expect:** the page loads normally and the manager can still add/edit staff for their
+   own warehouse — exactly as before this change.
+   ❌ If this bounces to the Dashboard, the route split was done wrong — report it.
+
+### ✅ Steps — super_admin is unaffected
+1. Log in as `super_admin`. **Expect:** **Product Master** still in the **Catalog**
+   section, opens normally, and create / edit / assign-to-store / discontinue all still
+   work. **Warehouse Staff** also unchanged.
+
+### Edge cases
+- A `warehouse_manager` with an **old bookmark** to `/products`: lands on the Dashboard.
+  That is the intended behaviour, not a bug.
+- `warehouse_staff`, `store_admin`, `manager`, `support`: never had Product Master and
+  still don't — nothing to re-test beyond confirming it is absent.
+- Frontend hiding is **not** the security boundary: after the `haper-backend` deploy,
+  `/admin/product` returns **403** for a warehouse manager (and for manager/support/store
+  admin) even if the URL is reached some other way. Verify with a direct API call, not just
+  the UI.
+- **Receive Goods must still work for a warehouse manager.** They can no longer *create* a
+  product, so if a delivery contains an item that is not in the master yet, a super admin
+  has to add it first. Worth walking once end-to-end after the deploy — this is the most
+  likely real-world friction from this change.
+
+### ❌ Steps — API-level check (backend half)
+1. With a `warehouse_manager` token, call `GET /admin/product`, `POST /admin/product`,
+   `POST /admin/product/:id/assign`, `PATCH /admin/product/:id/barcode`.
+   **Expect:** **403** on all of them. ❌ Old: 200.
+2. Same calls with a `super_admin` token. **Expect:** unchanged, still work.
+
+### What this needs to ship
+- `haper-admin` frontend: `src/hooks/useMenu.ts` (menu gate) and `src/App.tsx` (route
+  split) + tests (`src/hooks/useMenu.test.ts`, new `src/App.routes.test.tsx`).
+- `haper-backend`: `packages/admin/src/routes/product/router.js` + tests
+  (`__tests__/product-master-authorization.test.js`, `__tests__/product-barcode.test.js`).
+  DONE 2026-08-13. Needs a `dapi.haper.in` deploy.
+- Admin deploy of `damin.haper.in` is manual, as always.

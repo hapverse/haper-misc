@@ -1,15 +1,16 @@
 # Test: Generate internal barcodes — for products with no barcode
 
 **Area:** Admin panel → **Catalog → Product Master** (`/products`, `damin.haper.in` on dev).
-**Who can use it:** **super-admin OR warehouse-manager** (same as the existing "Barcode" action — the
-buttons are hidden for everyone else; the API is `requireRole(SUPER_ADMIN, WAREHOUSE_MANAGER)`).
+**Who can use it:** **super-admin ONLY** (since 2026-08-13 — the whole Product Master is super-admin
+only; a warehouse-manager can no longer reach it. The buttons are hidden for everyone else and the
+API is `requireRole(SUPER_ADMIN)`).
 **Backend:** new endpoints on the **product-master** router; a shared EAN util. **Needs BOTH deploys** —
 backend `dapi.haper.in` **and** admin `damin.haper.in`.
 
 ## What this is (real example)
 
 Many products (loose / repacked goods) ship with **no barcode**, so they get **skipped** on shelf
-labels and can't be scanned at the counter. This lets a super-admin or warehouse-manager **mint an
+labels and can't be scanned at the counter. This lets a super-admin **mint an
 internal barcode** for them from the **Product Master** — one product at a time or all-missing at once.
 The barcode is a **product-master property**: the code is written to the master **and fanned out to
 every store's copy** of that item, so it immediately prints on shelf labels and scans at POS and in the
@@ -33,7 +34,7 @@ EAN-13 = "2"  +  <the product's iId digits, left-padded to 11>  +  <check digit>
 
 Worked example: `BI4712` → digits `4712` → payload `200000004712` → check `6` → **`2000000047126`**.
 
-## Endpoints (super-admin OR warehouse-manager)
+## Endpoints (super-admin only)
 
 - `POST /admin/product/:productId/generate-barcode` — loads the master by `_id`; mints + applies the
   code **only if the product has no barcode** (else **409** "already has a barcode"). Returns
@@ -53,8 +54,7 @@ rows; the missing master is skipped, not 404'd.
 ## The walkthrough
 
 ### ✅ A. One product from the Barcode modal
-1. Log in to `damin.haper.in` as **super-admin** (or **warehouse-manager**), open **Catalog → Product
-   Master**.
+1. Log in to `damin.haper.in` as **super-admin**, open **Catalog → Product Master**.
 2. Open the **Barcode** action on a product that has **no barcode**. Beside the "Scan or type" input
    there's an **"or Generate one"** button.
 3. Click it → **Expect** a toast **"Generated barcode 2000000… — updated N store item(s)."** and the
@@ -89,10 +89,10 @@ rows; the missing master is skipped, not 404'd.
 2. **Expect:** a clear error toast **"This product already has a barcode."** — the existing (real)
    barcode is **never overwritten**.
 
-### ❌ F. Not a super-admin / warehouse-manager → nothing to see
-1. Log in as a **store admin** (neither super-admin nor warehouse-manager). Note: the Product Master
-   page itself is already gated to super-admin + warehouse-manager, so a store admin can't reach it.
-2. Even if the API is called directly, generation returns **403**.
+### ❌ F. Not a super-admin → nothing to see
+1. Log in as a **store admin** or a **warehouse-manager**. Note: the Product Master page itself is
+   gated to super-admin only (since 2026-08-13), so neither can reach it.
+2. Even if the API is called directly, generation returns **403** — for a warehouse-manager too.
 
 ### ✅ G. Shelf-label rendering unaffected for non-EAN codes
 1. On the Shelf Labels page, an item with a **real EAN-13** barcode (e.g. a generated `2000000047126`)
