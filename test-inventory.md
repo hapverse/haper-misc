@@ -709,11 +709,14 @@ You can add stock two ways — test both.
      shows in the item's **Batches (lots)** and the `MANUAL_ADJUST` **Stock Ledger** row.
    ✅ **Flag-OFF store:** a blank batch just `$inc`s the quantity — **no** batch, **no**
      auto code (unchanged legacy behaviour).
-3. **Adjust down (remove):** switch to *Adjust down*, enter a quantity.
+3. **Adjust down (remove):** switch to *Adjust down*, enter a quantity, select a **Reason** (required dropdown: Damaged / Expired / Count correction / Other), and optionally add a **Note**.
+   ✅ The **Reason** dropdown is required. The **Remove Stock** button stays disabled until a reason is selected.
+   ✅ The **Note** field (optional) stores extra detail for audit (e.g. "eaten by rat", "damaged batch ABC123").
    ✅ Entering **more than current stock** disables the button with a warning. A normal
    reduction lowers the quantity. (If stock changed underneath you and the server
    rejects it, you get a clear **"exceeds available stock"** toast.) Adjust-down FEFO-
    decrements existing lots — it never creates an auto batch.
+   ❌ **Quantity entered but Reason is blank** → **Remove Stock** button stays disabled.
 
 ### 8b. Bring stock from the warehouse (transfer)  *(super admin)*  (CH-3, CH-4)
 First make the link: **Items → the item → set Barcode = `PB001`** (same as the warehouse SKU).
