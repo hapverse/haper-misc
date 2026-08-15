@@ -116,6 +116,36 @@ Two reasons block a save, both cleared by re-submitting with `acknowledgeBelowCo
 
 ---
 
+## 7. Admin — Discount Rule form fixes (store/category pickers + priority copy)
+
+`src/pages/Discounts/DiscountRuleFormModal.tsx`, "Create discount rule".
+
+- ✅ **Store picker and category picker both populate.** Open "Create discount rule" — the store
+  dropdown and the category dropdown both list their full sets. Before the fix, the pickers called
+  the list APIs with `limit=500`, which the backend rejected with a **403**, so both dropdowns
+  silently rendered empty.
+- ✅ **The two pickers load independently.** If the store list fails to load (e.g. simulate a 5xx /
+  network error on `GET /admin/store`), the category picker still loads and is usable, and vice
+  versa — one failing must not block the other (`Promise.allSettled`, not `Promise.all`).
+- ❌ **No silent empty state on a load failure.** When a picker's list fails to load, it shows a
+  visible "Couldn't load stores — Retry" (or "Couldn't load categories — Retry") message with a
+  working Retry action — not just an empty/disabled-looking dropdown that looks like "there's
+  nothing to pick."
+- ✅ **Priority / Stackable help text is now accurate.** Both the ⓘ tooltip next to "Priority" and
+  the visible hint text below the Priority field say that priority decides the ORDER Stackable
+  rules apply in (not "no effect on Stackable rules" — that was wrong and shipped once, then
+  corrected before release). Manual check: create a ₹100 item with (a) a Stackable FLAT ₹50 off
+  rule and (b) a Stackable 10% off rule, same target. Preview/checkout with the FLAT rule at
+  higher priority → final price **₹45**. Swap priorities so the PERCENT rule is higher → final
+  price **₹40**. Same two rules, only the priority order changed — confirms priority matters for
+  stackable rules, not just for picking a winner among Exclusive rules.
+- ✅ **Exclusive copy matches "wins", not "matches".** The Exclusive hint now says the rule blocks
+  other discounts only if it *wins* for an item (i.e. it's the highest-priority Exclusive rule
+  matching that item) — not merely if it "matches." If two Exclusive rules match the same item,
+  only the higher-priority one applies; this is now stated explicitly instead of implied.
+
+---
+
 ## Regression tests
 
 - `haper-backend/packages/user/__tests__/discount-rounding.test.js` — the float-tail → Razorpay bug.

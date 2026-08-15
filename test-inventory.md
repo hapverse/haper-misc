@@ -601,6 +601,42 @@ company** — not per store.
 > Products may already exist on dev (migrated from existing items). Either create a
 > fresh one as above, or just use an existing product for the next steps.
 
+#### 4b-i. Delete a product  *(super admin only)*
+
+Real example: you typed a product twice by mistake (`Peanut Butter 500g` and
+`Peanut Buttr 500g`). Nobody ever ordered or stocked the typo one, so it can be
+deleted outright instead of sitting in the catalogue as "discontinued" forever.
+
+`DELETE /admin/product/:productId` — removes the product **plus** its copy in every
+store and its warehouse stock rows. Irreversible.
+
+1. Sidebar → **Product Master** → find the throwaway product → **Delete** (red, last
+   button in the Actions column).
+2. ✅ A red **"Delete this product?"** confirm dialog opens first — nothing is sent
+   until you press **Delete product**. **Cancel** / **Esc** / clicking the overlay
+   closes it with no API call.
+3. ✅ Confirm → success toast with the backend count
+   (*"Product and 3 item(s), 1 warehouse row(s) deleted"*) and the list refreshes —
+   the row is gone.
+
+Edge cases:
+- ❌ Product that was **ordered before** → blocked (409 `HAS_HISTORY`), toast:
+  *"This product has order history and can't be deleted — use Discontinue instead."*
+  ✅ The row **stays** in the list (nothing was deleted).
+- ❌ Product with **warehouse stock movement history** → *"This product has warehouse
+  stock history and can't be deleted — use Discontinue instead."*
+- ❌ Product **sitting in a customer's cart** → *"This product is in a customer's cart
+  and can't be deleted right now — try again later."* Clear the cart / wait, retry.
+- ❌ Row already deleted in another tab (404) → *"That product no longer exists —
+  refreshing the list."* and the list reloads.
+- ✅ **Not** visible to store admin / manager / **warehouse manager** — super admin
+  only, same gate as Edit & Discontinue (warehouse manager still sees only Assign +
+  Barcode; see step 15k).
+- ✅ While the delete is in flight the row's other buttons (Edit / Barcode / Assign /
+  Discontinue) are disabled, and the dialog can't be dismissed mid-write.
+
+Needs: backend `DELETE /admin/product/:productId` deployed to dev + the admin build.
+
 ---
 
 ## 5. Create a store — serving warehouse is REQUIRED  *(super admin)*  (CH-7)
@@ -673,11 +709,14 @@ You can add stock two ways — test both.
      shows in the item's **Batches (lots)** and the `MANUAL_ADJUST` **Stock Ledger** row.
    ✅ **Flag-OFF store:** a blank batch just `$inc`s the quantity — **no** batch, **no**
      auto code (unchanged legacy behaviour).
-3. **Adjust down (remove):** switch to *Adjust down*, enter a quantity.
+3. **Adjust down (remove):** switch to *Adjust down*, enter a quantity, select a **Reason** (required dropdown: Damaged / Expired / Count correction / Other), and optionally add a **Note**.
+   ✅ The **Reason** dropdown is required. The **Remove Stock** button stays disabled until a reason is selected.
+   ✅ The **Note** field (optional) stores extra detail for audit (e.g. "eaten by rat", "damaged batch ABC123").
    ✅ Entering **more than current stock** disables the button with a warning. A normal
    reduction lowers the quantity. (If stock changed underneath you and the server
    rejects it, you get a clear **"exceeds available stock"** toast.) Adjust-down FEFO-
    decrements existing lots — it never creates an auto batch.
+   ❌ **Quantity entered but Reason is blank** → **Remove Stock** button stays disabled.
 
 ### 8b. Bring stock from the warehouse (transfer)  *(super admin)*  (CH-3, CH-4)
 First make the link: **Items → the item → set Barcode = `PB001`** (same as the warehouse SKU).
