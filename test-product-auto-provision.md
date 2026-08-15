@@ -10,29 +10,26 @@
 (admin FE can optionally show `data.provisioning.warnings`).
 
 ## Why
-Adding a product used to be two steps: create the master, then remember to press
-**Assign** so each store gets a row — and the warehouse SKU only appeared when someone
-received stock. Real example: a new "Amul Butter" existed in Product Master but was
-invisible in both stores' catalogue and un-receivable at the warehouse until two extra
-manual actions. Now creating it does all of that in one go, at zero quantity/cost.
+Adding a product with a barcode now provisions it in one go (create → stores + warehouse). But what if the barcode comes later (manual barcode, generated, or bulk generate)? Before this fix, three actions left a product stranded: setting a barcode manually, auto-generating one, or using **Assign to stores** — none of them completed the warehouse provisioning. Now all three correctly provision when a barcode transitions from empty to set, making the product scannable and receivable immediately. Real example: *Anda Tilauri* has no barcode → gets one via generate → now automatically appears in stores and warehouse, ready for stock-in.
 
 ## What happens now
-`POST /admin/product` (super admin only), **after** the master is saved:
-- **Barcode present** → item row (qty 0, price 0, sellingPrice 0, costPrice 0) in every
-  **active** store, **and** a `warehouse_stocks` placeholder (availableQty 0, costPrice 0)
-  in every warehouse that serves one of those stores.
-- **No barcode** → **nothing** is provisioned (not even stores). `warehouse_stocks` is
-  keyed by `sku` = the barcode, so two barcodeless products would collide on the unique
-  `{warehouseId, sku}` index. One gate for both halves — no half-onboarded state.
+
+### On Product creation (`POST /admin/product`, super admin only)
+- **Barcode present** → item row (qty 0, price 0, sellingPrice 0, costPrice 0) in every **active** store, **and** a `warehouse_stocks` placeholder (availableQty 0, costPrice 0) in every warehouse that serves one of those stores.
+- **No barcode** → **nothing** is provisioned (not even stores). `warehouse_stocks` is keyed by `sku` = the barcode, so two barcodeless products would collide on the unique `{warehouseId, sku}` index. One gate for both halves — no half-onboarded state.
 - `autoProvision: false` in the body → deliberate opt-out, nothing provisioned, no warning.
 
-Response gains `data.provisioning`:
-`{ status: "complete" | "partial" | "skipped", stores, warehouses, warnings[] }`.
-`stores`/`warehouses` are the usual `{ assigned, skipped, failed, total }` counters.
+Response gains `data.provisioning`: `{ status: "complete" | "partial" | "skipped", stores, warehouses, warnings[] }`. `stores`/`warehouses` are the usual `{ assigned, skipped, failed, total }` counters.
 
-**Best-effort by design:** provisioning can never fail the create. A partial result comes
-back as `status: "partial"` + warnings; pressing the existing **Assign** button is always
-a safe retry (both halves skip rows that already exist).
+### When a barcode is added later (PATCH `/:id/barcode`, `generate-barcode`, `generate-missing-barcodes`)
+- Transition from **empty → set** (first barcode added): provisioning runs automatically. The product is added to all active stores + serving warehouses (idempotent — skips rows that already exist).
+- Transition from **existing → different** (barcode changed): provisioning does NOT run. The warehouse rows migrate to the new SKU (separate code path). If a product is already stranded (has a barcode but zero store presence), editing the barcode again won't auto-fix it — use **Assign** instead.
+
+### When Assign to stores is used (`POST /admin/product/:id/assign`)
+- Adds/skips/retries store rows as before (quantity 0, seeded prices).
+- **Now also triggers warehouse provisioning** if the product lacks warehouse rows. If warehouse provisioning fails (or is skipped), a warning toast is shown separately from the store success toast.
+
+**Best-effort by design:** provisioning can never fail any create/assign. A partial result comes back as `status: "partial"` + warnings; retrying is always safe (both halves skip rows that already exist).
 
 ## Steps (backend jest, in-memory — `cd packages/admin && NODE_ENV=test npx jest product-auto-provision`)
 - ✅ **With barcode** — 2 stores served by 1 warehouse → 2 item rows (qty/price/cost all 0)
@@ -54,21 +51,74 @@ a safe retry (both halves skip rows that already exist).
 - ✅ Regression: full admin jest suite + `packages/cron` suite (auto-replenishment) green.
 
 ## Manual check on dev (damin.haper.in)
-1. Product Master → **Add product** with a barcode → save.
+
+### Creation (always works)
+1. Product Master → **Add product** with a barcode → save → **Expect:** a success toast.
 2. Store catalogue (each active store) → the product is there at quantity 0.
 3. Warehouse → Inventory → search the barcode → a row exists with 0 available, cost 0.
-4. Repeat without a barcode → the product exists only in Product Master; nothing else changes.
+4. Repeat without a barcode → the product exists only in Product Master; stores/warehouse are untouched.
+
+### Barcode added later (the fix)
+1. Create a product with **no barcode** → verify it's NOT in any store or warehouse (expected).
+2. Open its **Barcode** action → type a real barcode or click **"or Generate one"** → save/generate.
+3. **Expect** a success toast: **"Barcode saved/Generated barcode XXXXX — provisioned to N store(s) and warehouse."**
+4. Verify the product now appears in each store catalogue at quantity 0.
+5. Verify the warehouse shows the product with 0 available quantity (search the barcode in Inventory).
+6. In Product Master, open **Assign** on the product that now has a barcode → choose some stores → assign → **Expect** a success toast, and a follow-up warning toast **"Store assignment done, but warehouse provisioning didn't complete. [reason]"** (if applicable).
+7. After clicking **Assign**, verify the warehouse has a placeholder row now (if it didn't before).
+
+## Barcode added later — now triggers auto-provision (new as of 2026-08-15)
+
+Three actions that add/change a barcode on a **barcode-less** product now correctly auto-provision it to stores + warehouse (idempotent — safe to run multiple times):
+
+### ✅ A. PATCH `/admin/product/:id/barcode` (Barcode modal)
+1. Create a product with **no barcode** (visible only in Product Master).
+2. Open its **Barcode** action → the input is empty, with an **"or Generate one"** button.
+3. Type a barcode and save.
+4. **Expect** a success toast: **"Barcode saved — provisioned to N store(s) and warehouse."** The product now appears in each store and the warehouse (if it had no rows before).
+5. If partial (e.g. the product has no serving warehouse): **"N store(s) have no serving warehouse: <names> — no warehouse row created for them."**
+6. If partial (e.g. one store write fails): **"N store(s) failed to provision — press Assign on this product to retry."**
+
+### ✅ B. `POST /admin/product/:id/generate-barcode` (Barcode modal Generate button OR single-row Generate)
+1. Open the **Barcode** modal on a product with no barcode.
+2. Click **"or Generate one"** → a button labeled **"Generate one"** appears, or use the per-row Generate action in the list.
+3. **Expect** a toast: **"Generated barcode 2000000XXXXX — provisioned to N store(s) and warehouse."** (same provision logic as the manual set, above).
+4. If the product already has a barcode: **"This product already has a barcode."** — generation is refused (409).
+
+### ✅ C. `POST /admin/product/generate-missing-barcodes` (Bulk, via API or script)
+1. Run the bulk endpoint (or use the filter + per-row Generate in the UI — the old toolbar button is hidden since 2026-08-14).
+2. **Expect** the response to report `{ generated: N, skipped: M, failed: L, remaining: R }`.
+3. Each newly-generated product is provisioned to its stores + warehouse (creating qty-0 placeholder rows if they don't exist).
+4. **Warning:** this can create many warehouse `warehouse_stocks` rows in one call if the product batch was large — check Stock Health afterward to see the new rows.
+
+### ✅ D. `POST /admin/product/:id/assign` now provisions warehouse too (new as of 2026-08-15)
+1. Create a product with a barcode.
+2. It appears in Product Master and (if it has an already-set barcode) in stores + warehouse.
+3. Open the **Assign** modal (to manually assign it to a specific store after the fact).
+4. Click **Assign**.
+5. **Expect** first a success toast: **"Assigned"** (for store rows).
+6. **If** the warehouse half had any warnings (e.g. no serving warehouse, or a partial failure), a second toast: **"Store assignment done, but warehouse provisioning didn't complete. {warning}."**
+7. **Result summary** shows: **Assigned N · skipped M [· failed L] of Z store(s).** (this counts store rows only, not warehouse; warehouse results are shown in the warning toast only.)
 
 ## Edge cases / notes
-- **Barcode added later** is NOT provisioned automatically — `PATCH /:id/barcode`,
-  `generate-barcode` and `generate-missing-barcodes` are untouched. Use **Assign** after
-  setting a code (deliberate, deferred).
-- **No backfill** for existing products — only new creations are affected.
-- **No transaction** by design: best-effort + idempotent beats an all-or-nothing write that
-  could roll back a good master.
-- When `POST /admin/item` creates a new item and, as a side effect, backfills a Product
-  Master (that path calls `ProductRepository.create` directly), the store/warehouse
-  auto-provision fan-out does **NOT** run — it lives only in the product controller's
-  `POST /admin/product` create path.
-- "Active store" is one shared definition (`ProductRepository.ACTIVE_STORE_FILTER`) used by
-  both `assignToStores("ALL")` and the auto-provision caller — they can't drift apart.
+- **Barcode changed to a different value** — `PATCH /admin/product/:id/barcode` with a **different** code does NOT re-trigger provision (that's a SKU migration, separate code path; warehouse rows move instead). If a product is already stranded (barcoded but zero store presence — a real edge case), editing the barcode again won't fix it; use **Assign to stores** as the manual repair.
+- **"Already has barcode"** (409) — single or bulk generate refuse if the product already has a code. This is correct, not a bug (the code is already set; use the barcode modal to change it).
+- **No backfill** for existing products — only new creations and barcode additions are affected.
+- **No transaction** by design: best-effort + idempotent beats an all-or-nothing write that could roll back a good master.
+- When `POST /admin/item` creates a new item and, as a side effect, backfills a Product Master (that path calls `ProductRepository.create` directly), the store/warehouse auto-provision fan-out does **NOT** run — it lives only in the product controller's `POST /admin/product` create path.
+- "Active store" is one shared definition (`ProductRepository.ACTIVE_STORE_FILTER`) used by all provision callers — they can't drift apart.
+
+## Nightly reconciliation cron job (backend `product-master-reconcile`)
+
+A background job runs nightly at 4 AM IST (configurable in the cron package) to detect genuinely stranded products:
+
+- **`[product-reconcile] STRANDED`** — a product with a barcode set but **zero** rows in any store's `items` collection. This is a real problem — manual repair via **Assign** is required. Monitor pm2 logs for these.
+- **`[product-reconcile] NOT-YET-RECEIVED`** — a product with store presence but the warehouse has not received it yet (0 `warehouse_stocks` rows). This is **normal** and expected (stock comes in later); the log is informational, not an error. Count of products in this state is logged as a one-line summary, not per-product spam.
+
+(To check for stranded products in real time outside the nightly job, grep the backend logs for `STRANDED` or check the nightly cron log for `[product-reconcile] STRANDED` lines.)
+
+## What deploy this needs
+- **Backend → `dapi.haper.in`** (provision-on-barcode logic in product controller + the new nightly cron job logs).
+- **Admin → `damin.haper.in`** (updated toast messages showing accurate store/warehouse counts + "or Generate one" button always visible for barcode-less products).
+- **No DB schema changes.** No new dependencies.
+- Deploy backend first (so admin calls the updated endpoints), then admin.
