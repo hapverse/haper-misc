@@ -49,6 +49,14 @@ other product / store item may hold the code) and **fans the code out to the mas
 item** in one transaction. Legacy rows (an `iId` with no materialised master) still fan onto the item
 rows; the missing master is skipped, not 404'd.
 
+> **CHANGING an existing barcode also moves the warehouse rows** (`warehouse_stocks`,
+> `warehouse-batches`, `stock-movements` are keyed by `sku` = the barcode), and is **refused (409)**
+> when they cannot be moved safely — target code already has warehouse rows, stock in flight on an
+> open transfer/replenishment, or the barcode is being cleared. The shelf-walk enroll/clear endpoints
+> refuse outright in those cases and point here. Generation is unaffected: it only ever applies a code
+> to a product that has none. Full rules + test steps: **test-product-delete.md → "Barcode changes now
+> MOVE the warehouse rows"**.
+
 ---
 
 ## The walkthrough
