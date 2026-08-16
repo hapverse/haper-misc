@@ -76,6 +76,32 @@ order) showed **₹1,346 revenue** instead of ₹166.
    a real sale but isn't page revenue. (Revisit only if admins ask for a dedicated Refunds tile.)
    ✅ **Orders on page** still counts it (it's still an order on the page).
 
+## 7. Undelivered / refunded orders stay in the customer's order history  (vanishing-order bug)
+Reported live: order **#HP445512639** disappeared from the customer app after the delivery boy
+marked it cancelled. Cause — the app's **Past** tab used a hand-written list of "finished"
+statuses (`Closed, Cancelled, Admin Cancelled, Failed`), so any other finished status matched
+**neither** the Active nor the Past filter and the order vanished from both tabs. `Undelivered`
+and the three `Refund…` statuses were all missing. (Web was unaffected — it asks for `ALL`.)
+Past is now the *opposite* of Active, so a new status can never fall through the crack again.
+
+Do this in the **Android/iOS customer app** (the tabs only exist there):
+1. Place an order, admin/rider takes it to **Out for Delivery**, then the **delivery boy marks it
+   Undelivered / cancels it**.
+   ✅ The order appears in the app's **Past / previous orders** tab (before: gone from both tabs).
+   ✅ It reads as **Undelivered** to the customer (with the app's existing warning icon) — this is
+   the pre-existing, correct client-side rendering; it is **not** relabelled to Cancelled.
+   ❌ It must **not** still sit in the **Active** tab.
+2. Admin → refund an order (**Refund Initiated / Refund Failed / Refund Success**).
+   ✅ The order stays visible in the **Past** tab in every one of those three states.
+3. Regression — an in-progress order (**Open / Picking / Packed / Assigned / Processing /
+   Out for Delivery**):
+   ✅ still shows in **Active**, ❌ must **not** show in **Past**.
+4. Regression — an abandoned checkout (**Payment Failed / Payment Cancelled**) and a deleted
+   order (**Deleted**):
+   ✅ still hidden from **both** tabs — the customer never paid, so it isn't order history.
+5. Admin → **Users → a user → order history** uses the same Active/Past filter:
+   ✅ an undelivered/refunded order now shows under **Past** there too.
+
 ---
 
 ### Notes for devs
@@ -91,3 +117,13 @@ order) showed **₹1,346 revenue** instead of ₹166.
   out of `OrdersList.tsx`'s `useMemo` so it's unit-testable without rendering the page. Covered
   by `haper-admin/src/utils/orders.test.ts` (`describe('computeOrdersPageSummary', ...)`), which
   pins the exact reported 8-order fixture.
+- §7 (vanishing order) lives in `packages/shared/repositories/order.repository.js`:
+  `ACTIVE_LIST_STATUSES` + `HIDDEN_FROM_LIST_STATUSES` above `module.exports`, used by
+  `getPaginated` — **PAST is `$nin: [...active, ...hidden]`**, never a second literal list.
+  `getPaginated` has a second caller — admin `GET /admin/user/orders`.
+  `UN_DELIVERED` is deliberately **not** relabelled by `presentOrderStatus` in
+  `packages/user/src/routes/order/controller.js` — Android/iOS have always rendered status code
+  `12` natively as "Undelivered", and the status isn't terminal (admin can reassign a rider to
+  redeliver). An earlier version of this fix added a `UN_DELIVERED → CANCELED` relabel on the
+  false premise that old app builds render unknown status codes as "Failed"; that premise was
+  disproved (there is no unknown-status fallback issue) and the relabel was reverted.
