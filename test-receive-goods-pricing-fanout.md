@@ -4,17 +4,24 @@
 **Backend:** `POST /admin/procurement/receive` (`packages/admin/src/routes/procurement/*`)
 **Permission:** receiving is unchanged — `receive_goods` (warehouse **staff**, warehouse **manager**,
 super admin). **New:** the `sellingPrice` field itself is **manager-only** — a `warehouse_staff`
-caller sending it gets **403** (see "Who may set the selling price" below).
+caller sending it gets **403**; and for a **manager / super admin** it is **compulsory only for a
+product this warehouse has never priced** (blank on a never-priced sku = **400**; blank on a top-up
+of an already-priced sku is fine and keeps the existing price). See "Who may set the selling price"
+below.
 **Deploy needed:** backend **redeploy** + admin **web deploy** (the form needs a new
 **Selling price** box). **No DB migration** — the two new warehouse fields are additive and default
 to `null`.
-**Tests (green):** `packages/admin/__tests__/procurement-pricing-fanout.test.js` (26 tests) +
-`haper-admin/src/pages/Warehouse/WarehousesPage.test.tsx` (15 tests — 4 selling-price UI,
-3 pricing-sync toast, 1 min-attribute, 1 "Repeat last" prefill, 7 pre-existing).
-**Admin FE status:** BUILT — the **Selling price (₹)** box is on the Receive Goods line card,
-between MRP and Expiry, and is **not rendered at all** for `warehouse_staff`. The
-`storePricingSync` result is surfaced as a **second, warning toast** when something is worth
-knowing (see "What the clerk sees after Receive").
+**Tests (green):** `packages/admin/__tests__/procurement-pricing-fanout.test.js` (36 tests) +
+`haper-admin/src/pages/Warehouse/WarehousesPage.test.tsx` (21 tests — 10 selling-price UI
+(incl. "a blank box submits fine" and "the server's sku-specific 400 is shown verbatim"),
+3 pricing-sync toast, 2 label/attribute consistency, 1 "Repeat last" prefill, 5 pre-existing).
+**Admin FE status:** BUILT and **in sync with the backend rule**. The **Selling price / piece (₹)**
+box is on the Receive Goods line card, between MRP and Expiry, marked
+**(required for new items)** for manager / super admin and **not rendered
+at all** for `warehouse_staff`. A blank box is **never blocked in the browser** — the browser has no
+way to know whether that sku already has a price here, so the server decides and its sku-naming
+400 is shown as-is. The `storePricingSync` result is surfaced as a **second, warning toast**
+when something is worth knowing (see "What the clerk sees after Receive").
 
 ---
 
@@ -40,10 +47,12 @@ Real example: 20 packs of **Amul Butter 100g** arrive at the Chapra warehouse. T
 - **Update only — it never creates a store item.** If a served store doesn't stock that product
   yet, it is **skipped** and counted. Putting a product into a store's catalogue stays the
   **Assign / Product Master** job; a goods receipt must not quietly widen a store's catalogue.
-- **MRP and selling price are OPTIONAL.** Leave them blank and the receipt records stock + cost
-  only, and the **previous prices are left alone** — both on the warehouse row and in the stores.
-  A blank box must never blank a live shelf price. **Cost price is mandatory** (it is the
-  warehouse's own cost).
+- **MRP is optional for everyone, always** — no role, and no "was it priced before" check, applies
+  to MRP. **Selling price** is optional too, with ONE exception: a manager / super admin receiving a
+  product this warehouse has **never priced** must type one (**400** otherwise). Leave them blank
+  and the receipt records stock + cost only, and the **previous prices are left alone** — both on
+  the warehouse row and in the stores. A blank box must never blank a live shelf price.
+  **Cost price is mandatory** (it is the warehouse's own cost).
 - **A blank box is not a ₹0 price.** MRP and selling price must be **greater than 0** when typed —
   the same rule cost price has always had. Sending `0` is a **400**, because a ₹0 selling price is
   what the customer would actually be charged at every store the warehouse feeds. "No change" is
@@ -94,6 +103,54 @@ clerk either clears the selling price and receives normally, or a manager does t
 walk away believing ₹58 was recorded, while the shelf price never changed. A loud 403 is the only
 honest answer.
 
+### …and for a manager it is COMPULSORY — but only for a NEVER-PRICED product
+
+The same field has two opposite rules, one per role:
+
+| Who receives | `sellingPrice` |
+| --- | --- |
+| `warehouse_staff` | **forbidden** — sending it = **403**, nothing saved |
+| `warehouse_manager` / `super_admin`, sku **never priced here** | **required** — leaving it blank = **400**, nothing saved |
+| `warehouse_manager` / `super_admin`, sku **already priced here** | **optional** — blank = "keep the existing price", exactly like MRP and cost |
+
+"Never priced here" means this warehouse has **no selling price on record** for that barcode: either
+there is no stock row for it at all (a brand-new product), or the row exists but its selling price
+is still empty (it was only ever received by staff, or received before this feature existed).
+
+Real example A — **new product**: the Chapra **manager** receives 20 packs of a butter Chapra has
+never stocked, types cost ₹48 + MRP ₹62, and leaves Selling price empty. Refused with:
+
+> Selling price is required for Butter 100g (8901234567894) — this item has no price on record yet
+> at this warehouse.
+
+Nothing is saved — not the stock, not the cost, not the other lines. The message **names the product
+and the exact barcode**, so on a 20-line bill the manager knows which line to fix instead of decoding
+barcodes. If two lines are new, both are listed.
+
+**A price typed on ANY line counts for the whole bill.** A bill can carry the same sku on two lines
+(two batches / two expiries) and a clerk types the shelf price only once. Example: line 1 is
+10 packs of butter at ₹58 (batch L1), line 2 is 6 more packs of the **same** butter with the price
+box blank (batch L2). That is **200**, not 400 — the price *is* on the bill, just on the other line.
+Only a sku that is blank on **every** line of the bill **and** has nothing on record is refused.
+
+Real example B — **routine top-up**: a week later 40 more packs of that same butter arrive. Chapra
+already sells it at ₹58 and nothing about the price is changing. The manager keys **only** quantity
+and cost and hits Receive → **200**. The ₹58 stays exactly as it was, at the warehouse and at every
+store it feeds. Nobody retypes 20 unchanged prices to file a stock top-up.
+
+**Why this shape?** The first time a product is priced at a warehouse, somebody genuinely has to
+decide the shelf price — a blank box there is a mistake, not a choice. After that, a blank box means
+what it has always meant everywhere else on this form: leave it alone. (The earlier, blanket
+"required on every line" version was wrong in practice: it made a manager's routine top-up harder
+than a `warehouse_staff` member's, since staff can always receive without touching price.)
+
+**Why 400 and not 403?** 403 means "you're not allowed to do this"; a manager IS allowed — they
+just left a required box empty. That's a plain validation error, and the message says what to fill.
+
+**Knock-on for anything that calls the API directly** (scripts, Postman, saved drafts): a
+super-admin receive body without `sellingPrice` still works for any product that already has a price
+at that warehouse, and only 400s for a first-ever receive of a product there.
+
 **Request body (new field: `sellingPrice` per line):**
 ```json
 {
@@ -140,8 +197,8 @@ shelves were repriced. Now the second toast names the counts, so they know to re
 **Warehouse side**
 - ✅ Receive with `costPrice` + `mrp` + `sellingPrice` → `warehouse_stocks` has all three.
 - ✅ Receive the same sku again with different prices → the new ones overwrite.
-- ✅ Receive again with **no** `mrp`/`sellingPrice` → cost moves, the two prices survive
-  (**not** wiped to null).
+- ✅ Receive again with **no** `mrp`/`sellingPrice` (**as warehouse staff** — the only role that
+  may file a price-less receipt now) → cost moves, the two prices survive (**not** wiped to null).
 - ✅ Batch-ledger warehouse → the lot (`warehouse_batches`) keeps only the cost; no price on it.
 
 **Store fan-out**
@@ -155,7 +212,7 @@ shelves were repriced. Now the second toast names the counts, so they know to re
 - ✅ Three served stores (two carry the product) → `updated: 2, skipped: 1, stores: 3`.
 - ✅ Store with **no** explicit serving warehouse but a matching **region** (`"bihar"` vs
   `"Bihar"` — casing tolerated) → still priced.
-- ✅ Receive without `mrp`/`sellingPrice` → **no store row is touched at all** (shelf price and
+- ✅ Receive without `mrp`/`sellingPrice` (**as warehouse staff**) → **no store row is touched** (shelf price and
   store cost both unchanged); only the warehouse row's cost moves.
 - ❌ `mrp: 0` / `sellingPrice: 0` (or both) → **400**, and nothing is written anywhere — no stock,
   no ledger row, no store reprice. A negative value is still rejected; `1` is accepted.
@@ -178,16 +235,70 @@ shelves were repriced. Now the second toast names the counts, so they know to re
 - ❌ `warehouse_staff` sends **two** lines where only the second has `sellingPrice` → the **whole**
   request is 403; the clean first line is **not** partially received.
 
+**Selling price is MANDATORY only for a never-priced sku (revised)**
+- ❌ `warehouse_manager` receives a **brand-new** sku (no stock row at this warehouse) with **no**
+  `sellingPrice` → **400** *"Selling price is required for Butter (8901234567894) — this item has no
+  price on record yet at this warehouse."* — the message **names the product name and barcode** —
+  and **nothing** is written:
+  no warehouse stock row, no ledger row, store items untouched.
+- ❌ `super_admin` receives a **brand-new** sku with **no** `sellingPrice` → the same **400**.
+- ✅ **The core case:** a sku that was received earlier **with** a selling price is topped up by a
+  manager with **only** qty + cost (no `sellingPrice`, no `mrp`) → **200**. The warehouse row's
+  `sellingPrice`/`mrp` and **every served store's** `sellingPrice`/`price` are **unchanged**; qty and
+  the warehouse cost move. This is a routine top-up and must not demand a price.
+- ❌ A stock row **exists but its `sellingPrice` is null** (e.g. the product was only ever received
+  by `warehouse_staff`, or before this feature) and a manager receives it blank → **400**, same as a
+  brand-new sku. "Row exists" is not the test; "has a price on record" is.
+- ❌ **Two lines**: line 1 is a blank top-up of an already-priced sku (fine alone), line 2 is a blank
+  **never-priced** sku → the **whole** receipt is 400 and the message names **only** the never-priced
+  barcode. The acceptable line is **not** partially received.
+- ✅ **Same sku on two lines, priced on only ONE of them** (different batch numbers) → **200**, and
+  the warehouse row **and** every served store end on that typed price. Works whichever line carries
+  it — first or last. This used to be a false **400**.
+- ✅ **Same sku on two lines, MRP on one and selling price on the other** → **200**, and the store's
+  `price`/`sellingPrice` match the warehouse row on **both** fields (neither is lost).
+- ❌ **Same sku on two lines, blank on BOTH**, never priced here → still **400**. The "priced
+  elsewhere on this bill" exception is **per sku**, not per bill.
+- ❌ Sku A priced on the bill, sku B blank and never priced → still **400** naming **only** sku B.
+- ✅ `warehouse_manager` **and** `super_admin` with `sellingPrice` on **every** line → **200**,
+  warehouse row + fan-out exactly as before (regression).
+- ✅ An **explicit** `sellingPrice` on an **already-priced** sku still overwrites it (₹58 → ₹61 at
+  the warehouse and at every served store) — the exception only relaxes a blank box, it never
+  ignores a typed price.
+- ✅ `warehouse_staff` receiving a **never-priced** sku with **no** `sellingPrice` → still **200** —
+  the "was it priced before?" check never runs for them (they're barred from the field; requiring it
+  would block them from receiving).
+- ❌ `warehouse_staff` **with** `sellingPrice` → still **403** (not the 400) — the permission answer
+  wins over the validation one.
+
 **Admin form — the Selling price box** (`npx vitest run src/pages/Warehouse/WarehousesPage.test.tsx`)
 - ❌ Logged in as `warehouse_staff` → the **Selling price** box is **not on the screen at all**
   (not greyed out, not there — same "hide, don't disable" rule as the Verify Bill edit pencil).
   Cost / piece and MRP are still there and still work.
-- ✅ Logged in as `warehouse_manager` or `super_admin` → the box shows between MRP and Expiry,
-  takes ₹25.50, and that line is sent as `sellingPrice: 25.5`.
-- ✅ Manager leaves the box **blank** → the key is **left out of the request entirely** (not `0`,
-  not `null`, not `""`) — exactly how a blank MRP already behaves, so no store gets repriced.
+- ✅ Logged in as `warehouse_manager` or `super_admin` → the box shows between MRP and Expiry
+  labelled **Selling price / piece (₹) (required for new items)**, takes ₹25.50, and that line is
+  sent as `sellingPrice: 25.5`. A blank **MRP** on the same line is still left out entirely.
+- ✅ Manager or super admin leaves the box **blank** and clicks Receive → the request **goes
+  through** (no client-side toast, no block); the `sellingPrice` key is simply omitted, exactly like
+  a blank MRP. This is the routine top-up case and it must not be stopped in the browser.
+- ❌ The server refuses that blank (the sku has never been priced at this warehouse) → the clerk
+  sees the server's own message **word for word**: *"Selling price is required for 8901234567894 —
+  this item has no price on record yet at this warehouse."* Not a generic *"Something went wrong"*,
+  and it does **not** open the duplicate-invoice "Add to this bill anyway" banner (that branch keys
+  off the `DUPLICATE_INVOICE` code, not off message text).
+- ✅ Before the click, the footer says **nothing** about a missing selling price and the
+  **Receive 1 item** button is **enabled** — the FE can't know which lines need one, so it must not
+  claim the receive will be refused.
+- ✅ The **Selling price** label carries the soft *(required for new items)* qualifier, **not** the
+  red **Required** badge that Cost / piece and Qty still carry (their rule didn't change).
+- ✅ Logged in as `warehouse_staff` with **no** selling price anywhere → still submits normally
+  (200, no `sellingPrice` key, no error toast) — the mandatory rule does not apply to them.
 - ❌ A staff member opens a **saved draft** a manager had typed a selling price into → the value is
   never sent, so the receipt still goes through instead of 403-ing on something they can't see.
+- ✅ **Labels say "/ piece" on all three money boxes** — *Cost / piece (₹)*, *MRP / piece (₹)
+  (optional)*, *Selling price / piece (₹) (required for new items)* — so nobody reads them as a
+  line total.
+  The test derives the qualifier from Cost price's own label, so the three can't drift apart.
 
 **Admin form — pricing-sync feedback + the ₹0 guards** (same vitest file)
 - ✅ Response says `stores: 3, updated: 2, skipped: 0, failed: 1` → **two** toasts: the usual green
@@ -212,8 +323,11 @@ shelves were repriced. Now the second toast names the counts, so they know to re
 3. Open the **store's** catalogue → the same product now shows MRP 62 / selling 58. Its **cost
    price is whatever that store's own stock cost** — it does not become 48.
 4. Open a store served by a **different** warehouse → its price is unchanged.
-5. Receive the same product again leaving MRP and selling **blank** → the store row does not
-   change at all; only the warehouse's cost changes.
+5. Receive the same product again leaving MRP and selling **blank** → **200** (this sku already has
+   a price at this warehouse, so a blank box is allowed even as a manager / super admin); the store
+   row does not change at all; only the warehouse's cost changes.
+5b. Now receive a product this warehouse has **never** had, leaving Selling price blank → **400**
+   naming that product's name and barcode, and nothing is saved. Fill the box and it goes through.
 6. Receive a product that no store carries → succeeds, and the response summary reports it as
    skipped (nothing is added to any store's catalogue).
 7. Type `0` into MRP or Selling price → the **browser itself** refuses it before submitting (the box
@@ -227,7 +341,11 @@ shelves were repriced. Now the second toast names the counts, so they know to re
 ## Edge cases / notes
 
 - **Same sku on two lines of one bill** (two batches) — the pricing fan-out runs **once** for that
-  sku using the **last** line, so the stores match the warehouse row exactly.
+  sku, merging the lines **field by field**: the last line that actually *typed* an MRP wins the
+  MRP, the last line that typed a selling price wins the selling price. That is exactly how the
+  warehouse row itself behaves (a blank box means "leave that price alone"), so the stores always
+  match the warehouse row. Merging whole lines instead would silently drop a price whenever the
+  last line for a sku left one of the two boxes blank.
 - **Existing consumers are safe** — `data.storePricingSync` is a new key; `data.warehouseId` and
   `data.items` are untouched, and the duplicate-invoice **409** path is unchanged.
 - **Not built on purpose:** no stock is moved to the stores (this is pricing only), no store item
@@ -250,6 +368,44 @@ shelves were repriced. Now the second toast names the counts, so they know to re
   sentence through the existing error toast. In normal use staff can't reach it.
 - **The selling-price role check runs before any write** — it is not a partial save. A 403 leaves
   the bill completely un-received, so the fix is "clear the box and receive again".
+- **Both role rules for this field live side by side in the controller**, not in the Joi schema:
+  the schema only sees the request body and can't say "required for this caller, forbidden for
+  that one". `sellingPrice` stays `Joi.number().greater(0).optional()` in `validator.js`. The
+  "already priced?" half can't live in Joi either — it needs a **database read**, not just the body.
+- **The requiredness check costs one extra query, and only sometimes.** It runs only for
+  manager / super_admin callers, only when at least one line left the box blank, and it is a
+  **single** `warehouse_stocks` lookup (`{warehouseId, sku: {$in: [...blank lines]}}`) — not one per
+  line. A fully-typed bill does no extra read at all. It runs **before** the transaction, so a
+  rejection still leaves nothing behind.
+- **"No price on record" includes an absent field, not just `null`.** The lookup is `.lean()`, which
+  skips schema defaults, so a row written before `sellingPrice` existed has the key **missing**
+  entirely. The check is `!= null`, which treats missing and null the same.
+- **ADMIN FE FOLLOW-UP — DONE (2026-08-16).** The browser-side hard block is **removed**, so the FE
+  is no longer stricter than the server. `GoodsReceiptModal` now sends the receipt even when the
+  selling price is blank on some or all lines, and the **server is the single source of truth** for
+  the "never priced here" rule. Deliberately **not** implemented: a per-sku "does this warehouse
+  already price it?" pre-check. It would need an extra round-trip per line, could still be stale by
+  submit time, and would duplicate a rule that already lives (correctly) in one place. The cost of
+  getting it wrong is now small in the right direction — a rejected receipt with a message naming
+  the exact barcode, instead of a manager blocked from a receipt the API would have accepted.
+  Removed with it: the `sellTouched` / `sellMissing` per-line state, the inline red
+  *"Selling price required"*, the footer reason, and the `requireSelling` collapse flag on
+  `lineComplete` / `uiForLines` (a blank selling price must no longer hold a line card open —
+  on a top-up there is nothing to fill in).
+- **Why a soft label, not the Required badge.** The box reads *(required for new items)* using the
+  same muted parenthetical style the *(optional)* fields already use — no new badge style was
+  invented for one field. The hard red **Required** badge would be wrong on most receipts (top-ups),
+  and dropping the marker entirely would hide a real rule from the one person who can act on it.
+- **ADMIN FE — DONE (2026-08-16, first pass; the "Required" half above supersedes it).** For a
+  manager / super admin the Selling price box in `GoodsReceiptModal`
+  (`haper-admin/src/pages/Warehouse/WarehousesPage.tsx`) briefly carried the same **Required** badge
+  as Cost / piece and Qty and blocked submit before any API call. The payload builder was and stays
+  unchanged (`...(canSetSellingPrice && l.sellingPrice.trim() ? …)`) — a blank has always omitted the
+  key, which is exactly what "keep the existing price" now means. **Older saved drafts** with a blank
+  `sellingPrice` restore and submit normally again.
+- **The receive-count / submit button gate was deliberately NOT changed.** "Receive N items" still
+  counts lines with sku + name + cost + qty, so the button stays clickable and the clerk gets an
+  explicit toast naming what's missing — the same treatment the existing zero-cost check gets.
 
 ## What deploy this needs
 
