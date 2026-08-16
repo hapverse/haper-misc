@@ -166,6 +166,79 @@ After deploying, **manually confirm** (dev only, `damin.haper.in`):
 
 ---
 
+## Session handling fixes (2026-08-16) — frontend only, `haper-admin`
+
+Two bugs in how the admin panel ends a session. **No backend change, no deploy coupling** — this is
+a `haper-admin` build only.
+
+### S1 — logout on a shared browser didn't stick in other tabs (HIGH)
+
+**Real example:** one shared laptop in the store. Tab A is logged in as the store admin. Someone
+opens Tab B and logs in as the warehouse manager, does their work, and clicks Logout. Tab A was
+never told — it still had the store admin's token in memory, and the next time Tab A did anything
+(just navigating to another page re-runs `fetchMe()`) it wrote that token *back* into
+localStorage. The store admin's session came back from the dead after an explicit logout, and
+because admin tokens are plain 1-day JWTs with no server-side revocation, the resurrected token was
+completely valid.
+
+**Fix:** every tab now listens for the browser's `storage` event on the auth key
+(`haper-admin-auth`) and converges on whatever the last tab wrote —
+`src/utils/authSync.ts`, installed once from `src/App.tsx`.
+
+| Step | ✅ Expected |
+|---|---|
+| Open the admin panel in two tabs, logged in as the same admin | Both work normally |
+| In Tab B click **Logout** | Tab B goes to `/login`. **Tab A jumps to `/login` within a second** — without being touched |
+| Go back to Tab A and try to navigate to `/orders` | Bounced to `/login`; the old session does **not** come back |
+| Tab A: `localStorage.getItem('haper-admin-auth')` in the console after the above | `accessToken` is `null` (and stays null even after clicking around Tab A) |
+| Tab B logs in as a **different** admin while Tab A is open | Tab A does **not** adopt admin Y's identity — it is logged out too, and jumps to `/login` (same outcome as Tab B logging out) |
+| Two tabs, and one switches the active store | Nothing dramatic — same token, so no reload/redirect storm |
+
+❌ **Fail signals:** Tab A keeps working after Tab B logged out; Tab A shows admin X's name but
+admin Y's menu items; Tab A silently adopts admin Y's token/identity instead of being logged out;
+tabs reload each other in a loop.
+
+| Shared-terminal re-entrancy: admin A logs out, admin B logs in on the **same tab** while A's push-teardown call is still in flight (within ~4s), then B clicks Logout too | Both logouts complete cleanly — the session clears on B's logout instead of silently no-oping because A's teardown promise was still pending; B ends up on `/login` with no leftover token in memory |
+| Wrong-password attempt on `/login`, then something triggers a `storage` event / redirect check while the error banner is showing (e.g. another tab is also on `/login`) | The error message **stays on screen** — no full-page reload wipes it. A tab already sitting on `/login` is never force-reloaded/redirected by the cross-tab sync |
+
+**Out of scope (known, not a regression):** there is still no server-side token blacklist. A token
+already copied out of the browser stays valid until it expires — this fix only makes the *browser*
+consistent. A revocation endpoint is a possible separate piece of work.
+
+### S2 — logout didn't actually unregister push notifications (MEDIUM)
+
+**Real example:** the warehouse manager logs out of the shared laptop. That browser kept getting
+*his* push notifications afterwards, because the "unregister this device" call
+(`DELETE /admin/me/fcm-token`) was fired *after* the token had already been wiped, so it went out
+with no `Authorization` header, got 401'd, and silently did nothing. The auto-logout paths (a 401
+from any API call, or `/admin/me` returning 401/403 for a deactivated admin) never even attempted
+the unregister.
+
+**Fix:** one shared logout sequence, `performLogout()` in `src/stores/authStore.ts`, used by all
+four exit points (header Logout button, ⌘K "Logout" command, axios 401 interceptor, `fetchMe`
+401/403). It snapshots the token, clears the session immediately, and sends the unregister with the
+snapshotted token pinned to the request — so the ordering can't be got wrong again, and a slow or
+failing unregister never delays the logout.
+
+| Step | ✅ Expected |
+|---|---|
+| Log in, allow notifications, then click **Logout** (DevTools → Network) | `DELETE /admin/me/fcm-token` is sent **with** an `Authorization: Bearer …` header and returns **200**, not 401 |
+| Same, using the ⌘K palette → "Logout" | Identical behaviour |
+| Have someone trigger an admin push to that device afterwards | The logged-out browser gets **nothing** |
+| Go offline (DevTools → Offline) and click Logout | You are logged out **immediately** anyway — no hang, no stuck screen |
+| Log in on a browser where notifications were never allowed, then Logout | Logout is instant; no `fcm-token` request at all (nothing was registered) |
+| Let a session expire, then click anything (auto-logout via 401) | Redirected to `/login`, and an unregister was attempted rather than skipped entirely |
+
+❌ **Fail signals:** the DELETE shows 401 in the Network tab; the Logout button visibly hangs for
+seconds; notifications keep arriving after logout.
+
+**Automated cover:** `src/utils/authSync.test.ts` (9) and `src/stores/authStore.logout.test.ts` (5)
+— `npx vitest run src/utils/authSync.test.ts src/stores/authStore.logout.test.ts`.
+
+**Deploy needed:** admin frontend only.
+
+---
+
 ## Troubleshooting
 
 | Symptom | Likely cause |
