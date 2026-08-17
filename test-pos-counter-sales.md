@@ -321,6 +321,14 @@ Source (for reference):
   browser thermal prints (POS "Print receipt" and Order Details Modal thermal print). It does
   **not** affect backend-generated PDFs like "Print invoice" / "Download invoice" (which are
   separate server-side PDF flows).
+- **Order-list `channel` filter counts legacy orders as Online (App).** In the admin order
+  list, `?channel=pos` shows only walk-in POS orders, and `?channel=app` shows online orders
+  **including every order placed before POS existed**. Those old orders have no `channel`
+  field on the document at all (a schema default is written only when a doc is created, it
+  never backfills old ones — on the prod dump that is ~19,153 of 20,741 orders). So the "app"
+  filter matches `channel: "app"` **or missing**; if selecting "Online (App)" ever shows only
+  a few hundred recent orders, this fix has been undone. Sending no `channel` param must
+  return everything, exactly as before the filter existed.
 - **Custom width validation.** When a cashier types an out-of-range value (below 44mm or above 100mm) in the Custom printable-width input and blurs the field, the value automatically snaps back to the last valid calibrated value. The app never persists or prints at an unsafe width — this is a silent correction, not an error toast.
 
 ---
@@ -350,6 +358,12 @@ cd packages/admin && NODE_ENV=test npx jest pos-invoice-sequence pos-sale
   - **Missing phone → 400**, no order created (replaces the old "shared walk-in customer"
     success case, which is no longer reachable).
   - **Malformed phone → 400** (e.g. `"12345"`, `"0123456789"`), no order created.
+- **`packages/admin/__tests__/order.test.js`** → describe `GET /admin/order/order-list —
+  channel filter` (added 2026-08-17). Seeds three orders in a dedicated store: one
+  `channel: "pos"`, one `channel: "app"`, and one **legacy** order inserted with a raw
+  `OrderModel.collection.insertOne(...)` so the `channel` key is genuinely absent (a
+  `Model.create()` doc would get the default written and would not catch the bug). Asserts
+  no param → 3, `channel=pos` → 1, `channel=app` → 2 (explicit app **+** legacy).
 
 ---
 
