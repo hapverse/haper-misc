@@ -245,3 +245,410 @@ Still to do: on-device/GPS runtime verification (Android + iOS), and a web map p
   orders (85% no-coords, 70%-of-coords defaulted to store) could be misjudged.
 - Per-store range for the current Bihar store: data says ~4 km real → leave `deliveryRadiusKm`
   null (global 5 km) unless the store wants wider village coverage (then 10–15 km).
+
+---
+
+## 2026-08-18 — explicit `?lat=&lng=` + mismatch observability (backend)
+
+Part of the **wrong-store order routing** bug-prevention plan
+(`haper-misc/docs/plans/wrong-store-order-routing-fix.md`, steps 5-backend + 6). Backend
+only — Android sends the new params in a later step. **Zero change to accept/reject
+behaviour:** enforcement stays OFF.
+
+### Why
+
+Two real orders went to a store far from the delivery address because the *headers*
+(`x-user-latitude/longitude`) describe where the **phone** is, not where the **parcel**
+goes. The endpoint had no way for a client to say "resolve the store for THIS point".
+
+### What changed
+
+- `GET /user/store/nearest` accepts **optional** `lat` + `lng` query params. Present and
+  numeric → they win over the headers. Absent → identical to before.
+  Files: `packages/user/src/routes/store/validator.js`, `.../store/controller.js`.
+- The order-time serviceability mismatch log is now emitted by **both** checkout paths
+  (the scheduled path had none) and carries distance + which store *should* have served.
+  Files: `packages/user/src/routes/order/controller.js`,
+  `packages/shared/repositories/stores.repository.js` (`distanceToStoreKm`).
+
+### ✅ `GET /user/store/nearest` — query params
+
+1. **Header-only (old client):** send only `x-user-latitude/x-user-longitude` →
+   **Expect:** exactly today's result (same store list, `locality: ""`). No regression.
+2. **Query wins:** headers pointed at a far/unserved point, `?lat=<served>&lng=<served>` →
+   **Expect:** 200 with the store serving the QUERY point.
+3. **Query wins (mirror):** headers at a served point, query at an unserved point →
+   **Expect:** 404. (Proves precedence, not luck.)
+4. **No headers at all:** just `?lat=&lng=` with real values → **Expect:** 200.
+5. ❌ **Malformed:** `?lat=abc&lng=77.1`, `?lat=28.7&lng=xyz`, `?lat=&lng=`, `?lat=999&lng=77.1`,
+   or only one of the two → **Expect:** 400 with a Joi message.
+6. **Stray param:** `?someLegacyParam=1` with valid headers → **Expect:** 200 (ignored, not
+   rejected) — old clients must not break.
+
+### ✅ Mismatch shadow log (both order flows)
+
+Place an order whose **delivery address** is outside the chosen store's range, with
+`ENFORCE_ADDRESS_SERVICEABILITY` off (the default).
+
+1. **Normal order:** `POST /user/order/place` → **Expect:** order SUCCEEDS (fail-open) and
+   one line `[address-serviceability] {...}` in the logs.
+2. **Scheduled order:** same with `deliveryType: "scheduled"` → **Expect:** order SUCCEEDS
+   **and now logs too** (previously silent — this was the gap).
+3. **Same shape:** both lines carry the same keys; only `flow` differs
+   (`placeOrder` vs `placeScheduledOrder`):
+   `flow, enforced, storeId, addressId, point, distanceKm, radiusKm, chosenStoreName,`
+   `wouldServeStoreId, wouldServeStoreName, wouldServeCount, defaultStoreId`.
+4. **Routing bug vs coverage gap:** with another store that DOES serve the address →
+   **Expect:** `wouldServeCount: 1` + that store's id/name (a client routing bug).
+   With no store serving it → **Expect:** `wouldServeCount: 0`, ids null, but `distanceKm`
+   still filled (a coverage gap). These need opposite decisions later.
+   `wouldServeCount` is `null` (not `0`) if the serving-store read fails — `0` always
+   means a REAL zero.
+5. **Default-store fallback visibility:** `defaultStoreId` echoes `DEFAULT_STORE_ID`
+   (`null` when unset, and the literal string `"null"` also reads as unset, same as
+   `/user/store/nearest`). **Why it matters:** if it is NOT null, a `wouldServeCount: 0`
+   does **not** mean "nobody could serve this address" — `/user/store/nearest` would have
+   handed the client the default store instead of a 404, which is itself a likely cause of
+   wrong-store orders. Read this field before concluding "coverage gap".
+6. **No false positives:** an address the store DOES serve → **Expect:** no
+   `[address-serviceability]` line at all.
+7. **Enrichment can't break checkout:** if the enrichment read fails, → **Expect:** the
+   order still succeeds, the line still prints, unknown fields are `null` (never a missing
+   key).
+8. **Enforcement ON (not the default; dev experiment only):** the mismatch is logged with
+   `enforced: true` AND the order is rejected 400 "…delivery area…" — unchanged from before.
+
+### Edge cases
+
+- `lat`/`lng` must be sent as a **pair**; half a pair is a 400, not a silent fallback to
+  headers (a half-supplied pair means a client bug, and silently guessing is the very
+  behaviour this plan removes).
+- The mismatch log runs INSIDE the checkout transaction, so it is wrapped so that nothing
+  it does can abort an order.
+- Distance is 2dp haversine — good enough to tell 0.15 km from 24.5 km, not metre-accurate.
+
+### Rollout / deploy
+
+- Backend only, purely additive; safe to ship to dev independently of the Android work.
+- **Do NOT** flip `ENFORCE_ADDRESS_SERVICEABILITY` — the plan holds it off for ~2 weeks
+  while these logs collect real mismatch data; a separate decision follows.
+- Real alerting (Grafana/on-call) on these lines is an explicit follow-up, not this phase.
+
+### Tests
+
+`cd packages/user && NODE_ENV=test npx jest store` and `... npx jest order-serviceability`
+(in-memory Mongo). Covers header-only, query-override both directions, all 400 cases, and
+both flows' log payloads including fail-open.
+
+---
+
+## 2026-08-18 — Android fails closed instead of guessing a store (steps 1-3 + 5-android)
+
+Same plan (`haper-misc/docs/plans/wrong-store-order-routing-fix.md`), Android client half.
+**The "set your location" UI is NOT in this change** — it is the next step (now built: see
+"Android set-your-location UI + cart guard" below). This change makes the underlying state
+correct; until the UI landed, the failure states surfaced through the existing
+`NotServiceableCard`.
+
+### Why
+
+The app could *invent* a location. Three separate paths did it:
+1. A hardcoded emergency coordinate `25.7811, 84.7274` seeded `defaultLatitude/Longitude`
+   on a fresh install. Its code comment claimed it "never resolves a store on its own" —
+   true when written, **false since 2026-07-26**, when a store was created 0.4 km from it.
+2. A failed default-address fetch fell through to GPS and from there to that coordinate —
+   a network blip became a confidently wrong store (#HP245512766).
+3. Two unsynchronized resolutions fired on login and whichever finished last won
+   (#HP219712748), plus an 8 s watchdog that resolved a store from whatever ambient
+   coordinate happened to be set.
+
+### What changed
+
+- `AppEnvironment.defaultLatitude/Longitude` are now **nullable** and there is **no
+  fallback**. Null = "unknown" → the `x-user-latitude/longitude` headers are **omitted**
+  rather than filled with a guess.
+- **One-shot prefs migration** (`prefs_migrated_v2`): a persisted coordinate within ~500 m
+  of the retired one is wiped **together with the persisted `storeId`** derived from it.
+  Runs exactly once per install.
+- Default-address fetch is now three-way — `Has` / `None` / `Failed`. Only `None` (no
+  address, or an address with no coordinates) may fall through to GPS. `Failed` fails closed.
+- **Generation token**: every resolution attempt (address / GPS / watchdog / re-home /
+  manual store pick) takes a monotonic number; any async result whose number is stale is
+  discarded. New attempts supersede in-flight ones instead of being blocked by them.
+- The **watchdog only ends the spinner** — it can no longer resolve a store.
+- `GET /user/store/nearest` is called with **explicit `?lat=&lng=`** (the backend half above).
+
+### ✅ Fail-closed cold start (device/emulator; test at min supported API too)
+
+1. **Fresh install, location denied, no saved address** → **Expect:** spinner ends, NO store,
+   NO catalog, the not-serviceable/choose-location state. ❌ Must NOT land on a store.
+2. **Fresh install, denied, address WITH coordinates** → **Expect:** the store serving that
+   address.
+3. **Fresh install, denied, address with NO coordinates (legacy)** → **Expect:** prompt, no
+   silent store. (This is order #HP245512766's exact setup.)
+4. **Airplane mode / throttled network on cold start** → **Expect:** loading ends within ~8 s
+   in a retryable state, **never** a resolved store. Restore network + Retry → resolves.
+5. **Backgrounded past the 8 s watchdog then resumed** → **Expect:** same, no invented store.
+
+### ✅ Poisoned-prefs migration (must be verified on an UPGRADE, not a fresh install)
+
+6. Install the **previous** build, let it settle onto the fallback coordinate (fresh install +
+   deny location + no address), confirm it picked a store. Now install this build **over it**
+   (do not uninstall) → **Expect:** the stale coordinate AND store id are gone; the app asks
+   for a location instead of reopening the wrong store.
+7. Relaunch again → **Expect:** the migration does not re-run (a user genuinely near that
+   coordinate keeps their location).
+
+### ✅ Race determinism (the actual bug)
+
+8. **Login 10× in a row** on a slow connection with a default address that has coordinates →
+   **Expect:** the address-derived store **every single time**. ❌ Any run landing on a
+   different store is a fail.
+9. **Change the default address** to another city → **Expect:** re-homes to the new store
+   (this must still work — the fix must not freeze the store).
+10. **Add a new address** for another location → **Expect:** switches there, or shows
+    not-serviceable.
+11. **Pick a store manually** from the store switcher while a resolution is in flight →
+    **Expect:** your pick sticks; a late response does not overwrite it.
+
+### Edge cases
+
+- The header pair is all-or-nothing: when the location is unknown, **neither**
+  `x-user-latitude` nor `x-user-longitude` is sent (matches the backend's pair rule above).
+- `CartViewModel.ensureStoreId()` still resolves a store when `storeId` is blank — closing
+  that back-door is the **next** step (now done, see below). It is no longer dangerous on its
+  own (with no location it now sends no coordinates and simply fails), but it is not yet a
+  proper prompt.
+- Checkout is deliberately NOT re-resolving client-side; the backend guard stays the
+  authority for the money-adjacent decision.
+- Crashlytics logging on the fail-closed paths is wrapped — telemetry must never be able to
+  prevent the app from failing closed. Watch for the new line
+  `resolution watchdog timed out … failing closed, NO store resolved` (the old line said
+  "forcing nearest store", so old and new behaviour are distinguishable in logs).
+
+### Rollout / deploy
+
+- Client-only; the backend `?lat=&lng=` support is additive, so ordering between the two is
+  not critical (Android degrades to header behaviour if deployed first).
+- ⚠️ The migration and the fallback deletion **must ship in the same release** — shipping the
+  deletion without the migration leaves existing installs pinned to the wrong store.
+- Raising the min build via `forceUpdate` is a separate, later step in the plan.
+
+### Tests
+
+`cd haper-android && ./gradlew testDebugUnitTest assembleDebug` — 222 JVM tests green.
+Covers: Has/None/Failed branching, failed-fetch never calling `/store/nearest`, the
+watchdog resolving nothing, last-attempt-always-wins (10 iterations), an explicit store pick
+surviving a late response, explicit `lat`/`lng` being sent, and the prefs migration
+(poisoned cleared, real location kept, runs once, fresh install = null not a fallback).
+
+---
+
+## 2026-08-19 — Android set-your-location UI + cart guard (step 4)
+
+Same plan, step 4. The previous change made the app **fail closed**; this one makes failing
+closed **usable**, and closes the last path that could still resolve a store behind the
+user's back.
+
+### Why
+
+"Fail closed" without a UI is just a dead end. The four failure reasons the ViewModel already
+recorded all rendered as the same not-serviceable card, whose copy said *"Haper isn't
+serviceable at your location yet"* — which is a **different and wrong statement**: we hadn't
+learned their location at all. A customer in a fully-served area was told we don't deliver to
+them, with no button that would fix it.
+
+Separately, tapping "+" on an item was still a hidden resolution path: `CartViewModel
+.ensureStoreId()` called `/store/nearest` itself from ambient coordinates and stamped whatever
+came back onto the cart — so an order could be placed against a store the user never browsed.
+
+### What changed
+
+- New **`LocationNeededCard`** (`ui/screens/home/LocationNeededCard.kt`), shown on Home
+  whenever `homeVM.locationNeeded != null`. Four states, each with its own copy and its own
+  primary action:
+
+  | State | Title | Primary CTA | Secondary |
+  |---|---|---|---|
+  | `PERMISSION_NEEDED` | Where should we deliver? | Enable location | Or add a delivery address |
+  | `PERMISSION_DENIED` | Where should we deliver? | Open Settings | Or add a delivery address |
+  | `NO_ADDRESS` | Add a delivery address | Add a delivery address | Or try enabling location |
+  | `NETWORK_ERROR` | Can't reach Haper right now | Retry | (none) |
+
+- `NotServiceableCard` **stays**, unchanged in behaviour, for its own case ("we know where you
+  are, nobody serves it"). Both now share one shell (`HomeStatusCard`) so they can't drift.
+- **Retry** uses an in-button spinner (`homeVM.isRetryingLocation`), not the full-screen
+  "Finding your nearest store" overlay — a one-tap retry shouldn't flash the whole screen.
+- **Touch targets**: both CTAs are now ≥ 48dp tall (the old secondary text-link was ~36dp).
+- Returning from **system Settings** with the permission granted resumes resolution
+  automatically (ON_RESUME re-check) — no second tap needed.
+- **Cart guard**: `ensureStoreId()` is gone. `addToCart()` now **refuses** when no store is
+  resolved, remembers the `(itemId, quantity)`, and raises `needsLocationForCart`.
+  `LocationNeededSheetHost` (mounted once above the NavHost, so it covers home / category /
+  search / item-detail / cart) shows the SAME card in a Material3 `ModalBottomSheet`.
+  On success the sheet closes and the original add is replayed **exactly once**; dismissing
+  cancels it.
+
+### ✅ Location-needed states (device/emulator; check at min supported API too)
+
+12. **Deny location, no saved address** → **Expect:** "Where should we deliver?" + **Enable
+    location**. ❌ Must NOT say "not serviceable".
+13. Tap **Enable location** → system dialog. **Allow** → the "Finding your nearest store"
+    overlay → normal catalog. ❌ No bespoke success screen.
+14. Tap **Enable location** → **Deny** → the same card **crossfades in place** to the "Open
+    Settings" copy. ❌ Must not navigate or blink the whole screen.
+15. Tap **Open Settings** → app settings page → grant Location → press **back** →
+    **Expect:** resolution resumes on its own. ❌ Having to also tap Retry is a fail.
+16. Turn on **airplane mode**, pull-to-refresh → **Expect:** "Can't reach Haper right now"
+    with **Retry** only (no address link). Tap Retry → spinner **inside the button**, card
+    stays put. ❌ A full-screen loading overlay is a fail.
+17. Restore network, tap **Retry** → resolves and shows the catalog.
+18. **Legacy address with no coordinates** (~75% of real addresses) → **Expect:** "Add a
+    delivery address" copy, and the secondary link offers location instead.
+19. Tap **"Or add a delivery address"** → the existing address flow (same route as the
+    not-serviceable card's link). Add/select an address with a location → store resolves.
+
+### ✅ Cart guard (the back door)
+
+20. Get into a no-store state (step 12), then tap **+** on any item **from the home screen** →
+    **Expect:** bottom sheet with the same card. ❌ The item must NOT be added, and NO
+    `/store/nearest` call may be made by the cart.
+21. Resolve the location **inside the sheet** → **Expect:** sheet closes and **that same item
+    appears in the cart, once**. ❌ Two units = fail.
+22. Repeat, but **swipe the sheet away** (or tap the scrim / press back) → **Expect:** nothing
+    added, cart unchanged. Then resolve the location some other way → **Expect:** still
+    nothing added (the cancelled add must not resurface).
+23. Repeat step 20 from **category**, **search** and **item-detail** screens → same sheet,
+    same behaviour (one host covers all entry points).
+24. In the sheet, tap **"Or add a delivery address"** → navigates to addresses; the pending
+    add is **cancelled** (they can tap + again once the store resolves).
+25. **Log out while a sheet is pending**, log in as a different user → **Expect:** no
+    mystery item ever appears in the new user's cart.
+
+### ✅ Platform correctness
+
+26. **Rotate** the device on each of the four states → copy and state survive.
+27. **Dark theme** → card is legible; the icon badge is Primary-at-10% on both themes.
+28. **Font scale 130%+** → title/body wrap, buttons still tappable, nothing clipped.
+29. **TalkBack** → icon is silent (decorative); title, body and both CTAs are reachable and
+    announced; both CTAs are ≥ 48dp.
+30. **Process death** (Developer options → "Don't keep activities"), background and return →
+    the app re-resolves or re-asks; ❌ it must never come back silently on a store.
+
+### Edge cases
+
+- Denying the permission does **not** cancel an in-flight address-based resolution — most
+  customers order to a saved address and never need GPS. It only escalates a state we are
+  already stuck in (`onLocationPermissionDenied()` no-ops while loading / once resolved).
+- The permission denial also no longer sets the locality label to "Using default delivery
+  location" (there is no default any more); it says "Set your delivery location".
+- The pending add is deliberately **not** cleared by `CartViewModel.clearAll()` — `clearAll()`
+  also runs for an ordinary "cart is empty" response, which is exactly what arrives right
+  after a store resolves. Logout clears it explicitly.
+- `ModalBottomSheet` cancels on dismiss; there is no "are you sure" — re-tapping + is cheap.
+- Shared code note: this is **Android-only** (Kotlin/Compose). No shared RN/Flutter surface,
+  so nothing for iOS to mirror mechanically — but the *copy* should match iOS when setu-ios
+  builds the equivalent screen.
+
+### Rollout / deploy
+
+- Client-only, no backend dependency. Ships with the step 1-3 change (same release as the
+  prefs migration).
+
+### Tests
+
+`cd haper-android && ./gradlew clean testDebugUnitTest assembleDebug` — **238 JVM tests
+green, 0 failures**. New coverage: the copy table for all four reasons (including "no
+exclamation marks / no Error-Failed jargon"), retry showing the in-button spinner and not
+`isLoading`, a failing retry keeping the card up, double-retry being ignored, permission-denial
+semantics (flips in place / doesn't cancel a live resolution / ignored once resolved), the
+cart refusing to add with no store, the cart never calling `/store/nearest`, replay-exactly-
+once, dismissal cancelling for good, and an empty-cart response not swallowing the pending add.
+There is no instrumented (androidTest) source set in this project, so the card itself is
+verified through its pure copy table plus manual steps 12-30 above.
+
+---
+
+## 2026-08-19 — Android review fix-loop (code review on steps 1-4)
+
+Five findings from the code review of the work above, all fixed in `haper-android` on `dev`.
+Two of them were real, provable holes in the fix itself — the wrong store could still survive.
+
+### What changed
+
+- **The one-shot migration now clears the persisted `storeId` UNCONDITIONALLY**
+  (`AppEnvironment.initialize()`). It used to clear it only when it also found a persisted
+  coordinate sitting on the retired fallback point — but the fallback was only ever an
+  *in-memory* seed and was never written to prefs. So the classic victim (fresh install →
+  location denied → no address → store silently resolved from the fallback) carries **only**
+  a wrong `last_store_id` and no coordinates at all, and the old check sailed straight past
+  it. Coordinates are still cleared conditionally (a real one is kept). Cost: one extra store
+  re-resolution on the first launch after this update.
+- **"Deliver Here" now has its own signal.** `AddressViewModel.setDefaultAddress()` (the only
+  caller behind that button) sets a one-shot `justSelectedAddress`, which `MainActivity`
+  routes to `HomeViewModel.onDeliveryAddressChanged()` — the unconditional re-home — exactly
+  like the existing `justAddedAddress`. Before: if the login-time address fetch failed, the
+  user's deliberate tap was the *first* default-address emission of the session, and the
+  "first sighting is the passive login fetch" rule ignored it, leaving them shopping and
+  ordering from the previous address's store.
+- **A refresh blip can no longer wipe a working home.** `failLocation()` now checks
+  "already resolved" (the guard `onLocationPermissionDenied()` already had): with a store on
+  screen, a failed re-resolution shows a small toast instead of raising the full-screen
+  "Where should we deliver?" card over a working catalog.
+- **`NO_ADDRESS` is no longer dead code.** "You have an address but it has no map pin, and
+  GPS is unavailable" now reports `NO_ADDRESS` ("Add a delivery address") instead of
+  `PERMISSION_NEEDED` ("Enable location") — enabling location does nothing for that user.
+  `DeliveryAddressResult.None` carries `hasAddress` so the GPS branch can tell the two apart.
+  "No address at all" still reports `PERMISSION_NEEDED`.
+- Comment-only: the `onDefaultAddressLoaded` KDoc no longer claims a general "rescue"; it now
+  states that a failed own-resolution is only adopted when no coordinates were in play, and
+  that a returning user with a persisted location stays fail-closed until they tap Retry.
+
+### ✅ Manual steps (Android)
+
+31. **Upgrade with only a poisoned store id** — install the *previous* build, fresh install,
+    deny location, no address, let it settle on a store; **uninstall nothing**, install this
+    build over it → **Expect:** it does NOT reopen that store; it asks where to deliver.
+    (This is the case the earlier migration missed — the one real users are in.)
+32. **Upgrade with a real saved location** → **Expect:** the location survives, the store is
+    re-resolved once on first launch and lands on the same store. No visible difference beyond
+    a single extra resolution.
+33. **"Deliver Here" with a broken login fetch** — turn the network off during app launch so
+    the header's default-address fetch fails, turn it back on, open **My Addresses**, tap
+    **Deliver Here** on an address in another town → **Expect:** the store re-homes to that
+    town (or shows not-serviceable). ❌ Must NOT stay on the previous store.
+34. **Refresh blip over a working home** — with a store and catalog on screen, kill the
+    network and pull to refresh → **Expect:** the catalog stays, a short toast appears.
+    ❌ Must NOT show the full-screen "Where should we deliver?" card.
+35. **Legacy address, GPS off** — account whose only address has no map pin, location
+    permission denied → **Expect:** the card reads **"Add a delivery address"** with primary
+    CTA "Add a delivery address" (not "Enable location").
+36. **No address at all, GPS off** → **Expect:** the card still reads "Where should we
+    deliver?" with primary CTA "Enable location". The two must stay distinct.
+
+### Edge cases
+
+- Re-picking the *same* address twice still signals (the flag is consumed one-shot, so the
+  Compose key goes `id → null → id`), and `onDeliveryAddressChanged` no-ops when the
+  coordinates are already the active ones — so a repeat tap costs nothing.
+- The downgraded failure message is a toast on Home and only fires when a store IS resolved,
+  so it can't double up with the not-serviceable / location-needed cards.
+- Still Android-only; no shared RN/Flutter surface. iOS should mirror the `NO_ADDRESS` copy
+  split and the deliberate-pick signal when setu-ios builds the equivalent screens.
+
+### Rollout / deploy
+
+- Client-only, same release as steps 1-4. The migration change is **not** re-runnable for
+  anyone who already installed a build carrying `prefs_migrated_v2 = true` — those installs
+  need a `_v3` key if this ships after such a build reached users.
+
+### Tests
+
+`cd haper-android && ./gradlew clean testDebugUnitTest assembleDebug` — **245 JVM tests
+green, 0 failures** (238 → 245). New/updated: migration clearing a store id with no
+coordinates at all, migration keeping a real location while still dropping its store id,
+a deliberate pick re-homing when it is the first address the VM sees, a failed refresh not
+raising the location card over a resolved store, declining the location dialog over a
+resolved store, `NO_ADDRESS` vs `PERMISSION_NEEDED` copy selection (two tests corrected from
+the wrong expectation, one added), and `setDefaultAddress` flagging/one-shot-consuming the
+deliberate pick.
