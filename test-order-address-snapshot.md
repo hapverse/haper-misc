@@ -115,9 +115,14 @@ old builds simply ignore the extra key. No app release needed.
 
 Customer opens checkout with address A, deletes A in another tab/screen, then submits.
 
-- **Expect:** the order is still created (unchanged behavior — checkout does **not** hard-reject),
-  with `addressSnapshot: null`. Accepted by design (plan §7). After Phase 2 the address row still
-  exists, so the live `.populate()` still resolves; only the snapshot is missing.
+- **SUPERSEDED** by the checkout ownership guard — see
+  `test-checkout-address-ownership-guard.md`. Checkout now **rejects with a 400** ("This delivery
+  address is no longer available…") whenever the address does not resolve for that customer,
+  because the same unchecked `null` was also what let one customer's order carry (and display)
+  another customer's address.
+- Previous behaviour, for reference: the order was still created with `addressSnapshot: null`
+  (plan §7). After Phase 2 the address row still exists, but soft-deleted rows are filtered out by
+  `getDetail`, so this case now 400s.
 
 ### ✅ An address with only the minimum fields filled
 
