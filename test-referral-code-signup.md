@@ -1,13 +1,13 @@
-# Test: Referral code at phone signup (Android only)
+# Test: Referral code at signup
 
 **Area:** User app phone-based signup flow (new-user account creation)  
 **Android:** `haper-android/app/src/main/java/com/bheldi/ui/screens/auth/LoginScreen.kt`,
 `AuthViewModel.kt` — optional `referrerCode` field at the name-entry step (new users only)  
 **Backend:** `POST /user/account/create` already supports optional `referrerCode` field (no changes needed)  
 **Platform coverage:**
-- ✅ **Android:** referral code field ON signup screen (new feature, this pass)
-- ❌ **iOS:** same feature built but **intentionally NOT yet shipped** — pending separate user approval
-- ✅ **Web:** already had referral code at signup (before this work)
+- ✅ **Android:** referral code field ON signup screen with whitespace-safety fix (shipped)
+- ✅ **iOS:** same feature built with whitespace-safety fix (shipped)
+- ✅ **Web:** referral code field at signup with new validation/trim logic to fix whitespace-only bug (shipped)
 
 **Verified:** `./gradlew clean testDebugUnitTest assembleDebug` → BUILD SUCCESSFUL, 249 tests all passing
 (AuthViewModelTest +1 new test). Code review: APPROVE WITH NITS (2 hardening suggestions applied).
@@ -33,7 +33,7 @@ The referral code (if entered) is sent to the backend **only during account crea
 
 ---
 
-## Manual test steps (dev, Android only)
+## Manual test steps (dev, Android)
 
 ### ✅ A. New user signup with valid referral code — code is applied
 1. **Start fresh:** open the app and tap "Sign Up" (or clear app data to start a new session if already
@@ -105,6 +105,63 @@ The referral code (if entered) is sent to the backend **only during account crea
 
 ---
 
+## Manual test steps (dev, Web)
+
+**What was fixed:** The Web signup form had a referral code field but **no trim or format validation** — worse than the mobile bug. JavaScript truthiness treats whitespace-only strings as "present", so a stray space (`" "`, `"\n"`) could be sent to the backend, which returns 404 for unresolvable codes, causing the **entire signup call to fail** (not just the referral part).
+
+**Fix applied:** New shared `utils/validation.ts` (exact rule: trim, uppercase, empty-after-trim = valid/optional, else match `^[A-Z0-9]{4,16}$`), wired into `pages/Signup.tsx` (blocks submit only on genuine format error, never on blank), and defensive trim in `services/api.ts`'s `verifyOtp` and `googleVerifyPhone`.
+
+**Area:** `haper-web/pages/Signup.tsx`, `services/api.ts`, `utils/validation.ts` — email/phone-based signup flow (new-user account creation)
+
+### ✅ A. New user signup with blank referral code — signup proceeds, no field sent
+1. **Open the Web signup page** (e.g., `http://localhost:3000/signup` or `http://dapi.haper.in/signup` on dev).
+2. **Leave referral code blank:** enter Email/Phone and Password, **do not touch the referral code field** (or clear it completely).
+3. **Click "Sign Up."**
+   - ✅ **Expect:** signup succeeds normally. The referral code field is **not sent** to the backend (omitted entirely, not sent as `""`).
+4. **Verify via API:**
+   - Call `GET /user/profile` with the new account's session → `referredBy` is **absent** or `null`.
+
+### ✅ B. New user signup with whitespace-only referral code — signup proceeds, field trimmed and omitted
+1. **Open the Web signup page.**
+2. **Enter whitespace-only input:** in the referral code field, paste or type **leading/trailing spaces** (e.g., `"   "` or `" ABC123 "` with extra spaces).
+3. **Click "Sign Up."**
+   - ✅ **Expect:** the form **trims the field** automatically (client-side validation in `Signup.tsx`). After trim, if empty, it is treated as blank (no field sent to backend).
+   - ✅ **Expect:** signup succeeds. The referral code is **not sent** to the backend.
+   - ✅ **Expect:** no error is raised; signup does not block.
+
+> **Background:** this was a critical gap before the fix. A user copying a code from a message with stray whitespace would fail the entire signup. The fix ensures whitespace is always trimmed before validation, then checked against the format rule.
+
+### ✅ C. New user signup with valid referral code — code is applied
+1. **Open the Web signup page.**
+2. **Enter a valid referral code:** fill in the form and in the referral code field type a valid code like `ABC123` (or `abc123` — it auto-uppercases per the validation rule).
+3. **Click "Sign Up."**
+   - ✅ **Expect:** signup succeeds. The referral code is **included** in the backend request as `referrerCode: "ABC123"`.
+4. **Verify via API:**
+   - Call `GET /user/profile` with the new account's session → `referredBy: "ABC123"` is set.
+
+### ✅ D. New user signup with invalid-format referral code — inline error on blur, submit blocked
+1. **Open the Web signup page.**
+2. **Enter an invalid code:**
+   - Type a code that is **too short:** `AB` (needs 4+).
+   - **Click elsewhere or blur the field.**
+   - ✅ **Expect:** an **inline error** appears below the field: **"Code must be 4-16 characters"** (or similar). The "Sign Up" button is **disabled**.
+3. **Type a code that is **too long:** `ABCDEFGHIJKLMNOPQRSTUVWXYZ` (more than 16).
+   - **Blur the field.**
+   - ✅ **Expect:** the inline error updates: **"Code must be 4-16 characters."** Button still disabled.
+4. **Type a non-alphanumeric code:** `ABC-123` (contains a dash).
+   - **Blur the field.**
+   - ✅ **Expect:** the inline error updates: **"Code must contain only letters and numbers."** (or similar). Button still disabled.
+5. **Clear the field or fix the code:**
+   - Delete the invalid text or type a valid code.
+   - **Blur the field.**
+   - ✅ **Expect:** the error clears, and the "Sign Up" button **re-enables**.
+6. **Click "Sign Up."** — it now succeeds.
+
+### Known follow-up (not part of this fix, low-risk)
+`services/api.ts`'s `googleVerifyPhone()` function has a `referrerCode` parameter in its signature, but **nothing currently calls it with a value** — Google-linked signups on Web cannot apply a referral code today. This is a **pre-existing gap** (not introduced by this fix). A future phase should wire the referral field to the Google sign-in path. For now, Google signups are unaffected.
+
+---
+
 ## Client behavior (old app backward-compatibility)
 
 **Old Android builds** (before this commit) have **no change** — they don't know the field exists.
@@ -154,12 +211,12 @@ cd haper-android
 
 ## Deploy / rollout
 
-- **Android app release:** ship the new build with the referral code field to users.
-- **iOS:** same feature is built but **NOT shipped yet** — pending separate user approval.
-- **Web:** already had this feature before this work (no change needed).
+- **Android app release:** ship the new build with the referral code field and whitespace-safety fix to users.
+- **iOS app release:** ship the new build with the referral code field and whitespace-safety fix to users.
+- **Web deployment:** deploy the new `utils/validation.ts`, `Signup.tsx` changes, and defensive trim in `services/api.ts`.
 - **Backend:** **no changes** — the `POST /user/account/create` endpoint already accepted optional
-  `referrerCode`. Simply deploy the new Android app; the backend is ready.
-- **Rollback (if needed):** removing the "Add code" field from the UI is safe; old backend logic
+  `referrerCode`. The backend is ready for all three platforms.
+- **Rollback (if needed):** removing the referral code field from the UI is safe; old backend logic
   treats the missing field as `null` (no migration needed).
 
 ---
@@ -178,10 +235,8 @@ cd haper-android
 
 ## Notes for dev/QA
 
-- **This is a small feature, well-tested:** the Android build passed all 249 unit tests and code review.
-  Focus manual testing on the critical regression (section A–B: blank field never blocks) and the new
-  error path (section C: invalid formats show inline errors and block the button).
-- **No backend changes needed:** the backend endpoint already accepted `referrerCode` as optional.
-  Deploying the Android app is sufficient.
-- **Web already had this:** if you are familiar with web signup, the behavior mirrors it (same 4–16
-  format, auto-uppercase, optional, applied at account-creation time only).
+- **All three platforms now shipped:** Android and iOS have the referral code field at signup with whitespace-safety fix; Web now has validation and trim logic applied.
+- **Critical regression test (all platforms):** blank or whitespace-only referral code must **never block signup**. This is the most important behavior to protect. Focus manual testing on sections A–B.
+- **Validation rule is identical across platforms:** 4–16 alphanumeric characters (auto-uppercased), trim before validating, treat empty-after-trim as blank (optional).
+- **No backend changes needed:** the backend endpoint already accepted `referrerCode` as optional. Deploying all three client versions is sufficient.
+- **Known gap (not blocking):** Google-linked signups on Web cannot apply a referral code today (pre-existing). See the Web follow-up section for details.
