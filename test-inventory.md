@@ -153,6 +153,9 @@ This puts stock into the warehouse.
    **SKU/Barcode + Name** for you. The same product served to several stores appears
    **once** (deduped by barcode).
 ✅ Warehouse stock shows the picked barcode … `Available 100` (SKU column = the barcode).
+✅ The stock row also carries the product **thumbnail** (`image` in the API response),
+   matched from the catalogue on **barcode = SKU**. A warehouse-only SKU that no catalogue
+   item carries (uncatalogued goods typed by hand) shows `image: null` — never an error.
 ❌ Try to pick a product that has **no barcode enrolled** → toast "… has no barcode/SKU
    yet — enroll one on the item first" and **no line is added** (matches the transfer rule).
 ✅ Pick the **same product twice** → toast "… is already on the list" (no duplicate line).
@@ -828,8 +831,25 @@ After a few **sales** exist in the store (place test orders, or use POS → New 
    ✅ A per-product table: units, revenue, **COGS**, gross profit, **margin %**, and
    **cost-unknown units** (highlighted). With a store selected → that store; switch to
    **All Stores** → the same product is **merged across stores**.
+   ✅ Every row now also carries the product **thumbnail** (`image` in the API response) —
+   in both single-store and **All Stores** mode. Same rule as Most Sold: for a product
+   present in several stores the image comes from the **oldest store row**, so it doesn't
+   flip between refreshes.
+   ✅ A sold product whose item row was deleted (or that never had an image) still shows
+   its numbers; `image` is simply **null** — the key is always present, never missing.
 3. Sidebar → **Most Sold** → in **All Stores** mode there's a **"Merge same product
    across stores"** toggle.
+   ✅ In **All Stores** mode every row shows the product **thumbnail** and its **selling
+   price** — same as when a single store is selected. (Before this fix both were always
+   blank in All Stores mode: the cross-store branch of the query never looked the item up.)
+   ✅ For a product that exists in more than one store (same `iId`), the image/price shown
+   is the **oldest store row's** — deterministic, it does not change between refreshes.
+   ✅ A product whose item row was deleted still shows its **name, units and revenue**;
+   only the thumbnail/price are blank (never an error, never a missing row).
+   ❌ Known gap (not fixed here): switching the **"Merge same product across stores"**
+   toggle ON returns **400 Bad Request** — the API validator rejects the `crossStore`
+   query param the page sends. All-Stores mode without the toggle already merges by
+   `iId`, so the numbers are correct; only the toggle itself is broken.
 
 ### 12b. Transfer Discrepancies report — short receipts  *(super admin / warehouse manager / store admin)*
 Sidebar → **Inventory & Warehouse → Transfer Discrepancies**. Read-only; nothing is corrected here.
