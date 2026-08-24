@@ -4,7 +4,7 @@ Feature plan: `coupon-codes-plan.md`. Admin UI design: `coupon-admin-ui-design.m
 Backend: `haper-backend` (`packages/shared/utils/coupon.utils.js` engine, `packages/admin/src/routes/coupon/*` CRUD, wired into cart apply/remove and both checkout paths).
 Admin panel: `haper-admin` (`src/pages/Coupons/*` CRUD, `POS/NewSalePage.tsx` coupon entry).
 
-Needs: backend deploy (dev) + admin deploy. No migration. No client (Android/iOS/web) change required except Android checkout coupon entry (shipping in a few days — test then). All new cart/order fields are additive and default to null/empty.
+Needs: backend deploy (dev) + admin deploy. No migration. Android checkout coupon entry (§2A2), iOS checkout coupon entry (§2A3), and web checkout coupon entry (§2A4) are now built. All new cart/order fields are additive and default to null/empty.
 
 ---
 
@@ -91,9 +91,157 @@ Needs: backend deploy (dev) + admin deploy. No migration. No client (Android/iOS
 
 ---
 
-## 2. Customer checkout — apply a coupon (Android coming in a few days)
+## 2. Customer checkout — apply a coupon
 
-**Note:** This section covers the cart apply/remove and checkout validation flow. Android checkout UI is NOT part of today's ship — when Android ships in a few days, test the normal flow (apply valid code → total drops → place order → order shows coupon). For now, test via the backend API (or use web/admin POS as a proxy).
+**Note:** This section covers the cart apply/remove and checkout validation flow across all platforms and the raw backend API.
+
+### ✅ A2. Android — normal-flow coupon entry (built 2026-08-25)
+
+Files: `app/src/main/java/com/bheldi/ui/screens/cart/{CartScreen,CartViewModel}.kt`,
+`app/src/main/java/com/bheldi/data/model/HomeModels.kt` (`CartCoupon`, `ApplyCouponResponse`,
+`RemoveCouponResponse`), `app/src/main/java/com/bheldi/data/api/ApiService.kt`
+(`applyCoupon`/`removeCoupon`). Scope was normal-flow only (not exhaustive edge cases —
+see §2C/D/E for reason-code coverage, which the Android UI displays verbatim via the API's
+`message` string but wasn't individually tested against each reason).
+
+1. On the Android app (debug build), open **Cart** with items totalling ≥ a coupon's min order value.
+2. **Expect:** a **Coupon** card sits directly above **Bill Details**, with a text input
+   ("Enter coupon code") + **Apply** button. No coupon UI existed before this build — if the cart
+   has never had a coupon applied, this card must be the ONLY new thing visible; everything else
+   renders exactly as before.
+3. Type `welcome50` (lowercase) into the field.
+4. **Expect:** the input **auto-uppercases as you type** — the field shows `WELCOME50`, not `welcome50` (client-side, immediate, matches the admin panel's convention).
+5. Tap **Apply**.
+6. **Expect:** a brief spinner on the Apply button, then:
+   - The card switches to the applied state: code chip (`WELCOME50`) + "You saved ₹50" + a **Remove** button.
+   - **Bill Details** now shows a **"Coupon discount"** row (`-₹50`) instead of any "Discount" row — never both.
+   - **"To Pay"** and the bottom **Checkout** button total both drop by ₹50.
+7. Tap **Checkout** → complete the order (COD is simplest).
+8. **Expect:** order places successfully; the payable amount charged matches the coupon-adjusted total from step 6. (Order-detail screen does not yet render the coupon block — `Order.coupon` is modeled but not wired into any screen this pass; that's a follow-up, not a bug.)
+9. Go back to **Cart** with a fresh cart, apply `WELCOME50` again, then tap **Remove**.
+10. **Expect:** the card reverts to the input state, **Bill Details** shows the automatic "Discount" row again (if one applies at this subtotal) or no discount row (if none), and the total reverts correctly.
+11. **❌ Invalid code:** type `DOESNOTEXIST`, tap Apply.
+12. **Expect:** an inline error appears under the input (the API's `message` shown as-is, e.g. "This coupon code isn't valid") — no crash, no toast, cart total unchanged. Clearing/retyping the field clears the error.
+13. **Stale coupon (valid: false):** apply a coupon, then remove enough items to drop below its min order value, pull-to-refresh the cart.
+14. **Expect:** the applied-coupon chip **stays visible** (code + Remove button) with an added inline warning line showing `coupon.message` (amber, with an info icon) — the coupon is NOT auto-cleared; the customer must tap Remove themselves. Total is priced without the coupon in the meantime.
+
+**Not covered this pass (normal-flow scope only, per explicit instruction):** exhaustive walk of every `reason` code (NOT_STARTED, WRONG_STORE, TOO_MANY_ATTEMPTS, etc.) on Android specifically — the UI path is identical for all of them (shows `message` inline), so only NOT_FOUND was walked as a representative case. `./gradlew assembleDebug` passes with no new warnings.
+
+### ✅ A3. iOS — coupon entry (built 2026-08-25)
+
+Files: `haper/Views/CartView.swift` (`CouponCard`), `haper/ViewModels/CartManager.swift`
+(`coupon`, `couponInput`, `couponError`, `couponWorseThanAutoAdvisory`, `applyCoupon()`,
+`removeCoupon()`, `applyCartResponse()`), `haper/Models/HomeModels.swift` (`CartCoupon`,
+`ApplyCouponData`, `RemoveCouponData`).
+
+1. On the iOS app (debug build/simulator), open **Cart** with items totalling ≥ a coupon's min
+   order value.
+2. **Expect:** a **Coupon** card sits directly above **Bill Details**, with a text field ("Enter
+   coupon code") + **Apply** button. If the cart has never had a coupon applied, this card must be
+   the only new thing visible.
+3. Type `welcome50` (lowercase) into the field.
+4. **Expect:** the field **auto-uppercases as you type** — shows `WELCOME50`.
+5. Tap **Apply**.
+6. **Expect:** a brief spinner on the Apply button, then:
+   - The card switches to the applied state: code (`WELCOME50`) + "You saved ₹50" + a **Remove**
+     button.
+   - **Bill Details** shows a **"Coupon discount"** row (`-₹50`) instead of any "Discount" row —
+     never both.
+   - The total drops by ₹50.
+7. Complete checkout (COD is simplest).
+8. **Expect:** order places successfully; the charged amount matches the coupon-adjusted total.
+9. On a fresh cart, apply `WELCOME50` again, then tap **Remove**.
+10. **Expect:** the card reverts to the input state, **Bill Details** shows the automatic
+    "Discount" row again (if one applies) or none, and the total reverts correctly.
+11. **❌ Invalid code:** type `DOESNOTEXIST`, tap Apply.
+12. **Expect:** an inline error appears under the input (the API's `message`, e.g. "This coupon
+    code isn't valid") — no crash, no alert, cart total unchanged. Editing the field clears the
+    error.
+13. **Stale/zero-discount coupon:** apply a coupon, then remove enough items to drop below its min
+    order value, pull-to-refresh the cart.
+14. **Expect:** the applied-coupon card **stays visible** (code + Remove button) with an added
+    inline warning line showing `coupon.message` (amber, with an info icon) — not auto-cleared;
+    tap Remove to clear it. Total is priced without the coupon meanwhile.
+15. **Worse-than-automatic-discount advisory:** apply a coupon on a cart where an automatic
+    discount was already active and is worth more than the coupon (`replacedAutoDiscount == true`
+    and `couponBetter == false` on the apply response).
+16. **Expect:** a one-shot grey advisory line appears under the applied card: "Your existing offer
+    of ₹X was better — remove this coupon to get it back". Now edit an item quantity (e.g. tap +)
+    so the cart refreshes.
+17. **Expect:** the advisory **disappears** on the refreshed cart — it must never persist across a
+    cart edit with a stale ₹ figure; it only ever reflects the most recent Apply action.
+18. **❌ Remove-coupon failure (e.g. airplane mode or a transient 5xx):** with a coupon applied, go
+    offline, tap **Remove**.
+19. **Expect:** an inline error appears **in the applied-coupon card** (same red text style as the
+    apply-error case) — NOT the shared "Unable to add more" cart alert sheet. The coupon stays
+    applied since the remove didn't succeed.
+
+**Not covered this pass (normal-flow scope only, matching Android's §2A2 scope):** exhaustive walk
+of every `reason` code — identical UI path for all (shows `message` inline), only NOT_FOUND walked
+as representative. `xcodebuild build` passes with no new warnings.
+
+### ✅ A4. Web — coupon entry (built 2026-08-25)
+
+Files: `haper-web/types.ts` (`CartCoupon`, `ApplyCouponResponseData`, `RemoveCouponResponseData`),
+`haper-web/services/api.ts` (`couponApi.applyCoupon`/`couponApi.removeCoupon`), `haper-web/context/CartContext.tsx`
+(`coupon`, `couponInput`, `applyCoupon()`, `removeCoupon()`), `haper-web/pages/Checkout.tsx`
+(coupon entry form + applied chip). Scope: normal-flow + specific edge cases listed below (stale coupons,
+₹0-discount with clamp warning, worse-than-auto advisory).
+
+1. On the web checkout page (browser, logged in), open **Cart** with items totalling ≥ a coupon's min
+   order value.
+2. **Expect:** a **Coupon** card sits directly above **Bill Details**, with a text input ("Enter coupon
+   code") + **Apply** button. If the cart has never had a coupon applied, this card must be the only new
+   thing visible on this section.
+3. Type `welcome50` (lowercase) into the field.
+4. **Expect:** the input **auto-uppercases as you type** — the field shows `WELCOME50`, not `welcome50`
+   (client-side, immediate, before the Apply button is tapped).
+5. The **Apply** button is disabled until the code is 4–20 characters (before the server even sees it).
+6. Tap **Apply**.
+7. **Expect:** a brief spinner on the Apply button, then:
+   - The card switches to the applied state: code chip (`WELCOME50` in a green badge) + "You saved ₹50" +
+     a **Remove** button.
+   - **Bill Details** shows a **"Coupon discount"** row (`-₹50`) instead of any "Discount" row — never both.
+   - **"To Pay"** and the grand total both drop by ₹50.
+8. Proceed to complete the checkout (select payment method, click **Place Order** → fill in payment flow).
+9. **Expect:** order places successfully; the charged amount matches the coupon-adjusted total from step 7.
+10. Go back (or open a new session), add items to cart, apply `WELCOME50` again, then tap **Remove**.
+11. **Expect:** the card reverts to the input state, **Bill Details** shows the automatic "Discount" row
+    again (if one applies at this subtotal) or no discount row, and the total reverts correctly.
+12. **❌ Invalid code:** type `DOESNOTEXIST`, tap Apply.
+13. **Expect:** an inline error appears below the input (the API's `message` shown as-is, red text,
+    e.g. "This coupon code isn't valid") — no toast, no crash, cart total unchanged. Clearing/retyping the
+    field clears the error.
+14. **❌ Code length validation:** type `ABC` (only 3 chars, below the 4-char minimum).
+15. **Expect:** the **Apply** button is disabled; no server call is made even if you try to click it.
+16. **❌ Code too long:** type `ABCDEFGHIJKLMNOPQRSTU` (21+ chars, above the 20-char max).
+17. **Expect:** the field stops accepting input at 20 chars; Apply stays disabled.
+18. **Stale coupon (valid: false):** apply a coupon, then remove enough items to drop below its min order
+    value, wait a moment or manually refresh the cart.
+19. **Expect:** the applied-coupon card **stays visible** (code chip + Remove button) with an added inline
+    warning line showing `coupon.message` (amber text with an info icon) — the coupon is NOT auto-cleared;
+    the customer can still tap Remove to clear it manually. Total is priced without the coupon meanwhile.
+20. **₹0 discount coupon (margin-guard clamp):** apply a coupon on a cart where the margin guard clamped
+    the discount to ₹0 (e.g., high-margin coupon on a tight-margin item, or aggregate cart margin is
+    insufficient). The coupon is `valid: true` but gives no money off.
+21. **Expect:** the applied-coupon card shows the code chip, but "You saved ₹0" (or no savings line at
+    all), AND an inline warning line (amber) showing the `coupon.message` (e.g., "Coupon discount capped at
+    ₹0 to protect our margin") — this is NOT an error (valid coupon) but an advisory that the customer
+    should know they got no discount.
+22. **Worse-than-automatic-discount advisory:** apply a coupon on a cart where an automatic discount was
+    already active and is worth more than the coupon (`replacedAutoDiscount == true` and `couponBetter ==
+    false` on the apply response).
+23. **Expect:** a one-shot grey advisory line appears below the applied card: "Your existing offer of ₹X
+    was better — remove this coupon to get it back". Now edit an item quantity (e.g. tap + to increase
+    quantity) so the cart refreshes.
+24. **Expect:** the advisory **disappears** on the refreshed cart — it must never persist across a
+    quantity change; the advisory is a one-time snapshot at apply-time and clears when the cart re-syncs
+    (confirming the known fix that landed: tieing coupons no longer shows this advisory, and editing
+    quantities clears stale ₹ figures).
+
+**Not covered this pass (normal-flow scope, mirroring Android/iOS):** exhaustive walk of every `reason`
+code (identical web-UI path for all via the API message — error display is generic); only NOT_FOUND and
+one validation (length gate) walked as representative. `tsc -b` and `vite build` pass with no new errors.
 
 ### ✅ A. Apply a valid coupon on the cart
 1. As a logged-in customer on dev, add some items to the cart (subtotal ≥ ₹200, to meet the min order value from §1.A).
@@ -487,7 +635,9 @@ cd packages/admin && NODE_ENV=test npx jest coupon
 
 - **Backend deploy (dev):** `haper-backend` code + the 3 new collections (coupons, coupon-redemptions, coupon-attempts) created lazily on first write. No migration.
 - **Admin panel deploy (dev):** `haper-admin` code (Coupons CRUD page + POS coupon UI).
-- **No Android deploy today.** The checkout coupon entry comes in a few days. For now, test via API or the admin/web proxy.
+- **Android deploy:** `haper-android` code (Cart screen coupon entry, §2A2) — normal debug build/install; no store release required for dev testing.
+- **iOS deploy:** `haper-ios` code (Cart screen coupon entry, §2A3) — normal debug build/simulator install; no TestFlight/App Store release required for dev testing.
+- **Web deploy (dev):** `haper-web` code (Checkout page coupon entry & form validation, §2A4) — test via `vite build` locally or deploy to dev.
 - **`main` stays off-limits.** This ships to prod via a manual user-driven deploy only (not a CI/CD auto-merge to main).
 
 ---
