@@ -389,6 +389,45 @@ This section covers the `POST /admin/pos/sale` flow with coupon support (both pa
 5. All POS sales with or without a coupon attempt still work (the feature simply returns "coupon not found").
 6. **To re-enable:** remove/unset the env var, and the feature reactivates (no code deploy needed).
 
+### ✅ C. Boot-time index check degrades — it must NEVER take a service down
+
+**Background (dev incident, 2026-08-24).** The coupon ledger's `per_customer_slot` unique index
+*is* the per-customer redemption cap. At boot each service verifies it exists. Admin used to
+`process.exit(1)` when that check failed — which killed the **entire** admin API (stores, orders,
+inventory, everything) and, under PM2, turned into an endless restart loop. Admin now degrades the
+same way the customer API always did.
+
+**Why the index was missing in the first place:** every service connects with
+`readPreference: "secondaryPreferred"`. Mongoose treats that as "no index creation allowed on this
+connection" and silently forces `autoIndex`/`autoCreate` to `false`, so the boot's `Model.init()`
+call resolved successfully having built **zero** indexes — no error, nothing to catch. The boot now
+calls `mongoIndexUtils.ensureIndexesFor(...)` explicitly, which is not subject to that flag.
+
+Steps:
+1. Confirm the coupon indexes exist on the target DB:
+   `db.getCollection('coupon-redemptions').getIndexes()`
+2. **Expect:** `_id_`, `per_customer_slot` (unique + `partialFilterExpression`
+   `{status: {$in: ["HELD","CONFIRMED"]}}`), `hold_sweeper`, `by_order`, `coupon_report`.
+   Also check `coupons` (`code_unique`, `active_window`, `scope_store`) and `coupon-attempts`
+   (`actor_day_unique`, `attempt_ttl`).
+3. Restart the admin service and read the boot log.
+4. **Expect:** `MongoDB Connected: ...` and **no** `[coupons] CRITICAL` line. Admin serves normally.
+5. **Simulating the failure** (do this on a scratch DB only, never dev/prod): drop
+   `per_customer_slot`, then restart admin.
+6. **Expect:** admin **still boots and stays up**. The log shows
+   `[coupons] CRITICAL: coupon-redemption index verification failed on the admin API — coupons are
+   DISABLED for this process (the rest of admin stays up).`
+7. **Expect:** stores, orders, inventory, POS sales *without* a coupon — all work normally.
+8. Try to apply any coupon at POS. **Expect:** clean **HTTP 400** reason `NOT_FOUND` (a tidy
+   refusal, not a 500) — the cap is never left silently unenforced.
+9. Rebuild the index and restart. **Expect:** coupons work again, no CRITICAL line.
+
+> ⚠️ **Never "fix" a coupon `E11000` by dropping or de-uniquing `per_customer_slot`.** That index
+> is the only thing preventing a "once per customer" coupon from being redeemed twice.
+
+**Requires MongoDB 6.0+** — `$in` inside a `partialFilterExpression` is only allowed from 6.0.
+Dev and prod clusters are 8.0, so this is satisfied; it only constrains where the app may be pointed.
+
 ---
 
 ## 8. Regression tests (backward compatibility)
@@ -428,7 +467,19 @@ cd packages/admin && NODE_ENV=test npx jest coupon
 - Both checkout paths: `placeOrder` AND `placeScheduledOrder` both handle coupons (the delivery bug risk from the plan).
 - POS sale with coupon, invoice-retry idempotency, guest refusal for per-customer coupons.
 - Admin CRUD: create, list, edit (code read-only), toggle, delete.
+- **Boot index build on a production-shaped connection**
+  (`packages/user/__tests__/coupon-boot-index-build-secondary-preferred.test.js`): proves
+  `Model.init()` silently builds nothing under `readPreference: "secondaryPreferred"`, that
+  `ensureIndexesFor()` does build `per_customer_slot` unique+partial, and that the built index
+  really rejects a second live slot while a RELEASED row frees it.
+- **Boot degradation** (`packages/admin/__tests__/coupon-boot-index-verification-connectdb.test.js`):
+  admin logs CRITICAL and force-disables coupons instead of `process.exit(1)`. This is a regression
+  guard for the 2026-08-24 admin crash-loop — do not let the exit come back.
 - **100+ backend tests**, ~30 admin-FE tests.
+
+> ⚠️ Both test harnesses connect with `readPreference: "primary"`, but the real services use
+> `secondaryPreferred`. That divergence is exactly what let the missing-index bug ship green, so
+> any test about index *building* must open its own `secondaryPreferred` connection.
 
 ---
 
@@ -454,6 +505,9 @@ cd packages/admin && NODE_ENV=test npx jest coupon
 
 | Symptom | Likely cause |
 |---|---|
+| **Admin service crash-loops on boot** with `[coupons] CRITICAL ... aborting startup` | Old build. Admin no longer exits on this check — redeploy. The underlying cause is the missing `per_customer_slot` index (see §7C). |
+| Every coupon returns `NOT_FOUND`, and the boot log has a `[coupons] CRITICAL` line | The boot index check failed, so coupons force-disabled themselves for that process. Rebuild the coupon indexes and restart (see §7C). |
+| `coupon-redemptions` has only the `_id_` index after a deploy | The boot index build didn't run. `Model.init()` does **not** build indexes on a `secondaryPreferred` connection — the explicit `ensureIndexesFor()` call must be present in `connections/mongo.js`. |
 | Coupon endpoint returns **403** | The admin account lacks `coupons.manage` permission. |
 | Coupon endpoint returns **404** | Feature code not deployed on this box (redeploy backend). |
 | `GET /cart` doesn't include a `coupon` block | Backend not deployed; the cart endpoint is missing the additive field. |
