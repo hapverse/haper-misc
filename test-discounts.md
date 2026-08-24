@@ -161,6 +161,14 @@ Two reasons block a save, both cleared by re-submitting with `acknowledgeBelowCo
 
 Run: `cd packages/<pkg> && NODE_ENV=test npx jest` (in-memory Mongo only).
 
+**Boot-time index build (2026-08-25).** `discount-rules`' indexes (`active_window`, `scope_store`,
+`scope_type`) are now force-built at boot in `ensureIndexesFor(...)`, fixing a latent bug where they
+were never actually created. These are performance-only indexes — no uniqueness/TTL constraints —
+so a build failure just means slower queries, not incorrect behavior. A failure logs but does **not**
+disable or degrade the feature, unlike Coupon Codes' stricter boot-time check (see
+`test-coupon-codes.md` §C), which DOES disable coupons on a critical-index failure — different
+because discount-rules' indexes aren't correctness-critical.
+
 ## Known follow-ups
 
 - Admin UI: the store form still needs a visible "Discounts enabled" toggle (the backend write path
