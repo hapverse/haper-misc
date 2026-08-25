@@ -17,6 +17,7 @@ Needs: backend deploy (dev) + admin deploy. No migration. Android checkout coupo
   the discount is **allocated back onto individual order lines** so invoices, GST, refunds, and profit/COGS work correctly. See the plan §3.3 for the allocation algorithm.
 - A coupon with `per-customer-limit` or `first-order-only` cannot be used by the anonymous "Walk-in Customer" on POS — the cashier must capture a phone number first.
 - Once a coupon code is created, it **cannot be renamed** (codes are handed to customers; renaming breaks shared codes).
+- **A percentage coupon must always have a "Max discount" cap** (rule added 2026-08-26). A flat ₹ coupon does not — its own value is already the most it can ever give.
 
 ---
 
@@ -32,7 +33,7 @@ Needs: backend deploy (dev) + admin deploy. No migration. Android checkout coupo
 5. **Scope:** select **Global** (applies to all stores).
 6. **Discount type:** select **FLAT**, value **₹50**.
 7. **Min order value:** `₹200` (order subtotal must be ≥ ₹200 before the coupon is valid).
-8. **Max discount amount:** empty (not capped).
+8. **Max discount amount:** leave **No cap** checked (a FLAT ₹ coupon may be uncapped — ₹50 off is ₹50 off, whatever the cart is worth).
 9. **Schedule:** start now, end tomorrow.
 10. **Limits:** total 100 redemptions, per-customer 1, **not** first-order-only.
 11. **Enabled:** on.
@@ -56,6 +57,29 @@ Needs: backend deploy (dev) + admin deploy. No migration. Android checkout coupo
 3. **Expect:** the code field is **read-only** (grayed out or disabled), showing `SALE10`. You cannot change it to anything else.
 4. Change the discount value (e.g. from ₹10 to ₹15) and save.
 5. **Expect:** the discount updates, but the code stays `SALE10`.
+
+### ❌ D2. A percentage coupon cannot be saved without a max-discount cap (2026-08-26)
+
+**Why:** "50% off" with no cap on a ₹5,000 cart is ₹2,500 given away on one order. Since the
+margin guard was removed (§6), the cap is the only thing bounding the loss per redemption.
+Flat ₹ coupons are untouched — ₹50 off can never cost more than ₹50.
+
+1. **Create coupon** → discount type **Percent**, value `50`.
+2. **Expect:** there is **no "No cap" checkbox** at all for Percent. The **Max discount (required)**
+   field is always shown.
+3. Leave Max discount empty and click **Save coupon**.
+4. **Expect:** blocked with "A percentage coupon must have a maximum discount — enter an amount above ₹0."
+   Nothing is created.
+5. Enter `150` and save → **Expect:** saves; the coupon gives 50% off **up to ₹150** (on a ₹5,000
+   order the customer gets ₹150 off, not ₹2,500).
+6. Switch the type to **Flat ₹** → **Expect:** the **No cap** checkbox is back and a flat coupon
+   still saves with no cap.
+7. **Edit** a live percentage coupon and try to clear its cap → **Expect:** rejected (403, message
+   naming the cap). Same rule applies on edit, not just create.
+8. **Existing coupons:** a percentage coupon created **before** this rule keeps working exactly as
+   before, and can still be edited (description, schedule, limits) and toggled off. Only when you
+   change its **discount** does it demand a cap. ❌ Flag it if an old uncapped percentage coupon
+   stops applying at checkout — that is not intended.
 
 ### ✅ E. Admin can toggle a coupon on/off instantly
 1. Create and save a coupon `INSTANT10`.
@@ -221,13 +245,15 @@ Files: `haper-web/types.ts` (`CartCoupon`, `ApplyCouponResponseData`, `RemoveCou
 19. **Expect:** the applied-coupon card **stays visible** (code chip + Remove button) with an added inline
     warning line showing `coupon.message` (amber text with an info icon) — the coupon is NOT auto-cleared;
     the customer can still tap Remove to clear it manually. Total is priced without the coupon meanwhile.
-20. **₹0 discount coupon (margin-guard clamp):** apply a coupon on a cart where the margin guard clamped
-    the discount to ₹0 (e.g., high-margin coupon on a tight-margin item, or aggregate cart margin is
-    insufficient). The coupon is `valid: true` but gives no money off.
-21. **Expect:** the applied-coupon card shows the code chip, but "You saved ₹0" (or no savings line at
-    all), AND an inline warning line (amber) showing the `coupon.message` (e.g., "Coupon discount capped at
-    ₹0 to protect our margin") — this is NOT an error (valid coupon) but an advisory that the customer
-    should know they got no discount.
+20. **Deep coupon on a tight-margin cart:** apply a coupon big enough to sell the cart below its cost
+    price (e.g. 95% off an item costing ₹90.37). **Since 2026-08-26 this is allowed** — the coupon
+    pays out **in full** and the order books a loss. There is no margin guard any more.
+21. **Expect:** a completely ordinary applied-coupon card — the full "You saved ₹X" savings line, no
+    amber warning, `coupon.message: null`, and a cart total that can sit well under what the goods
+    cost us. ❌ Bug if the discount comes back as **₹0** with the
+    *"We couldn't apply this coupon right now"* message: that is the old suppressed behaviour.
+    (The ₹0 + message path still exists for a coupon that is genuinely worth nothing — a
+    zero-valued discount, or a basket of nothing but free-gift lines — but no longer for margin.)
 22. **Worse-than-automatic-discount advisory:** apply a coupon on a cart where an automatic discount was
     already active and is worth more than the coupon (`replacedAutoDiscount == true` and `couponBetter ==
     false` on the apply response).
@@ -401,26 +427,50 @@ one validation (length gate) walked as representative. `tsc -b` and `vite build`
 3. **Expect:** exactly **one** succeeds, the other fails with `CUSTOMER_LIMIT_REACHED`.
 4. The unique index `(couponId, userId, ordinal)` ensures the second insert hits a duplicate-key error → only one redemption row is created.
 
-### ✅ E. Margin guard: coupon doesn't sell below cost (aggregate)
+### ✅ E. Below-cost coupons apply IN FULL (margin guard REMOVED, 2026-08-26)
+
+> **Policy change.** The aggregate margin guard is gone. A coupon now always gives its full discount
+> even when the order therefore sells below cost. Approved by the business: a code we advertised must
+> be honoured, and marketing owns the loss. Every other rule is untouched — minimum order value,
+> expiry, store scope, first-order-only, per-customer and total caps all still refuse as before.
+>
+> This replaces the old §E/§F margin-guard walkthroughs and supersedes
+> `test-coupon-codes-security-fixes.md` §4.
+
 1. Create item "Budget Item" with:
    - Selling price: ₹100
    - Cost price: ₹60
-   - Headroom: ₹40
 2. A customer has 1 unit in cart (subtotal ₹100).
 3. Create coupon `BIG_DISCOUNT` (FLAT ₹60 off, total limit 100).
-4. Apply the coupon → **Expect:** ₹60 coupon is **clamped to ₹40** (the max headroom), so the total becomes ₹60 (not ₹40, which would sell below cost).
-5. The order shows `coupon: { discountAmount: 40 }` (the clamped amount), not the requested ₹60.
-6. **Verify:** the customer sees the clamped discount on the preview AND at checkout (same computation, no surprise).
+4. Apply the coupon → **Expect:** `coupon.discountTotal: 60`, cart total ₹40, `coupon.message: null`.
+   The order sells ₹60 of goods for ₹40 — a ₹20 loss, and that is correct.
+   ❌ Bug if it comes back as **₹0 off** with an apology message — that is the removed guard.
+5. The order shows `coupon: { discountAmount: 60 }` and the line at `salePrice: 40`,
+   `originalSalePrice: 100`, `discountAmount: 60` (per unit).
+6. **Verify:** preview and checkout agree to the paisa (same shared function), and the ₹60 does not
+   change with the item's cost price — cost is no longer an input to the discount at all.
+7. Go deeper: a 95%-off coupon on a ₹100 item costing ₹90.37 → **₹95 off**, ₹5 payable, at any
+   quantity. The order must place successfully, consume stock, and claim exactly one redemption.
+8. **Cost-price disclosure (was the reason for the guard):** nothing on the bill sits at the cost
+   line any more, because the price follows the coupon's own maths. Dividing the ₹ off by the
+   quantity gives ₹95, not the ₹9.63 margin. ✅
 
-### ✅ F. Margin guard: unknown cost (`costPrice: 0`) is skipped
-1. Create item "Mystery Item" with:
-   - Selling price: ₹100
-   - Cost price: 0 (unknown — the repo invariant per costPrice-money-invariant.md)
-2. A customer has this item in the cart (subtotal ₹100).
-3. Apply coupon `AGGRESSIVE` (FLAT ₹80 off).
-4. **Expect:** the coupon computes the headroom as ₹0 (because cost is unknown, never fake it), so the discount is clamped to ₹0.
-5. The order total stays ₹100 (full price), not ₹20.
-6. The coupon application returns a success but with `discountAmount: 0` (the clamp prevented it).
+### ✅ F. Unknown cost (`costPrice: 0`) is a non-event now
+1. Create item "Mystery Item", selling price ₹100, cost price 0 (unknown — the repo invariant per
+   costPrice-money-invariant.md).
+2. Cart it (subtotal ₹100) and apply coupon `AGGRESSIVE` (FLAT ₹80 off).
+3. **Expect:** ₹80 off, total ₹20 — same as it was, but now for the trivial reason that cost is never
+   consulted. Mixing in a second item that *does* have a cost changes nothing either.
+   (Historically this needed a special "all costs unknown → skip the guard" branch, or every coupon
+   in a store with no goods receipts silently gave ₹0. That trap is gone with the guard.)
+
+### ✅ G. A coupon genuinely worth ₹0 is still refused (unchanged)
+1. This path no longer has anything to do with margin. It fires when the engine values the coupon at
+   zero — a zero/unknown-valued discount row, or a basket of nothing but free-gift lines.
+2. **Expect:** the code TYPED at checkout → 400 with *"We couldn't apply this coupon right now — try
+   another one?"*, no order, **no redemption claimed**, `usedCount` unchanged. A code merely sitting
+   on the cart → silently dropped, order prices normally, still nothing claimed.
+3. This is the guard that stops a worthless coupon burning the customer's only use. ✅
 
 ---
 
@@ -488,11 +538,23 @@ This section covers the `POST /admin/pos/sale` flow with coupon support (both pa
 
 ---
 
-## 6. Known tracked follow-up (data-exposure edge case)
+## 6. Cost exposure — CLOSED 2026-08-25, re-closed differently 2026-08-26
 
-### ❌ G. Cost exposure edge case — documenting a tracked limitation
+### ✅ G. Cost exposure edge case — now closed by removing the clamp entirely
 
-**What this is:** This is **not a bug to fix in this pass**, but a known issue being tracked for a separate fix (likely this week). Document it here so a tester encountering unexpected numbers knows it's tracked and not a new defect.
+**Status: fixed, twice over.** The leak needed a *clamp* to exist: a clamped discount priced the cart
+at exactly `Σ cost`, so dividing the ₹ off by the quantity read our per-unit cost straight back.
+
+- 2026-08-25 fix: suppress instead of clamp (₹0 off, cart at full price) — nothing published.
+- **2026-08-26 (current): the margin guard was removed altogether** as a business decision. Coupons
+  always pay out in full, below cost included. There is no clamp and no suppression, so there is
+  again nothing derived from cost anywhere in the response — the price now follows the coupon's own
+  arithmetic and has no relationship to what we paid.
+
+Re-test with §E above. The description below is kept for context on what the leak was.
+
+**What this was:** a known issue tracked for a separate fix after the first mitigation (rounding the
+clamped amount to whole rupees) turned out not to work.
 
 **Symptom:** A customer who buys a large quantity of one item and applies a large-percentage coupon can, by doing the math on the discount shown, estimate the store's cost price for that item. The store's exact purchase cost may be exposed.
 
@@ -509,13 +571,21 @@ This section covers the `POST /admin/pos/sale` flow with coupon support (both pa
 - The exposure is informational (cost estimates), not a financial loss.
 - The maths is observable from any big order with a coupon, independent of this feature.
 
-**When it will be fixed:**
-- Tracked as a separate work item (approx. this week, per the plan).
-- **Fix direction:** show the coupon without the clamp to the customer (e.g., "₹2500 off, capped at ₹2000 to protect our margin"), or obfuscate by rounding the clamped discount.
+**How it was fixed (2026-08-25):**
+- Obfuscation was the wrong direction: any figure derived from the headroom is `(price − cost) × qty`,
+  so the customer divides by their own quantity and the obfuscation washes out. The coupon is
+  suppressed instead — nothing is published.
+
+**How it was fixed AGAIN (2026-08-26):**
+- The guard is gone (business decision). A coupon is always paid in full, so the customer's ₹ off is
+  purely `value%` or the flat rupees — a number they already knew from the poster.
 
 **For testing:**
-- If you see a coupon discount that seems oddly smaller than the percentage suggests (e.g., a 50% coupon yielding only 40% effective discount on a high-volume cart), this is the margin guard + clamp at work. It is expected and correct.
-- If you suspect cost information has leaked (e.g., a customer tells you they reverse-engineered your cost), flag it but know it's a known, tracked limitation.
+- A coupon that is **worth less than the percentage suggests** is impossible: caps aside
+  (`maxDiscountAmount`, and never more than the cart is worth), the customer gets exactly what the
+  coupon says.
+- ❌ Flag it as a regression if a big-percentage coupon on a tight-margin cart gives **₹0** — that is
+  the removed guard resurfacing.
 
 ---
 
