@@ -4,7 +4,11 @@
 follow-up (clean `testDebugUnitTest` + `assembleDebug` green, 313 unit tests, 0 failures; NOT
 device-verified). Backend: no change.
 iOS: same fix done in parallel — see the "FIX 2026-08-24" section of
-`test-address-pincode-geocode.md`. Web: N/A (no map picker).
+`test-address-pincode-geocode.md`. The 2026-08-26 PIN-prompt follow-up below (**"Snap to new PIN"
+→ "Update location"** + a **PIN-named status line**) was ported to iOS on 2026-08-26 as well —
+iOS manual steps 9–10 in `test-address-pincode-geocode.md`; `xcodebuild build` SUCCEEDED,
+SwiftLint clean, 3 new `AddressModelsTests` cases + a negative-control runtime probe.
+Web: N/A (no map picker).
 
 ## Why
 

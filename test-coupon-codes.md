@@ -4,7 +4,7 @@ Feature plan: `coupon-codes-plan.md`. Admin UI design: `coupon-admin-ui-design.m
 Backend: `haper-backend` (`packages/shared/utils/coupon.utils.js` engine, `packages/admin/src/routes/coupon/*` CRUD, wired into cart apply/remove and both checkout paths).
 Admin panel: `haper-admin` (`src/pages/Coupons/*` CRUD, `POS/NewSalePage.tsx` coupon entry).
 
-Needs: backend deploy (dev) + admin deploy. No migration. Android checkout coupon entry (§2A2), iOS checkout coupon entry (§2A3), and web checkout coupon entry (§2A4) are now built. All new cart/order fields are additive and default to null/empty.
+Needs: backend deploy (dev) + admin deploy. No migration. Android checkout coupon entry (§2A2), iOS checkout coupon entry (§2A3), and web checkout coupon entry (§2A4) are now built. The checkout coupon-failure title + coupon summary row are built on Android (§2 D4/D5), iOS (§2 D8/D9), and were already correct on web (§2 D6/D7). All new cart/order fields are additive and default to null/empty.
 
 ---
 
@@ -384,6 +384,113 @@ UI lived only on the Cart screen.
 **automatic** (non-coupon) discount row that the Cart's Bill Details shows. A cart whose discount came from
 a promo rule rather than a coupon still shows an unexplained drop on checkout. Out of scope for this pass.
 
+### ✅ D6. Web — a coupon failure at Place Order was never mislabelled (verified 2026-08-26, no code change)
+
+Web's counterpart to §D4. **No change was needed** — checked against `haper-web/pages/Checkout.tsx`
+(the `catch` block of `handlePlaceOrder`), which has always surfaced the server's own `message` in a
+**neutral** toast: `showToast(err?.message || 'Order Failed. Try again.', 'error')`. There is no
+"Payment Failed" wording anywhere on that path, so web never had the bug §D4 fixed on Android, and
+web does **not** read the new `errorType` field at all (it doesn't need to — it shows the server's
+sentence verbatim, which is already the specific reason).
+
+1. Get a coupon to fail at Place Order exactly as in §D4 step 2 (cart holds a coupon that only dies at
+   checkout).
+2. On web checkout, click **Place Order**.
+3. **Expect:** a single toast whose text is the server's `message` verbatim (e.g. *"You've already used
+   this coupon."*). ❌ Bug if it ever reads "Payment Failed" or "Payment could not be completed".
+4. **Expect:** you stay on the checkout page with the cart intact, and the page is still usable (the
+   Place Order button re-enables — `setIsLoading(false)` runs on every error branch).
+5. **❌ Regression check:** with no coupon on the cart, force a non-coupon failure (out-of-stock item, or
+   a slot that fills up). **Expect:** still the server's message in the same neutral toast — the 422
+   slot race still shows **inline** next to the slot list, and a 409 maintenance error still triggers the
+   maintenance re-fetch. Those two special branches must keep working.
+
+### ✅ D7. Web — checkout page shows WHICH coupon is applied (verified 2026-08-26, already built)
+
+Web's counterpart to §D5. **No change was needed** — web already shipped this in §A4 (2026-08-25): the
+checkout page is where coupon entry lives, so the applied code and its savings were always on screen.
+Re-verified against the current `haper-web/pages/Checkout.tsx`; both readings come from the live
+`CartContext.coupon` (set from every `GET /cart` response), so they can never show a stale amount.
+
+1. Apply `WELCOME50` (₹50 off) on the web checkout page.
+2. **Expect:** the **Coupon** card shows the code `WELCOME50` in bold plus **"You saved ₹50"**, with a
+   **Remove** button.
+3. **Expect:** **Bill Details** shows a **`Coupon discount`  `-₹50`** row (green), and **To Pay** is
+   lower by exactly ₹50.
+4. **Stale / ₹0 coupon:** drop the cart below the coupon's min order.
+5. **Expect:** the "You saved" line and the **Bill Details** coupon row both disappear (both are gated on
+   `discountTotal > 0`), the code chip stays with an amber `coupon.message` explaining why, and **To Pay**
+   is priced without the coupon. ❌ Bug if a `-₹0` row is left behind or the total still shows the
+   discount.
+6. Change an item quantity so the cart re-syncs. **Expect:** the coupon row and To Pay move together —
+   never a discount row whose amount doesn't match what the total was reduced by.
+
+### ✅ D8. iOS — a coupon failure at Place Order says "Coupon Issue", not "Payment Failed" (built 2026-08-26)
+
+iOS's counterpart to §D4. Files: `haper/Models/AuthModels.swift` (`ErrorResponse` gains `errorType` +
+`reason`, **and a lenient `code` decode — see the ⚠️ below**), `haper/Utils/NetworkManager.swift`
+(`NetworkError.httpError` gains a 5th, defaulted associated value + an `errorType` accessor),
+`haper/ViewModels/OrderViewModel.swift` (`lastErrorType`, cleared at the START of every
+`placeOrder`), `haper/Views/CheckoutView.swift` (new `CheckoutErrorTitle` enum + a single
+`showError(_:errorType:)` entry point; the alert is now titled from `errorTitle`, not a literal).
+
+⚠️ **A second, pre-existing iOS-only bug had to be fixed for this to work at all.** The shared error
+middleware sends `code` as the HTTP status **number** (`{ "code": 400, ... }`), but iOS typed it as
+`String?`. `decodeIfPresent(String.self)` *throws* on a number, so the **whole** `ErrorResponse`
+decode failed and `NetworkManager` fell back to **"Server Error 400"** — meaning every
+middleware-thrown error message on iOS (not just coupons) was being swallowed. `ErrorResponse` now
+has a hand-written `init(from:)`: a **string** `code` still decodes (scheduling's `SLOT_UNAVAILABLE`
+etc.), a **numeric** `code` decodes to `nil` (it's an HTTP status, already on
+`NetworkError.statusCode`). Android was never affected — Gson coerces `400` → `"400"`.
+
+1. Set the cart up exactly as in §D4 steps 1–2 (a coupon pinned to the cart that only dies at Place Order).
+2. On the iOS app (debug build/simulator), tap **Confirm Order → Place Order**.
+3. **Expect:** the alert title reads **"Coupon Issue"**, not "Payment Failed", and the body is the
+   server's `message` verbatim (e.g. *"You've already used this coupon."*). ❌ Bug if the body reads
+   **"Server Error 400"** — that means the lenient `code` decode above is missing/reverted.
+4. **Expect:** tapping **OK** dismisses it and leaves you on checkout with the cart intact.
+5. **❌ Regression check — a real payment failure still says "Payment Failed":** with no coupon on the
+   cart, cancel the Razorpay sheet (or force an out-of-stock failure).
+6. **Expect:** title **"Payment Failed"** exactly as before. Same for **every** untagged error, and for
+   an older backend that sends neither field.
+7. **❌ No stale title (the important one):** hit the coupon error from step 3, tap OK, remove the
+   coupon, then force a payment failure.
+8. **Expect:** the second alert says **"Payment Failed"**. The tag is cleared at the start of every
+   place-order attempt, and the title is re-derived on *every* alert presentation — including the
+   pre-flight guards ("Please select a delivery address.", "Cart is empty or invalid.") and the
+   Razorpay decline path, which never carry a tag.
+9. **❌ Scheduling regression check:** with scheduled delivery on, let a chosen slot fill up before you
+   place the order. **Expect:** unchanged behaviour — the **inline** "slot no longer available" message
+   next to the slot list with a refreshed slot grid, **no** alert at all.
+
+### ✅ D9. iOS — checkout screen shows WHICH coupon is applied (built 2026-08-26)
+
+iOS's counterpart to §D5. File: `haper/Views/CheckoutView.swift` (`appliedCouponCode` /
+`appliedCouponDiscount` + one extra `CheckoutSummaryRow`). Both read
+`CartManager.coupon` — the **same** `@EnvironmentObject` instance the Cart screen's coupon card
+writes into (there is exactly one `CartManager()`, in `haperApp.swift`), so checkout can never show a
+stale or divergent copy.
+
+1. Apply `WELCOME50` (₹50 off) on the **Cart**, then tap **Checkout**.
+2. **Expect:** in the **Order Summary** card, between **Items** and **Wallet applied**, a green row
+   reading **`Coupon WELCOME50`  `-₹50`**.
+3. **Expect:** the row style matches the existing **"Wallet applied"** row (same `CheckoutSummaryRow`,
+   negative amount rendered as `-₹50`).
+4. **No coupon applied:** go to checkout with no coupon. **Expect:** **no** coupon row — the Order
+   Summary is identical to before this build.
+5. **Stale / ₹0 coupon:** apply a coupon, then drop the cart below its min order so the discount is ₹0.
+6. **Expect:** **no** coupon row on checkout (a "-₹0" line would be noise). The cart screen's warning
+   text remains the place that explains a stale coupon.
+7. **Back-and-forth check:** on checkout, go **back** to the cart, tap **Remove** on the coupon, then
+   enter checkout again. **Expect:** the row is gone and **To pay** matches — both come from the one
+   `CartManager`, so they move together.
+8. **Accessibility / layout:** with **Dynamic Type at the largest accessibility size** and in **dark
+   mode**, the row wraps rather than truncating the code, and the green stays legible.
+
+⚠️ **Known gap (same as Android's §D5, pre-existing):** the checkout Order Summary still doesn't show
+the **automatic** (non-coupon) promo discount, so a rule-discounted cart still shows an unexplained
+drop between "Items" and "To pay". Out of scope for this pass on both platforms.
+
 ### ✅ E. Stale coupon in the cart (expires or drops below min order while sitting)
 1. Apply coupon `WELCOME50` to a ₹500 cart successfully.
 2. Modify the cart to drop below the min order value (e.g., remove items so subtotal becomes ₹150).
@@ -456,6 +563,51 @@ a promo rule rather than a coupon still shows an unexplained drop on checkout. O
 1. A customer applies coupon `WELCOME50` (requires ₹200 min) to a ₹150 cart, but the system lets them somehow (shouldn't happen in practice, but this is a server-side re-validation).
 2. They call `POST /order/place`.
 3. **Expect:** **HTTP 400** with `reason: "BELOW_MIN_ORDER"`, and **no order is created** (the re-validation at checkout catches it, even though the cart said it was valid).
+
+### ✅ G. Web — the order detail page NAMES the coupon that was used (built 2026-08-26, row format fixed 2026-08-26)
+
+**Why this exists (pre-existing gap, not caused by any other fix today):** web's Bill Summary on a past
+order showed a bare **"Discount applied  -₹50"**. A customer who used a code had no way to confirm from
+their order which coupon it was — and no way to tell a coupon apart from an automatic promo.
+
+**Follow-up fix (2026-08-26, code review):** the original build kept the row as a two-column
+`label` / `-₹X` line-item subtraction. On a discounted order, `Item Total` on this page falls back to
+`order.actualOrderValue`, which the backend already computes NET of the discount (baked into each line's
+`salePrice`) — so subtracting the discount amount a second time here made the displayed rows not sum to
+the Grand Total (e.g. ₹500 cart, ₹50 coupon, ₹5 platform fee → page showed ₹450 − ₹50 + ₹5 = ₹405,
+but the customer was actually charged ₹455). Fixed by de-arithmetizing the row: it's now a single
+informational line, `"Coupon WELCOME50 — you saved ₹50"` (no separate `-₹` cell), matching the "You
+saved ₹X" phrasing already used on `Checkout.tsx`. `Item Total`'s calculation itself was NOT touched.
+
+Files: `haper-web/types.ts` (new `OrderCoupon` interface + `coupon?` on `Order`),
+`haper-web/pages/OrderDetail.tsx` (Bill Summary discount row label + format). The backend already
+returned this — `GET /user/order/:orderId` sends the whole order document, and
+`sanitizeOrderForCustomer` does not strip the `coupon` block, so **no backend change was needed**.
+
+1. Place an order with coupon `WELCOME50` (₹50 off), then open **Orders → that order** on web.
+2. **Expect:** in **Bill Summary**, the discount row reads a single line, **`Coupon WELCOME50 — you saved
+   ₹50`** (green), naming the code. There is no separate `-₹` amount cell any more.
+3. **Expect:** the number shown is still `order.discountTotal` — the same value as before this build. A
+   coupon order's `discountTotal` already equals the coupon amount (the automatic and coupon engines
+   never stack, see §3.E), so this change only moved the **label/format**, never the money. ❌ Bug if the
+   number changed, a second discount row appeared, or the row is subtracted again anywhere in the totals.
+4. **Automatic (non-coupon) discount:** open an order that got a promo-rule discount with no code.
+5. **Expect:** the row reads **`Discount — you saved ₹X`** — same informational format, no code name.
+6. **Old / no-discount orders:** open an order placed before coupons existed, and one with no discount at
+   all.
+7. **Expect:** **no** discount row at all (the row is still gated on `discountTotal > 0`), and no crash —
+   `order.coupon` is simply absent on those documents and is always read as `order.coupon?.code`.
+8. **Long code layout:** use a 20-character code (the max). **Expect:** on a narrow phone width the whole
+   line (`Coupon <code> — you saved ₹X`) truncates with an ellipsis — no wrap, no horizontal scroll.
+9. **POS orders:** a walk-in POS sale with a coupon (§5.A) that lands in the customer's history behaves
+   identically — POS writes the same `coupon` block and the same `discountTotal`.
+10. **Grand Total still reconciles:** on a discounted order, add up every visible Bill Summary row
+    (Item Total + Delivery Fee + Platform Fee, ignoring the informational "you saved" line since it's no
+    longer a subtraction) and confirm it equals the Grand Total / amount actually charged. ❌ Bug if it
+    doesn't — this was the original defect this follow-up fixed.
+
+**Known gap (unchanged):** the **Orders list** page still shows no discount line of any kind; only the
+order **detail** page names the coupon. Out of scope for this pass.
 
 ---
 
@@ -777,6 +929,18 @@ cd packages/admin && NODE_ENV=test npx jest coupon
   **clears them before every retry** so a coupon tag can't mislabel a later payment failure.
   `ApiContractTest` round-trips the real §D3 JSON through Gson (tagged, untagged, and the
   `/cart/coupon/apply` `{ok:false,reason,message}` body) via MockWebServer.
+- **iOS client-side tagging** (`haper-ios`, §2 D8/D9): `CheckoutErrorTitleTests` covers the alert
+  title (COUPON / lowercase `coupon` → "Coupon Issue"; nil / `""` / `"COUPONS"` / `"PAYMENT"` →
+  "Payment Failed") and round-trips the real §D3 JSON through `ErrorResponse` → `NetworkError` →
+  title. `AuthModelsTests` locks the additive decode **and the numeric-`code` fix** (numeric code →
+  body still decodes, `code` nil; string code → still `SLOT_UNAVAILABLE`).
+  `NetworkManagerTypesTests` proves the new 5th associated value defaults to nil so every existing
+  4-argument `httpError` call site is unchanged.
+  ⚠️ `xcodebuild test` currently cannot run (pre-existing unrelated compile error in
+  `ViewModelsStateTests.swift`, which blocks the whole test bundle). The above was additionally
+  verified with a standalone runtime harness that mirrors the ViewModel/View wiring and includes
+  **negative controls** — the pre-fix code is re-run against the same inputs and each bug is shown
+  to reproduce (wrong title, "Server Error 400" body, and an identical PIN status line).
 - **100+ backend tests**, ~30 admin-FE tests, **327 Android unit tests**.
 
 > ⚠️ Both test harnesses connect with `readPreference: "primary"`, but the real services use
@@ -793,14 +957,21 @@ cd packages/admin && NODE_ENV=test npx jest coupon
   checkout dialog **"Coupon Issue"** instead of "Payment Failed", and names the applied coupon in
   the checkout Order Summary. Needs the backend deploy above to be live to have any effect; with an
   old backend the fields are simply absent and the app behaves exactly as before.
-- **iOS client follow-up (2026-08-26, NOT yet built):** same two changes as Android's §2 D4/D5 —
-  iOS still shows **"Payment Failed"** for every checkout error and still omits the coupon from its
-  checkout summary. Backend-only until it ships; nothing regresses meanwhile.
-- **Web client follow-up (2026-08-26, NOT yet built):** same — verify how `haper-web` labels a
-  checkout coupon failure.
+- **iOS — DONE 2026-08-26 (§2 D8, D9):** the same two changes as Android's §2 D4/D5 — the checkout
+  alert is titled **"Coupon Issue"** for an `errorType:"COUPON"` refusal, and the Order Summary names
+  the applied coupon. Needs the backend deploy above to be live to have any effect; with an old
+  backend both fields are absent and the app behaves exactly as before. **Also fixed on the way
+  through (iOS-only, pre-existing):** a numeric `code` in the error body broke `ErrorResponse`
+  decoding entirely, so *every* middleware error showed "Server Error 4xx" instead of the real
+  message — see the ⚠️ in §2 D8.
+- **Web — CLOSED 2026-08-26 (§2 D6, D7; §3 G):** the two Android fixes turned out to need **no web
+  change** — web already showed the server's own message in a neutral toast (§2 D6) and already named
+  the applied coupon on checkout (§2 D7). Web does **not** read `errorType`. The one real web gap, the
+  order **detail** page saying only "Discount applied", **was** fixed (§3 G) — a frontend-only change
+  (`types.ts`, `pages/OrderDetail.tsx`); the backend already returned the `coupon` block.
 - **Android deploy:** `haper-android` code (Cart screen coupon entry §2A2; checkout coupon dialog + summary row §2 D4/D5) — normal debug build/install; no store release required for dev testing.
-- **iOS deploy:** `haper-ios` code (Cart screen coupon entry, §2A3) — normal debug build/simulator install; no TestFlight/App Store release required for dev testing.
-- **Web deploy (dev):** `haper-web` code (Checkout page coupon entry & form validation, §2A4) — test via `vite build` locally or deploy to dev.
+- **iOS deploy:** `haper-ios` code (Cart screen coupon entry §2A3; checkout coupon alert title + summary row §2 D8/D9) — normal debug build/simulator install; no TestFlight/App Store release required for dev testing.
+- **Web deploy (dev):** `haper-web` code (Checkout page coupon entry & form validation, §2A4; order-detail coupon name, §3 G) — test via `tsc --noEmit` + `vite build` locally or deploy to dev. `haper-web` has no eslint gate and no test suite; those two commands are the whole check.
 - **`main` stays off-limits.** This ships to prod via a manual user-driven deploy only (not a CI/CD auto-merge to main).
 
 ---
