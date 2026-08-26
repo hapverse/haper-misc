@@ -3,11 +3,11 @@
 **Area:** User app → "Cancel order". Admin → order detail (reads the stored reason).
 **Backend:** `packages/user/src/routes/order/router.js`, `.../order/validator.js`,
 `.../order/controller.js`, `packages/shared/models/orders.schema.js`.
-**Apps:** Android now sends a reason (feat/cancel-reason branch). iOS / Web unchanged; old clients still work.
+**Apps:** Android, Web, and iOS now send a reason. Old clients still work.
 **Platform coverage:**
 - ✅ **Android:** optional reason capture in bottom-sheet dialog (shipped on feat/cancel-reason branch)
-- ⏸ **iOS:** no changes yet
-- ⏸ **Web:** no changes yet
+- ✅ **iOS:** optional reason capture in `.sheet` (`CancelOrderReasonSheet.swift`)
+- ✅ **Web:** optional reason capture in modal dialog (`CancelOrderDialog.tsx`)
 
 ---
 
@@ -295,6 +295,142 @@ Both are covered by automated tests in `order-cancel-reason.test.js`.
 
 ---
 
+## How to test — Web manual QA
+
+**Prerequisites:**
+- Run haper-web against dev (`dapi.haper.in`), and have at least one test order in OPEN status
+  (paid or COD, doesn't matter) that is still inside the 60-second free-cancel window when needed,
+  plus one older OPEN order that is safely past that window.
+
+**The feature on Web:** tapping "Cancel Order" opens `CancelOrderDialog` (a bottom sheet on
+mobile widths, a centered modal on `md:`+) instead of the old one-tap confirm. It has the same 7
+single-select reason rows as Android, an "Other" free-text field capped at 180 characters with a
+live counter, and "Yes, Cancel" / "No" buttons.
+
+### ✅ A. Cancel with no reason (backward-compatible)
+
+1. Open an OPEN order, tap "Cancel Order."
+2. Do not select any reason. Tap "Yes, Cancel."
+   - ✅ **Expect:** 200, order CANCELED, no `cancellation` block sent (matches the old plain-confirm
+     DELETE behavior — nothing regresses for a user who ignores the new reason picker).
+
+### ✅ B. Cancel with each predefined reason
+
+1. Repeat for each of the 6 non-"Other" reasons ("Ordered by mistake," "Changed my mind," "Found it
+   cheaper elsewhere," "Delivery is taking too long," "Wrong item(s) or address added," "Don't need
+   it anymore").
+   - ✅ **Expect:** the row highlights on select (visually, via `border-primary-500`/background), and
+     is exposed to assistive tech via `role="radio" aria-checked` inside a `role="radiogroup"`.
+   - ✅ **Expect:** the "Other" text field never appears for these rows.
+   - ✅ **Expect:** 200, admin shows the matching `cancellation.code`, `cancellation.text` = null.
+
+### ✅ C. Cancel via "Other" with text
+
+1. Select "Other," type `"The app kept crashing"`. Counter shows live count.
+2. Tap "Yes, Cancel."
+   - ✅ **Expect:** 200, admin shows `cancellation.code` = `OTHER`, `cancellation.text` = the typed
+     string.
+
+### ❌ D. Paste 181+ characters into "Other" (truncate, not reject)
+
+1. Select "Other," paste 200+ characters.
+   - ✅ **Expect:** the field truncates to 180 as you paste (component slices on every keystroke/paste
+     event) — it does NOT reject the paste or clear the field. Counter caps at "180/180" and turns
+     amber past 160.
+2. Tap "Yes, Cancel" → 200, `cancellation.text` is exactly the first 180 characters.
+
+### ✅ E. Selecting "Other," typing, then switching to a different reason clears stale text
+
+1. Select "Other," type `"Very expensive"`.
+2. Tap a different reason, e.g. "Delivery is taking too long."
+   - ✅ **Expect:** the free-text field disappears, and the typed text is discarded from state (not
+     just hidden) — re-selecting "Other" afterwards shows an empty field, not the old text.
+3. Tap "Yes, Cancel" → admin shows `cancellation.code` = `DELIVERY_TOO_SLOW`, `cancellation.text` =
+   null (the old "Other" text is never attached to a different code).
+
+### ✅ F. 60-second-window-expired cancel now shows the server's real error (regression, was ❌)
+
+**Before this fix:** any failed cancel — including a plain "window expired" 403 from the backend —
+showed a generic "Could not cancel order. Please try again." toast. Since this dialog adds several
+extra taps (reading 7 options, optionally typing free text) before submitting, users spend more of
+the 60-second window in the UI, making an expired-window failure common rather than rare. A generic
+message gave no way to tell an expired window (unrecoverable, stop retrying) from a transient
+network blip (retry might work).
+
+1. Place a fresh order, then deliberately wait past 60 seconds (for a non-scheduled order) before
+   tapping "Cancel Order" and submitting (with or without a reason selected).
+2. Tap "Yes, Cancel."
+   - ✅ **Expect:** the toast now shows the backend's actual message, e.g. *"Cancellation window has
+     expired. Orders can only be canceled within 1 minute of placement."* — not the generic fallback.
+   - ✅ **Expect:** the same real-message behavior for any other actionable rejection, e.g. *"Order
+     cannot be canceled in its current status."*
+3. ✅ **Expect:** the dialog stays open after the failed submit, and any reason/free-text the user had
+   selected/typed is preserved (not reset) so they can back out via "No" without losing input.
+
+---
+
+## How to test — iOS manual QA
+
+**Prerequisites:**
+- Build the iOS app from `dev` (`haper/Views/CancelOrderReasonSheet.swift`), run against dev
+  (`dapi.haper.in`).
+- Have at least 2 test orders ready on dev (Status OPEN, paid or COD — doesn't matter).
+
+**The feature on iOS:** tapping "Cancel Order" presents `CancelOrderReasonSheet` (`.sheet` at
+`.medium`/`.large` detents) instead of a plain confirm alert. Same 7 single-select reason rows as
+Android/Web, an "Other" free-text field capped at 180 characters (counted in UTF-16 code units, to
+match the backend's Joi `.max(180)` and Android's `String.take` — not Swift's default
+grapheme-cluster count) with a live counter, and "Yes, Cancel" / "No" buttons in a pinned footer.
+
+### ✅ A. Cancel with no reason (backward-compatible)
+
+1. Open an OPEN order, tap "Cancel Order."
+2. Do not select any reason. Tap "Yes, Cancel."
+   - ✅ **Expect:** 200, order CANCELED, no `cancellation` block sent (matches the old DELETE
+     behavior — nothing regresses for a user who ignores the reason picker).
+
+### ✅ B. Cancel with each predefined reason
+
+1. Repeat for each of the 6 non-"Other" reasons.
+   - ✅ **Expect:** the row highlights on select, the "Other" field never appears for these rows.
+   - ✅ **Expect:** 200, admin shows the matching `cancellation.code`, `cancellation.text` = null.
+
+### ✅ C. Cancel via "Other" with text (including Hindi/emoji — UTF-16 fix)
+
+1. Select "Other," type `"The app kept crashing"`. Tap "Yes, Cancel."
+   - ✅ **Expect:** 200, admin shows `cancellation.code` = `OTHER`, `cancellation.text` = the typed
+     string.
+2. **Regression test for the UTF-16 truncation fix:** select "Other," type (or paste) roughly 150
+   Devanagari/Hindi characters (e.g. repeat "नमस्ते ऐप बहुत धीमा है" until the counter reads close
+   to 150), or a string with emoji.
+   - ✅ **Expect:** the counter tracks `.utf16.count`, not grapheme count, and never lets the text
+     exceed 180 UTF-16 units.
+   - ✅ **Expect:** the text is **not silently over-truncated** well below the visible character
+     count, and is **not rejected by the server with a 403** on submit — confirm the same string
+     round-trips into `cancellation.text` in admin. Before the fix, Swift's default `.count`
+     (grapheme clusters) could pass client-side while the UTF-16 length sent to the backend's Joi
+     `.max(180)` was already over the limit, causing a hard 403 the user could not work around.
+
+### ✅ D. Whitespace-only "Other" text (must behave like no text)
+
+1. Select "Other," type only spaces/newlines (e.g. `"   "`). Tap "Yes, Cancel."
+   - ✅ **Expect:** 200, order CANCELED, `cancellation.code` = `OTHER`, `cancellation.text` = null
+     (trimmed client-side before send — matches Android's `trim().takeIf { isNotBlank() }` and the
+     backend's own `.trim()`, instead of sending a whitespace string that resolves to `""` server-side).
+
+### ❌ E. Failed cancel shows the error without scrolling (regression, was invisible)
+
+1. Trigger a failed cancel (e.g. wait past the 60-second free-cancel window, or use an order in a
+   non-cancelable state), optionally with a reason selected.
+2. Tap "Yes, Cancel."
+   - ✅ **Expect:** the sheet stays open, the spinner stops, and the inline error message is
+     **immediately visible above the "Yes, Cancel" button** in the pinned footer — no scrolling
+     required. Before this fix, the error rendered below the reason list inside the scrollable
+     content and was invisible at the `.medium` detent unless the user manually scrolled down.
+   - ✅ **Expect:** any reason/text already selected/typed is preserved (sheet does not reset).
+
+---
+
 ## System behavior (not changed by this feature)
 
 - **Razorpay-payment-failure auto-cancel:** when the payment gateway fails and the system auto-cancels the order, this is a **system rollback, not a customer choice**. No reason sheet appears, and no reason is sent. The order cancels silently with `reason: "Cancelled by payment failure"` and no `cancellation` block.
@@ -316,7 +452,7 @@ Both are covered by automated tests in `order-cancel-reason.test.js`.
 **Both require deployment for end-to-end function:**
 
 1. **Backend:** deploy `packages/user` to dapi.haper.in (dev). This activates the new `POST /user/order/:orderId/cancel` route and the reason validator. Older builds calling DELETE will continue to work.
-2. **Android:** release the new build (feat/cancel-reason branch) to testers / users. Old builds keep using DELETE (harmless fallback forever).
+2. **Android / iOS:** release the new build to testers / users. Old builds keep using DELETE (harmless fallback forever).
 
 **Deployment order:** Deploy backend first, then roll out the Android app. The backend accepts both old and new requests, so there is no breaking change.
 
