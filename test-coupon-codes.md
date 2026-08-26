@@ -314,6 +314,76 @@ one validation (length gate) walked as representative. `tsc -b` and `vite build`
 6. **Expect:** this succeeds — the limit is on *wrong-code guesses*, not on valid codes already applied. A customer who has a valid coupon in their cart is not locked out by the attempt limiter.
 7. The block is **per calendar day (IST)**. At 00:00 IST the next day, the counter resets and the user can guess wrong codes again.
 
+### ✅ D2. Already-used coupon is refused ON THE CART, not at Place Order (added 2026-08-26)
+**Why this exists:** a per-customer-limited coupon used to sail through apply and only fail at the final "Place Order" step — where the Android/iOS apps show a generic **"Payment Failed"** dialog for *every* checkout error. Nothing was ever charged, so that dialog was simply wrong. The cart now tells the customer up front.
+
+1. Create coupon `ONCE_EACH` with **per-customer limit: 1**, total limit 100.
+2. As **Customer A**, apply it and complete an order → succeeds.
+3. On a new cart, apply `ONCE_EACH` again (`POST /cart/coupon/apply`).
+4. **Expect:** **HTTP 400** with `ok: false, reason: "CUSTOMER_LIMIT_REACHED"`, message **"You've already used this coupon."** — immediately, without reaching checkout.
+5. **Expect:** the code is **NOT** pinned to the cart, `GET /cart` still shows the neutral coupon block, and the coupon's `usedCount` is unchanged (this check is a read — it claims nothing).
+6. **A different Customer B** applies `ONCE_EACH` → still succeeds. One customer's usage never affects another's.
+7. A coupon with **no** per-customer limit is never refused by this check, however many times that customer has used it.
+
+❗ **This check is ADVISORY / best-effort, by design.** It is not the enforcement. The atomic claim at Place Order is still the only authority on the cap, and it is unchanged. If two devices apply at the same instant, both applies may pass and one of them will still be refused at Place Order — **that is expected and correct, not a bug.** Do not report it as one.
+
+### ✅ D3. A coupon failure at Place Order is now machine-identifiable (added 2026-08-26)
+This is what lets the apps stop saying "Payment Failed" for a coupon problem. Verify with a proxy/network log on `POST /user/order/place`.
+
+1. Force any coupon failure at checkout — the easiest is a coupon whose total cap you exhausted, or a code you type that has expired (type it in the checkout request body so it is not just a stale cart coupon).
+2. **Expect** the 400 body to now carry **two extra top-level fields**:
+   ```json
+   {
+     "code": 400,
+     "error": "Error",
+     "data": null,
+     "message": "You've already used this coupon.",
+     "errorType": "COUPON",
+     "reason": "CUSTOMER_LIMIT_REACHED"
+   }
+   ```
+3. `errorType` is always the literal string `"COUPON"` for any coupon refusal. `reason` is one of `NOT_FOUND`, `DISABLED`, `NOT_STARTED`, `EXPIRED`, `EXHAUSTED`, `BELOW_MIN_ORDER`, `NOT_FIRST_ORDER`, `WRONG_STORE`, `CUSTOMER_LIMIT_REACHED`, `TOO_MANY_ATTEMPTS`, `CLAIM_CONFLICT`, `NO_HEADROOM` — the same values `POST /cart/coupon/apply` already returns.
+4. **Expect:** a **non**-coupon checkout failure (bad address, out of stock, slot full, payment) carries **neither** field. Clients must branch on `errorType === "COUPON"` and treat "field absent" as "not a coupon problem".
+5. **Expect:** a **successful** order response is byte-identical to before — neither field appears on a 200.
+6. `message` is unchanged, so an app build that doesn't know these fields keeps behaving exactly as it does today.
+
+### ✅ D4. Android — a coupon failure at Place Order says "Coupon Issue", not "Payment Failed" (built 2026-08-26)
+
+Consumes §D3's `errorType`. Files: `app/src/main/java/com/bheldi/data/model/AuthModels.kt`
+(`ErrorResponse` gains `errorType` + `reason`), `.../ui/screens/orders/OrderViewModel.kt`
+(`checkoutErrorType`/`checkoutErrorReason`), `.../ui/screens/checkout/CheckoutScreen.kt`
+(`checkoutErrorDialogTitle`).
+
+1. Create coupon `ONCE_EACH` (per-customer limit 1). As Customer A, apply it and place an order → succeeds.
+2. Build a new cart. Because of §D2 the app will usually refuse at **apply** time now — to reach the checkout path instead, exhaust the coupon's **total** cap (or expire it) *after* it is already pinned to the cart, so the cart holds a coupon that only dies at Place Order.
+3. Tap **Confirm Order → Place Order**.
+4. **Expect:** the dialog title reads **"Coupon Issue"**, not "Payment Failed". The message body is **unchanged** (whatever the server's `message` says, verbatim).
+5. **Expect:** tapping **OK** dismisses it and leaves the customer on checkout with the cart intact — nothing was charged, and the wording no longer implies it was.
+6. **❌ Regression check — a real payment failure must still say "Payment Failed":** with no coupon on the cart, force a non-coupon checkout failure (out of stock item, or cancel the Razorpay sheet).
+7. **Expect:** the dialog title is still **"Payment Failed"** exactly as before. Any error the server did not tag with `errorType: "COUPON"` keeps the old wording — including responses from an older backend that sends neither field.
+8. **❌ No stale title:** hit the coupon error from step 4, tap OK, remove the coupon, then force a payment failure.
+9. **Expect:** the second dialog says **"Payment Failed"** — the coupon tag must not leak into the next attempt.
+
+### ✅ D5. Android — checkout screen shows WHICH coupon is applied (built 2026-08-26)
+
+**Why this exists:** the Confirm Order screen showed only "Items" and "To pay". A customer with a coupon
+saw a total that was lower than the item total with **no explanation anywhere on the screen** — the coupon
+UI lived only on the Cart screen.
+
+1. Apply `WELCOME50` (₹50 off) on the **Cart**, then tap **Checkout**.
+2. **Expect:** in the **Order Summary** card, directly under the **Items** row, a green row reading
+   **`Coupon WELCOME50`  `-₹50`** — the code is named, so the customer can see *why* the total dropped.
+3. **Expect:** the arithmetic now reads correctly top to bottom: Items − coupon + delivery + platform fee = **To pay**.
+4. **Expect:** the row style matches the existing **"Wallet applied"** row on the same screen (green, negative amount).
+5. **No coupon applied:** go to checkout with no coupon.
+6. **Expect:** **no** coupon row at all — the Order Summary is byte-identical to before this build.
+7. **Stale / ₹0 coupon:** apply a coupon, then drop the cart below its min order so `valid: false` / discount ₹0.
+8. **Expect:** **no** coupon row on checkout (a "-₹0" line would be noise). The cart screen's amber warning chip remains the place that explains a stale coupon.
+
+⚠️ **Known gap (pre-existing, NOT introduced here):** the checkout Order Summary still does not show the
+**automatic** (non-coupon) discount row that the Cart's Bill Details shows. A cart whose discount came from
+a promo rule rather than a coupon still shows an unexplained drop on checkout. Out of scope for this pass.
+
 ### ✅ E. Stale coupon in the cart (expires or drops below min order while sitting)
 1. Apply coupon `WELCOME50` to a ₹500 cart successfully.
 2. Modify the cart to drop below the min order value (e.g., remove items so subtotal becomes ₹150).
@@ -410,7 +480,7 @@ one validation (length gate) walked as representative. `tsc -b` and `vite build`
    - Per-customer limit: 1 (each customer can use it once)
 2. **Customer A** places an order with `ONCE_EACH` → succeeds, `usedCount: 1`.
 3. **Same Customer A** tries to apply `ONCE_EACH` again on a new cart.
-4. **Expect:** **HTTP 400** with `reason: "CUSTOMER_LIMIT_REACHED"`, message "You've already used this coupon".
+4. **Expect:** **HTTP 400** with `reason: "CUSTOMER_LIMIT_REACHED"`, message "You've already used this coupon". Since 2026-08-26 this is refused at **apply** time as well as at checkout (§2 D2) — but the checkout claim is still the only real enforcement.
 5. A **different Customer B** applies and orders with `ONCE_EACH` → succeeds, `usedCount: 2`.
 
 ### ✅ C. Concurrent claims don't exceed total cap (stress test)
@@ -693,7 +763,21 @@ cd packages/admin && NODE_ENV=test npx jest coupon
 - **Boot degradation** (`packages/admin/__tests__/coupon-boot-index-verification-connectdb.test.js`):
   admin logs CRITICAL and force-disables coupons instead of `process.exit(1)`. This is a regression
   guard for the 2026-08-24 admin crash-loop — do not let the exit come back.
-- **100+ backend tests**, ~30 admin-FE tests.
+- **Checkout refusal tagging** (`packages/user/__tests__/coupon-checkout.test.js`, "coupon failures
+  carry errorType + reason", §2 D3): every coupon refusal on BOTH checkout paths answers
+  `errorType:"COUPON"` + the specific `reason`; a non-coupon failure and a 200 carry neither; and an
+  untagged error that happens to have its own `.reason` (the mongo driver's does) publishes nothing.
+- **Advisory per-customer apply check** (`packages/user/__tests__/coupon-cart.test.js`, §2 D2):
+  refuses on a live HELD/CONFIRMED slot, lets a RELEASED row back in, ignores other customers and
+  uncapped coupons, and **fails open** if the read itself errors.
+- **Android client-side tagging** (`haper-android`, §2 D4/D5): `CheckoutSummaryTest` covers the
+  dialog title (COUPON → "Coupon Issue"; null / unknown tag / empty → "Payment Failed") and the
+  Order Summary coupon row (rendered with the code; omitted for no coupon, blank code, or ₹0
+  discount). `OrderViewModelTest` proves `placeOrder` threads `errorType`/`reason` through and
+  **clears them before every retry** so a coupon tag can't mislabel a later payment failure.
+  `ApiContractTest` round-trips the real §D3 JSON through Gson (tagged, untagged, and the
+  `/cart/coupon/apply` `{ok:false,reason,message}` body) via MockWebServer.
+- **100+ backend tests**, ~30 admin-FE tests, **327 Android unit tests**.
 
 > ⚠️ Both test harnesses connect with `readPreference: "primary"`, but the real services use
 > `secondaryPreferred`. That divergence is exactly what let the missing-index bug ship green, so
@@ -705,7 +789,16 @@ cd packages/admin && NODE_ENV=test npx jest coupon
 
 - **Backend deploy (dev):** `haper-backend` code + the 3 new collections (coupons, coupon-redemptions, coupon-attempts) created lazily on first write. No migration.
 - **Admin panel deploy (dev):** `haper-admin` code (Coupons CRUD page + POS coupon UI).
-- **Android deploy:** `haper-android` code (Cart screen coupon entry, §2A2) — normal debug build/install; no store release required for dev testing.
+- **Android — DONE 2026-08-26 (§2 D4, D5):** consumes `errorType:"COUPON"` (§2 D3) to title the
+  checkout dialog **"Coupon Issue"** instead of "Payment Failed", and names the applied coupon in
+  the checkout Order Summary. Needs the backend deploy above to be live to have any effect; with an
+  old backend the fields are simply absent and the app behaves exactly as before.
+- **iOS client follow-up (2026-08-26, NOT yet built):** same two changes as Android's §2 D4/D5 —
+  iOS still shows **"Payment Failed"** for every checkout error and still omits the coupon from its
+  checkout summary. Backend-only until it ships; nothing regresses meanwhile.
+- **Web client follow-up (2026-08-26, NOT yet built):** same — verify how `haper-web` labels a
+  checkout coupon failure.
+- **Android deploy:** `haper-android` code (Cart screen coupon entry §2A2; checkout coupon dialog + summary row §2 D4/D5) — normal debug build/install; no store release required for dev testing.
 - **iOS deploy:** `haper-ios` code (Cart screen coupon entry, §2A3) — normal debug build/simulator install; no TestFlight/App Store release required for dev testing.
 - **Web deploy (dev):** `haper-web` code (Checkout page coupon entry & form validation, §2A4) — test via `vite build` locally or deploy to dev.
 - **`main` stays off-limits.** This ships to prod via a manual user-driven deploy only (not a CI/CD auto-merge to main).
