@@ -1,9 +1,14 @@
 # Test: Precise vs approximate delivery coordinate (Android)
 
-**Status:** Android DONE incl. the 2026-08-24 code-review fix-loop (clean `testDebugUnitTest` +
-`assembleDebug` green, 310 unit tests, 0 failures; NOT device-verified). Backend: no change.
+**Status:** Android DONE incl. the 2026-08-24 code-review fix-loop and the 2026-08-26 PIN-prompt
+follow-up (clean `testDebugUnitTest` + `assembleDebug` green, 313 unit tests, 0 failures; NOT
+device-verified). Backend: no change.
 iOS: same fix done in parallel — see the "FIX 2026-08-24" section of
-`test-address-pincode-geocode.md`. Web: N/A (no map picker).
+`test-address-pincode-geocode.md`. The 2026-08-26 PIN-prompt follow-up below (**"Snap to new PIN"
+→ "Update location"** + a **PIN-named status line**) was ported to iOS on 2026-08-26 as well —
+iOS manual steps 9–10 in `test-address-pincode-geocode.md`; `xcodebuild build` SUCCEEDED,
+SwiftLint clean, 3 new `AddressModelsTests` cases + a negative-control runtime probe.
+Web: N/A (no map picker).
 
 ## Why
 
@@ -44,9 +49,17 @@ A coordinate now carries a confirmed/unconfirmed flag, held next to lat/lng in a
   overwrite an explicit confirmation. Tapping Refresh on an already-confirmed address still works.
 - **PIN change on a confirmed address** no longer overwrites anything: it shows an inline prompt,
   *"Your PIN changed. Update the pin location to match?"* → **Keep current location** (no-op) /
-  **Snap to new PIN** (applies the centroid and marks it unconfirmed again). Editing the PIN
+  **Update location** (applies the centroid and marks it unconfirmed again). Editing the PIN
   **again** while that prompt is open dismisses it, because it refers to the *previous* pincode's
-  coordinate (matches iOS).
+  coordinate.
+- **2026-08-26 follow-up (this session):** the action was renamed **"Snap to new PIN" → "Update
+  location"** (plain language, and it reads as a clear either/or against "Keep current location"),
+  and a **PIN-named status line** was added. Once the coordinate is unconfirmed, every further PIN
+  edit applies silently and correctly — but every other cue on screen (amber marker, "Approximate
+  — not yet confirmed", the overlay caption) is *identical* before and after, and the only motion
+  was a silent camera pan in the 180dp preview, so it read as "nothing happened". The status text
+  now names the PIN — *"Approximate area from PIN 841303 — drag the pin to your exact spot"* — and
+  is shown in the **Maps** branch too (it was previously rendered only in the no-Maps fallback).
 - What is saved is still just the coordinate — nothing new persists.
 
 Coordinate + flag are `rememberSaveable` together, so rotation / process death can never bring
@@ -91,8 +104,21 @@ back "confirmed" with a missing coordinate.
    pin location to match?"*
 4. **Keep current location** → prompt closes, coordinate untouched, still green/confirmed, Save
    still saves directly.
-5. Repeat and tap **Snap to new PIN** → pin moves to the new area, goes **amber/unconfirmed**,
-   and Save now opens the map picker first.
+5. Repeat and tap **Update location** → pin moves to the new area, goes **amber/unconfirmed**,
+   the caption under the map reads *"Approximate area from PIN &lt;that PIN&gt; — drag the pin to your
+   exact spot"*, and Save now opens the map picker first.
+
+### ✅ A SECOND PIN edit after "Update location" (fixed 2026-08-26)
+1. Existing address with a saved (green) location. Change the PIN → prompt appears → tap
+   **Update location** → pin amber, caption names that PIN (e.g. `841302`).
+2. **Without saving**, change the PIN to a *third* valid value (e.g. `841303`).
+3. **Expect:** **no** second prompt (correct — there is no longer a confirmed coordinate to
+   protect, so the new area applies silently), the map pin moves to the new area, and the caption
+   now names the **new** PIN (`841303`). ❌ Fail if the caption still names the old PIN, or if the
+   pin does not move — that is the "nothing happens" report this fix addresses.
+4. Repeat once more (a 4th PIN) → same behaviour, caption keeps tracking the latest PIN.
+5. Tap the map → drag → **Confirm location** → green/confirmed and the PIN-area caption
+   **disappears** (it is no longer an approximation).
 
 ### ✅ Editing the PIN again while the prompt is open
 1. Open an existing address with a saved (green) location. Change the PIN → the amber
@@ -100,7 +126,7 @@ back "confirmed" with a missing coordinate.
 2. Without tapping either action, edit the PIN **again** (delete a digit, or type a different
    valid PIN).
 3. **Expect:** the old prompt **disappears**. If the new value is a complete valid PIN, a *fresh*
-   prompt appears for that PIN. Tapping **Snap to new PIN** on it moves the pin to the **new**
+   prompt appears for that PIN. Tapping **Update location** on it moves the pin to the **new**
    PIN's area — never the previous one's. (Was a bug: the stale prompt applied the old PIN.)
 
 ### ✅ Save while the PIN-change prompt is open — deliberate behaviour
@@ -109,7 +135,7 @@ back "confirmed" with a missing coordinate.
 3. **Expect:** it saves immediately, keeping the **OLD confirmed coordinate** against the **NEW
    pin**. This is **deliberate, not a bug** — the prompt is an *offer* to move the pin, and an
    untouched confirmed coordinate always outranks a centroid. (Users who do want the new area tap
-   *Snap to new PIN* first, which flips it to unconfirmed and routes Save through the picker.)
+   *Update location* first, which flips it to unconfirmed and routes Save through the picker.)
 
 ### ✅ Late GPS must not steal an explicit map confirm
 1. On a slow/indoor GPS fix: tap **Refresh** (status shows "Fetching location…"), then *before it
@@ -125,7 +151,8 @@ back "confirmed" with a missing coordinate.
 
 ### ✅ No-Maps-key fallback build
 - With `MAPS_API_KEY` blank: confirmed → green row + Lat/Lng. Unconfirmed-with-PIN-coordinate →
-  amber card "Approximate location — tap Refresh to confirm precisely" (no Lat/Lng shown).
+  amber card "Approximate location — tap Refresh to confirm precisely" + "We only know the area
+  of PIN <n>, not your exact spot." (no Lat/Lng shown).
   No coordinate → "Location not captured". Hardcoded hex colours replaced with the
   `Success`/`Warning` theme tokens, so this block is now correct in **dark theme** too.
 - **Save with an unconfirmed coordinate** in this build has no map to open, and still refuses to
@@ -134,7 +161,8 @@ back "confirmed" with a missing coordinate.
   Save goes through.
 
 ### ✅ Accessibility / platform
-- TalkBack: both prompt links announce as buttons ("Keep current location" / "Snap to new PIN");
+- TalkBack: both prompt links announce as buttons ("Keep current location" / "Update location");
+  the PIN-area caption is plain text and is re-announced when it changes.
   status icons are decorative (adjacent text carries the meaning).
 - Both links have a real ≥48dp touch target (`minimumInteractiveComponentSize()`).
 - Rotate the screen / force process death (Don't keep activities) mid-flow after a GPS confirm →

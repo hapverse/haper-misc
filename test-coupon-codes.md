@@ -4,7 +4,9 @@ Feature plan: `coupon-codes-plan.md`. Admin UI design: `coupon-admin-ui-design.m
 Backend: `haper-backend` (`packages/shared/utils/coupon.utils.js` engine, `packages/admin/src/routes/coupon/*` CRUD, wired into cart apply/remove and both checkout paths).
 Admin panel: `haper-admin` (`src/pages/Coupons/*` CRUD, `POS/NewSalePage.tsx` coupon entry).
 
-Needs: backend deploy (dev) + admin deploy. No migration. Android checkout coupon entry (§2A2), iOS checkout coupon entry (§2A3), and web checkout coupon entry (§2A4) are now built. All new cart/order fields are additive and default to null/empty.
+Needs: backend deploy (dev) + admin deploy. No migration. Android checkout coupon entry (§2A2), iOS checkout coupon entry (§2A3), and web checkout coupon entry (§2A4) are now built. The checkout coupon-failure title + coupon summary row are built on Android (§2 D4/D5), iOS (§2 D8/D9), and were already correct on web (§2 D6/D7). The **order detail** screen names the coupon on web (§3 G), admin
+(§3 H) and Android (§3 I) — always as an informational "you saved ₹X" line, never a `-₹` subtraction (the
+item total is already net). All new cart/order fields are additive and default to null/empty.
 
 ---
 
@@ -17,6 +19,7 @@ Needs: backend deploy (dev) + admin deploy. No migration. Android checkout coupo
   the discount is **allocated back onto individual order lines** so invoices, GST, refunds, and profit/COGS work correctly. See the plan §3.3 for the allocation algorithm.
 - A coupon with `per-customer-limit` or `first-order-only` cannot be used by the anonymous "Walk-in Customer" on POS — the cashier must capture a phone number first.
 - Once a coupon code is created, it **cannot be renamed** (codes are handed to customers; renaming breaks shared codes).
+- **A percentage coupon must always have a "Max discount" cap** (rule added 2026-08-26). A flat ₹ coupon does not — its own value is already the most it can ever give.
 
 ---
 
@@ -32,7 +35,7 @@ Needs: backend deploy (dev) + admin deploy. No migration. Android checkout coupo
 5. **Scope:** select **Global** (applies to all stores).
 6. **Discount type:** select **FLAT**, value **₹50**.
 7. **Min order value:** `₹200` (order subtotal must be ≥ ₹200 before the coupon is valid).
-8. **Max discount amount:** empty (not capped).
+8. **Max discount amount:** leave **No cap** checked (a FLAT ₹ coupon may be uncapped — ₹50 off is ₹50 off, whatever the cart is worth).
 9. **Schedule:** start now, end tomorrow.
 10. **Limits:** total 100 redemptions, per-customer 1, **not** first-order-only.
 11. **Enabled:** on.
@@ -56,6 +59,29 @@ Needs: backend deploy (dev) + admin deploy. No migration. Android checkout coupo
 3. **Expect:** the code field is **read-only** (grayed out or disabled), showing `SALE10`. You cannot change it to anything else.
 4. Change the discount value (e.g. from ₹10 to ₹15) and save.
 5. **Expect:** the discount updates, but the code stays `SALE10`.
+
+### ❌ D2. A percentage coupon cannot be saved without a max-discount cap (2026-08-26)
+
+**Why:** "50% off" with no cap on a ₹5,000 cart is ₹2,500 given away on one order. Since the
+margin guard was removed (§6), the cap is the only thing bounding the loss per redemption.
+Flat ₹ coupons are untouched — ₹50 off can never cost more than ₹50.
+
+1. **Create coupon** → discount type **Percent**, value `50`.
+2. **Expect:** there is **no "No cap" checkbox** at all for Percent. The **Max discount (required)**
+   field is always shown.
+3. Leave Max discount empty and click **Save coupon**.
+4. **Expect:** blocked with "A percentage coupon must have a maximum discount — enter an amount above ₹0."
+   Nothing is created.
+5. Enter `150` and save → **Expect:** saves; the coupon gives 50% off **up to ₹150** (on a ₹5,000
+   order the customer gets ₹150 off, not ₹2,500).
+6. Switch the type to **Flat ₹** → **Expect:** the **No cap** checkbox is back and a flat coupon
+   still saves with no cap.
+7. **Edit** a live percentage coupon and try to clear its cap → **Expect:** rejected (403, message
+   naming the cap). Same rule applies on edit, not just create.
+8. **Existing coupons:** a percentage coupon created **before** this rule keeps working exactly as
+   before, and can still be edited (description, schedule, limits) and toggled off. Only when you
+   change its **discount** does it demand a cap. ❌ Flag it if an old uncapped percentage coupon
+   stops applying at checkout — that is not intended.
 
 ### ✅ E. Admin can toggle a coupon on/off instantly
 1. Create and save a coupon `INSTANT10`.
@@ -221,13 +247,15 @@ Files: `haper-web/types.ts` (`CartCoupon`, `ApplyCouponResponseData`, `RemoveCou
 19. **Expect:** the applied-coupon card **stays visible** (code chip + Remove button) with an added inline
     warning line showing `coupon.message` (amber text with an info icon) — the coupon is NOT auto-cleared;
     the customer can still tap Remove to clear it manually. Total is priced without the coupon meanwhile.
-20. **₹0 discount coupon (margin-guard clamp):** apply a coupon on a cart where the margin guard clamped
-    the discount to ₹0 (e.g., high-margin coupon on a tight-margin item, or aggregate cart margin is
-    insufficient). The coupon is `valid: true` but gives no money off.
-21. **Expect:** the applied-coupon card shows the code chip, but "You saved ₹0" (or no savings line at
-    all), AND an inline warning line (amber) showing the `coupon.message` (e.g., "Coupon discount capped at
-    ₹0 to protect our margin") — this is NOT an error (valid coupon) but an advisory that the customer
-    should know they got no discount.
+20. **Deep coupon on a tight-margin cart:** apply a coupon big enough to sell the cart below its cost
+    price (e.g. 95% off an item costing ₹90.37). **Since 2026-08-26 this is allowed** — the coupon
+    pays out **in full** and the order books a loss. There is no margin guard any more.
+21. **Expect:** a completely ordinary applied-coupon card — the full "You saved ₹X" savings line, no
+    amber warning, `coupon.message: null`, and a cart total that can sit well under what the goods
+    cost us. ❌ Bug if the discount comes back as **₹0** with the
+    *"We couldn't apply this coupon right now"* message: that is the old suppressed behaviour.
+    (The ₹0 + message path still exists for a coupon that is genuinely worth nothing — a
+    zero-valued discount, or a basket of nothing but free-gift lines — but no longer for margin.)
 22. **Worse-than-automatic-discount advisory:** apply a coupon on a cart where an automatic discount was
     already active and is worth more than the coupon (`replacedAutoDiscount == true` and `couponBetter ==
     false` on the apply response).
@@ -287,6 +315,183 @@ one validation (length gate) walked as representative. `tsc -b` and `vite build`
 5. After this block, try to apply an **already-valid code that you had applied before** (from a prior checkout). 
 6. **Expect:** this succeeds — the limit is on *wrong-code guesses*, not on valid codes already applied. A customer who has a valid coupon in their cart is not locked out by the attempt limiter.
 7. The block is **per calendar day (IST)**. At 00:00 IST the next day, the counter resets and the user can guess wrong codes again.
+
+### ✅ D2. Already-used coupon is refused ON THE CART, not at Place Order (added 2026-08-26)
+**Why this exists:** a per-customer-limited coupon used to sail through apply and only fail at the final "Place Order" step — where the Android/iOS apps show a generic **"Payment Failed"** dialog for *every* checkout error. Nothing was ever charged, so that dialog was simply wrong. The cart now tells the customer up front.
+
+1. Create coupon `ONCE_EACH` with **per-customer limit: 1**, total limit 100.
+2. As **Customer A**, apply it and complete an order → succeeds.
+3. On a new cart, apply `ONCE_EACH` again (`POST /cart/coupon/apply`).
+4. **Expect:** **HTTP 400** with `ok: false, reason: "CUSTOMER_LIMIT_REACHED"`, message **"You've already used this coupon."** — immediately, without reaching checkout.
+5. **Expect:** the code is **NOT** pinned to the cart, `GET /cart` still shows the neutral coupon block, and the coupon's `usedCount` is unchanged (this check is a read — it claims nothing).
+6. **A different Customer B** applies `ONCE_EACH` → still succeeds. One customer's usage never affects another's.
+7. A coupon with **no** per-customer limit is never refused by this check, however many times that customer has used it.
+
+❗ **This check is ADVISORY / best-effort, by design.** It is not the enforcement. The atomic claim at Place Order is still the only authority on the cap, and it is unchanged. If two devices apply at the same instant, both applies may pass and one of them will still be refused at Place Order — **that is expected and correct, not a bug.** Do not report it as one.
+
+### ✅ D3. A coupon failure at Place Order is now machine-identifiable (added 2026-08-26)
+This is what lets the apps stop saying "Payment Failed" for a coupon problem. Verify with a proxy/network log on `POST /user/order/place`.
+
+1. Force any coupon failure at checkout — the easiest is a coupon whose total cap you exhausted, or a code you type that has expired (type it in the checkout request body so it is not just a stale cart coupon).
+2. **Expect** the 400 body to now carry **two extra top-level fields**:
+   ```json
+   {
+     "code": 400,
+     "error": "Error",
+     "data": null,
+     "message": "You've already used this coupon.",
+     "errorType": "COUPON",
+     "reason": "CUSTOMER_LIMIT_REACHED"
+   }
+   ```
+3. `errorType` is always the literal string `"COUPON"` for any coupon refusal. `reason` is one of `NOT_FOUND`, `DISABLED`, `NOT_STARTED`, `EXPIRED`, `EXHAUSTED`, `BELOW_MIN_ORDER`, `NOT_FIRST_ORDER`, `WRONG_STORE`, `CUSTOMER_LIMIT_REACHED`, `TOO_MANY_ATTEMPTS`, `CLAIM_CONFLICT`, `NO_HEADROOM` — the same values `POST /cart/coupon/apply` already returns.
+4. **Expect:** a **non**-coupon checkout failure (bad address, out of stock, slot full, payment) carries **neither** field. Clients must branch on `errorType === "COUPON"` and treat "field absent" as "not a coupon problem".
+5. **Expect:** a **successful** order response is byte-identical to before — neither field appears on a 200.
+6. `message` is unchanged, so an app build that doesn't know these fields keeps behaving exactly as it does today.
+
+### ✅ D4. Android — a coupon failure at Place Order says "Coupon Issue", not "Payment Failed" (built 2026-08-26)
+
+Consumes §D3's `errorType`. Files: `app/src/main/java/com/bheldi/data/model/AuthModels.kt`
+(`ErrorResponse` gains `errorType` + `reason`), `.../ui/screens/orders/OrderViewModel.kt`
+(`checkoutErrorType`/`checkoutErrorReason`), `.../ui/screens/checkout/CheckoutScreen.kt`
+(`checkoutErrorDialogTitle`).
+
+1. Create coupon `ONCE_EACH` (per-customer limit 1). As Customer A, apply it and place an order → succeeds.
+2. Build a new cart. Because of §D2 the app will usually refuse at **apply** time now — to reach the checkout path instead, exhaust the coupon's **total** cap (or expire it) *after* it is already pinned to the cart, so the cart holds a coupon that only dies at Place Order.
+3. Tap **Confirm Order → Place Order**.
+4. **Expect:** the dialog title reads **"Coupon Issue"**, not "Payment Failed". The message body is **unchanged** (whatever the server's `message` says, verbatim).
+5. **Expect:** tapping **OK** dismisses it and leaves the customer on checkout with the cart intact — nothing was charged, and the wording no longer implies it was.
+6. **❌ Regression check — a real payment failure must still say "Payment Failed":** with no coupon on the cart, force a non-coupon checkout failure (out of stock item, or cancel the Razorpay sheet).
+7. **Expect:** the dialog title is still **"Payment Failed"** exactly as before. Any error the server did not tag with `errorType: "COUPON"` keeps the old wording — including responses from an older backend that sends neither field.
+8. **❌ No stale title:** hit the coupon error from step 4, tap OK, remove the coupon, then force a payment failure.
+9. **Expect:** the second dialog says **"Payment Failed"** — the coupon tag must not leak into the next attempt.
+
+### ✅ D5. Android — checkout screen shows WHICH coupon is applied (built 2026-08-26)
+
+**Why this exists:** the Confirm Order screen showed only "Items" and "To pay". A customer with a coupon
+saw a total that was lower than the item total with **no explanation anywhere on the screen** — the coupon
+UI lived only on the Cart screen.
+
+1. Apply `WELCOME50` (₹50 off) on the **Cart**, then tap **Checkout**.
+2. **Expect:** in the **Order Summary** card, directly under the **Items** row, a green row reading
+   **`Coupon WELCOME50`  `-₹50`** — the code is named, so the customer can see *why* the total dropped.
+3. **Expect:** the arithmetic now reads correctly top to bottom: Items − coupon + delivery + platform fee = **To pay**.
+4. **Expect:** the row style matches the existing **"Wallet applied"** row on the same screen (green, negative amount).
+5. **No coupon applied:** go to checkout with no coupon.
+6. **Expect:** **no** coupon row at all — the Order Summary is byte-identical to before this build.
+7. **Stale / ₹0 coupon:** apply a coupon, then drop the cart below its min order so `valid: false` / discount ₹0.
+8. **Expect:** **no** coupon row on checkout (a "-₹0" line would be noise). The cart screen's amber warning chip remains the place that explains a stale coupon.
+
+⚠️ **Known gap (pre-existing, NOT introduced here):** the checkout Order Summary still does not show the
+**automatic** (non-coupon) discount row that the Cart's Bill Details shows. A cart whose discount came from
+a promo rule rather than a coupon still shows an unexplained drop on checkout. Out of scope for this pass.
+
+### ✅ D6. Web — a coupon failure at Place Order was never mislabelled (verified 2026-08-26, no code change)
+
+Web's counterpart to §D4. **No change was needed** — checked against `haper-web/pages/Checkout.tsx`
+(the `catch` block of `handlePlaceOrder`), which has always surfaced the server's own `message` in a
+**neutral** toast: `showToast(err?.message || 'Order Failed. Try again.', 'error')`. There is no
+"Payment Failed" wording anywhere on that path, so web never had the bug §D4 fixed on Android, and
+web does **not** read the new `errorType` field at all (it doesn't need to — it shows the server's
+sentence verbatim, which is already the specific reason).
+
+1. Get a coupon to fail at Place Order exactly as in §D4 step 2 (cart holds a coupon that only dies at
+   checkout).
+2. On web checkout, click **Place Order**.
+3. **Expect:** a single toast whose text is the server's `message` verbatim (e.g. *"You've already used
+   this coupon."*). ❌ Bug if it ever reads "Payment Failed" or "Payment could not be completed".
+4. **Expect:** you stay on the checkout page with the cart intact, and the page is still usable (the
+   Place Order button re-enables — `setIsLoading(false)` runs on every error branch).
+5. **❌ Regression check:** with no coupon on the cart, force a non-coupon failure (out-of-stock item, or
+   a slot that fills up). **Expect:** still the server's message in the same neutral toast — the 422
+   slot race still shows **inline** next to the slot list, and a 409 maintenance error still triggers the
+   maintenance re-fetch. Those two special branches must keep working.
+
+### ✅ D7. Web — checkout page shows WHICH coupon is applied (verified 2026-08-26, already built)
+
+Web's counterpart to §D5. **No change was needed** — web already shipped this in §A4 (2026-08-25): the
+checkout page is where coupon entry lives, so the applied code and its savings were always on screen.
+Re-verified against the current `haper-web/pages/Checkout.tsx`; both readings come from the live
+`CartContext.coupon` (set from every `GET /cart` response), so they can never show a stale amount.
+
+1. Apply `WELCOME50` (₹50 off) on the web checkout page.
+2. **Expect:** the **Coupon** card shows the code `WELCOME50` in bold plus **"You saved ₹50"**, with a
+   **Remove** button.
+3. **Expect:** **Bill Details** shows a **`Coupon discount`  `-₹50`** row (green), and **To Pay** is
+   lower by exactly ₹50.
+4. **Stale / ₹0 coupon:** drop the cart below the coupon's min order.
+5. **Expect:** the "You saved" line and the **Bill Details** coupon row both disappear (both are gated on
+   `discountTotal > 0`), the code chip stays with an amber `coupon.message` explaining why, and **To Pay**
+   is priced without the coupon. ❌ Bug if a `-₹0` row is left behind or the total still shows the
+   discount.
+6. Change an item quantity so the cart re-syncs. **Expect:** the coupon row and To Pay move together —
+   never a discount row whose amount doesn't match what the total was reduced by.
+
+### ✅ D8. iOS — a coupon failure at Place Order says "Coupon Issue", not "Payment Failed" (built 2026-08-26)
+
+iOS's counterpart to §D4. Files: `haper/Models/AuthModels.swift` (`ErrorResponse` gains `errorType` +
+`reason`, **and a lenient `code` decode — see the ⚠️ below**), `haper/Utils/NetworkManager.swift`
+(`NetworkError.httpError` gains a 5th, defaulted associated value + an `errorType` accessor),
+`haper/ViewModels/OrderViewModel.swift` (`lastErrorType`, cleared at the START of every
+`placeOrder`), `haper/Views/CheckoutView.swift` (new `CheckoutErrorTitle` enum + a single
+`showError(_:errorType:)` entry point; the alert is now titled from `errorTitle`, not a literal).
+
+⚠️ **A second, pre-existing iOS-only bug had to be fixed for this to work at all.** The shared error
+middleware sends `code` as the HTTP status **number** (`{ "code": 400, ... }`), but iOS typed it as
+`String?`. `decodeIfPresent(String.self)` *throws* on a number, so the **whole** `ErrorResponse`
+decode failed and `NetworkManager` fell back to **"Server Error 400"** — meaning every
+middleware-thrown error message on iOS (not just coupons) was being swallowed. `ErrorResponse` now
+has a hand-written `init(from:)`: a **string** `code` still decodes (scheduling's `SLOT_UNAVAILABLE`
+etc.), a **numeric** `code` decodes to `nil` (it's an HTTP status, already on
+`NetworkError.statusCode`). Android was never affected — Gson coerces `400` → `"400"`.
+
+1. Set the cart up exactly as in §D4 steps 1–2 (a coupon pinned to the cart that only dies at Place Order).
+2. On the iOS app (debug build/simulator), tap **Confirm Order → Place Order**.
+3. **Expect:** the alert title reads **"Coupon Issue"**, not "Payment Failed", and the body is the
+   server's `message` verbatim (e.g. *"You've already used this coupon."*). ❌ Bug if the body reads
+   **"Server Error 400"** — that means the lenient `code` decode above is missing/reverted.
+4. **Expect:** tapping **OK** dismisses it and leaves you on checkout with the cart intact.
+5. **❌ Regression check — a real payment failure still says "Payment Failed":** with no coupon on the
+   cart, cancel the Razorpay sheet (or force an out-of-stock failure).
+6. **Expect:** title **"Payment Failed"** exactly as before. Same for **every** untagged error, and for
+   an older backend that sends neither field.
+7. **❌ No stale title (the important one):** hit the coupon error from step 3, tap OK, remove the
+   coupon, then force a payment failure.
+8. **Expect:** the second alert says **"Payment Failed"**. The tag is cleared at the start of every
+   place-order attempt, and the title is re-derived on *every* alert presentation — including the
+   pre-flight guards ("Please select a delivery address.", "Cart is empty or invalid.") and the
+   Razorpay decline path, which never carry a tag.
+9. **❌ Scheduling regression check:** with scheduled delivery on, let a chosen slot fill up before you
+   place the order. **Expect:** unchanged behaviour — the **inline** "slot no longer available" message
+   next to the slot list with a refreshed slot grid, **no** alert at all.
+
+### ✅ D9. iOS — checkout screen shows WHICH coupon is applied (built 2026-08-26)
+
+iOS's counterpart to §D5. File: `haper/Views/CheckoutView.swift` (`appliedCouponCode` /
+`appliedCouponDiscount` + one extra `CheckoutSummaryRow`). Both read
+`CartManager.coupon` — the **same** `@EnvironmentObject` instance the Cart screen's coupon card
+writes into (there is exactly one `CartManager()`, in `haperApp.swift`), so checkout can never show a
+stale or divergent copy.
+
+1. Apply `WELCOME50` (₹50 off) on the **Cart**, then tap **Checkout**.
+2. **Expect:** in the **Order Summary** card, between **Items** and **Wallet applied**, a green row
+   reading **`Coupon WELCOME50`  `-₹50`**.
+3. **Expect:** the row style matches the existing **"Wallet applied"** row (same `CheckoutSummaryRow`,
+   negative amount rendered as `-₹50`).
+4. **No coupon applied:** go to checkout with no coupon. **Expect:** **no** coupon row — the Order
+   Summary is identical to before this build.
+5. **Stale / ₹0 coupon:** apply a coupon, then drop the cart below its min order so the discount is ₹0.
+6. **Expect:** **no** coupon row on checkout (a "-₹0" line would be noise). The cart screen's warning
+   text remains the place that explains a stale coupon.
+7. **Back-and-forth check:** on checkout, go **back** to the cart, tap **Remove** on the coupon, then
+   enter checkout again. **Expect:** the row is gone and **To pay** matches — both come from the one
+   `CartManager`, so they move together.
+8. **Accessibility / layout:** with **Dynamic Type at the largest accessibility size** and in **dark
+   mode**, the row wraps rather than truncating the code, and the green stays legible.
+
+⚠️ **Known gap (same as Android's §D5, pre-existing):** the checkout Order Summary still doesn't show
+the **automatic** (non-coupon) promo discount, so a rule-discounted cart still shows an unexplained
+drop between "Items" and "To pay". Out of scope for this pass on both platforms.
 
 ### ✅ E. Stale coupon in the cart (expires or drops below min order while sitting)
 1. Apply coupon `WELCOME50` to a ₹500 cart successfully.
@@ -361,6 +566,153 @@ one validation (length gate) walked as representative. `tsc -b` and `vite build`
 2. They call `POST /order/place`.
 3. **Expect:** **HTTP 400** with `reason: "BELOW_MIN_ORDER"`, and **no order is created** (the re-validation at checkout catches it, even though the cart said it was valid).
 
+### ✅ G. Web — the order detail page NAMES the coupon that was used (built 2026-08-26, row format fixed 2026-08-26)
+
+**Why this exists (pre-existing gap, not caused by any other fix today):** web's Bill Summary on a past
+order showed a bare **"Discount applied  -₹50"**. A customer who used a code had no way to confirm from
+their order which coupon it was — and no way to tell a coupon apart from an automatic promo.
+
+**Follow-up fix (2026-08-26, code review):** the original build kept the row as a two-column
+`label` / `-₹X` line-item subtraction. On a discounted order, `Item Total` on this page falls back to
+`order.actualOrderValue`, which the backend already computes NET of the discount (baked into each line's
+`salePrice`) — so subtracting the discount amount a second time here made the displayed rows not sum to
+the Grand Total (e.g. ₹500 cart, ₹50 coupon, ₹5 platform fee → page showed ₹450 − ₹50 + ₹5 = ₹405,
+but the customer was actually charged ₹455). Fixed by de-arithmetizing the row: it's now a single
+informational line, `"Coupon WELCOME50 — you saved ₹50"` (no separate `-₹` cell), matching the "You
+saved ₹X" phrasing already used on `Checkout.tsx`. `Item Total`'s calculation itself was NOT touched.
+
+Files: `haper-web/types.ts` (new `OrderCoupon` interface + `coupon?` on `Order`),
+`haper-web/pages/OrderDetail.tsx` (Bill Summary discount row label + format). The backend already
+returned this — `GET /user/order/:orderId` sends the whole order document, and
+`sanitizeOrderForCustomer` does not strip the `coupon` block, so **no backend change was needed**.
+
+1. Place an order with coupon `WELCOME50` (₹50 off), then open **Orders → that order** on web.
+2. **Expect:** in **Bill Summary**, the discount row reads a single line, **`Coupon WELCOME50 — you saved
+   ₹50`** (green), naming the code. There is no separate `-₹` amount cell any more.
+3. **Expect:** the number shown is still `order.discountTotal` — the same value as before this build. A
+   coupon order's `discountTotal` already equals the coupon amount (the automatic and coupon engines
+   never stack, see §3.E), so this change only moved the **label/format**, never the money. ❌ Bug if the
+   number changed, a second discount row appeared, or the row is subtracted again anywhere in the totals.
+4. **Automatic (non-coupon) discount:** open an order that got a promo-rule discount with no code.
+5. **Expect:** the row reads **`Discount — you saved ₹X`** — same informational format, no code name.
+6. **Old / no-discount orders:** open an order placed before coupons existed, and one with no discount at
+   all.
+7. **Expect:** **no** discount row at all (the row is still gated on `discountTotal > 0`), and no crash —
+   `order.coupon` is simply absent on those documents and is always read as `order.coupon?.code`.
+8. **Long code layout:** use a 20-character code (the max). **Expect:** on a narrow phone width the whole
+   line (`Coupon <code> — you saved ₹X`) truncates with an ellipsis — no wrap, no horizontal scroll.
+9. **POS orders:** a walk-in POS sale with a coupon (§5.A) that lands in the customer's history behaves
+   identically — POS writes the same `coupon` block and the same `discountTotal`.
+10. **Grand Total still reconciles:** on a discounted order, add up every visible Bill Summary row
+    (Item Total + Delivery Fee + Platform Fee, ignoring the informational "you saved" line since it's no
+    longer a subtraction) and confirm it equals the Grand Total / amount actually charged. ❌ Bug if it
+    doesn't — this was the original defect this follow-up fixed.
+
+**Known gap (unchanged):** the **Orders list** page still shows no discount line of any kind; only the
+order **detail** page names the coupon. Out of scope for this pass.
+
+### ✅ H. Admin — Order Details modal shows the coupon / promo saving (built 2026-08-27)
+
+**Why this exists (pre-existing gap):** the admin panel's **Order Details** modal had **no** promo/coupon
+money at all. Its only discount-looking row was labelled **"Wallet Used"** and read a variable misleadingly
+named `discountAmount` in `haper-admin/src/utils/orders.ts` that is actually `meta.walletUsed` (wallet
+money, not a discount). A store admin looking at a discounted order could not tell **why** the total was
+lower than the item prices suggested — no coupon code, no discount amount anywhere on the screen.
+
+**What changed:**
+- `haper-admin/src/utils/orders.ts` — the normalized field is renamed `discountAmount` → **`walletUsed`**
+  (same value, same source, **same "Wallet Used" row behaviour**). Only 2 consumers existed, both updated.
+- `haper-admin/src/pages/Orders/OrderDetailsModal.tsx` — a **new, separate** row in the Payment card,
+  above Wallet Used, reading `order.discountTotal` and `order.coupon?.code`.
+
+Backend: **no change needed** — `getOrderDetailForAdminScoped` uses `.select({__v:0})` (whole document),
+so `discountTotal` and `coupon` were already on the wire.
+
+**Bill-reconciliation:** the row is deliberately **informational**, not a subtraction (same defect class
+as §3.G on web). The modal's `Subtotal` falls back to `order.subTotal ?? order.actualOrderValue ?? Σ
+salePrice×qty` — all three are already **NET** of the discount, so a `-₹X` line would double-subtract and
+stop the rows adding up to `Total`. Wallet Used stays a real `-₹` subtraction, because `price` is net of
+the wallet but the Subtotal is not.
+
+1. Place an order with coupon `WELCOME50` (₹50 off), then open **Admin → Orders → that order**.
+2. **Expect:** in the **Payment** card, a green row **`🎟 Coupon WELCOME50:  customer saved ₹50`**, shown
+   **above** Wallet Used. ❌ Bug if it reads `-₹50` or if it is missing.
+3. **Expect:** `Subtotal + Delivery Fee + Platform Fee − Wallet Used = Total` still holds exactly, ignoring
+   the informational saved line. ❌ Bug if the rows no longer sum to Total (the original web defect).
+4. **Automatic (non-coupon) discount:** open an order discounted by a promo *rule* (no code entered).
+5. **Expect:** the same row reads **`Discount applied:  customer saved ₹X`** — generic, no code name.
+   (`discountTotal` carries whichever engine applied; they never stack, see §3.E.)
+6. **No discount / pre-feature orders:** open an old order and an undiscounted order.
+7. **Expect:** **no** discount row at all, no crash, no layout change vs before this build (`coupon` is
+   simply absent on those documents and is always read as `order.coupon?.code`).
+8. **Wallet regression:** open an order paid partly from wallet. **Expect:** `Wallet Used: -₹X` renders
+   exactly as before (this is the row whose backing variable was renamed). ❌ Bug if it disappeared.
+9. **Both at once:** an order with a coupon **and** wallet money shows **two separate rows** — the saved
+   line and the `-₹` wallet line — and they are not the same number.
+10. **Long code layout:** a 20-character code truncates with an ellipsis inside the card; the amount on the
+    right never wraps and the modal never scrolls sideways.
+11. **POS orders:** a walk-in POS sale with a coupon (§5.A) opened in admin behaves identically.
+
+**Automated:** `haper-admin/src/pages/Orders/OrderDetailsModal.test.tsx` — 4 new tests (coupon named row /
+generic automatic-discount row / nothing when no discount / Wallet Used still independent and never `-₹50`).
+While adding them, the 5 pre-existing tests in that file that always crashed with *"Cannot destructure
+property 'basename'"* were fixed by wrapping the render in `<MemoryRouter>` — that whole file is now green
+(9/9), so the documented "5 known-failing OrderDetailsModal tests" baseline no longer applies.
+
+**Known gap (unchanged):** the admin **Orders list**, the thermal print slip and the invoice still show no
+coupon line — only the Order Details modal does. Out of scope for this pass.
+
+### ✅ I. Android — Order Details names the coupon that was used (built 2026-08-27)
+
+**Why this exists (pre-existing gap, not a regression):** the Android **Order Details** screen has *never*
+shown coupon or promo money — its Bill Details card was only `Item Total / Delivery Fee / Platform Fee /
+Wallet Used / Total Paid`. A customer who checked out with a code saw the checkout screen name it (§2 D5)
+and then, on the saved order, no trace of it at all. The app's own model already decoded the block —
+`OrderModels.kt` carried `val coupon: OrderCoupon?` with a comment saying the display wiring was a
+follow-up. This pass is that follow-up. **No backend change:** `GET /user/order/:orderId` already returns
+`coupon {code, couponId, discountAmount, redemptionId}` and `discountTotal`.
+
+**Bill-reconciliation (same defect class as §3.G web / §3.H admin — checked, and it applies here too):**
+Android's `Item Total` is `charges.itemTotal ?: actualOrderValue ?: Σ(qty × salePrice)`. The backend never
+sends `charges.itemTotal` (an order's `charges` is only `{delivery, platform}`), so it always falls back to
+`actualOrderValue` — which the backend computes as `Σ(qty × salePrice)` **after** the coupon has rewritten
+each line's `salePrice` to the discounted price. So `Item Total` on this screen is **already NET**. A
+`-₹50` line item would double-subtract. The row is therefore **informational**: a single green line,
+**`Coupon WELCOME50 — you saved ₹50`**, with no `-₹` amount cell — exactly the phrasing web landed on.
+`Item Total`, `Total Paid` and the `Wallet Used` row were **not** touched.
+
+Files: `haper-android/app/src/main/java/com/bheldi/ui/screens/orders/OrderDetailScreen.kt` (new
+`orderCouponSavingsNote()` helper + one row in the Bill Details card).
+
+1. Place an order with coupon `WELCOME50` (₹50 off), then open **Orders → that order** on Android.
+2. **Expect:** in **Bill Details**, directly under **Item Total**, a green line reading
+   **`Coupon WELCOME50 — you saved ₹50`**. ❌ Bug if it reads `-₹50` or renders as a two-column row.
+3. **Expect:** `Item Total + Delivery Fee + Platform Fee − Wallet Used = Total Paid` still holds exactly,
+   ignoring the informational saved line. ❌ Bug if the rows no longer sum to Total Paid.
+4. **No coupon:** open any order placed without a code, and one placed before coupons existed.
+5. **Expect:** **no** line at all and no crash — the Bill Details card is pixel-identical to before this
+   build (`coupon` is simply absent on those documents; Gson decodes the missing key to `null`).
+6. **Stale / ₹0 coupon:** an order whose `discountTotal` is `0` or absent while a `coupon` block exists.
+7. **Expect:** **no** line (never a "you saved ₹0").
+8. **Long code layout:** a 20-character code (the max). **Expect:** the line wraps inside the card; the
+   card never scrolls sideways and the rows below don't shift.
+9. **TalkBack:** the line is read out as one sentence ("Coupon WELCOME50 — you saved ₹50"); it is not
+   announced as a price row with a negative amount.
+10. **Dark theme + large font scale (200%):** the green stays legible on the dark card and the text wraps
+    rather than truncating the amount.
+11. **POS orders:** a walk-in POS sale with a coupon (§5.A) opened in the app behaves identically — POS
+    writes the same `coupon` block and the same `discountTotal`.
+
+**Automated:** `haper-android/app/src/test/java/com/bheldi/ui/screens/orders/OrderDetailCouponTest.kt` —
+6 tests, mirroring `CheckoutSummaryTest`'s pattern (the helper is a file-level `internal fun` precisely so
+it is unit-testable; this source set has no Compose UI test runtime).
+
+⚠️ **Known gap (deliberate, matches the brief's gating):** an **automatic** (non-coupon) promo discount
+still shows nothing on Android's Order Details — the line is gated on a coupon **code** being present, so
+an order discounted by a promo rule shows an unexplained lower total, exactly as before. Web (§3.G) and
+admin (§3.H) *do* show a generic "Discount — you saved ₹X" for that case, so Android is now the odd one
+out. The Android **Orders list** also still shows no discount line. Both out of scope for this pass.
+
 ---
 
 ## 4. Money correctness — caps and concurrency
@@ -384,7 +736,7 @@ one validation (length gate) walked as representative. `tsc -b` and `vite build`
    - Per-customer limit: 1 (each customer can use it once)
 2. **Customer A** places an order with `ONCE_EACH` → succeeds, `usedCount: 1`.
 3. **Same Customer A** tries to apply `ONCE_EACH` again on a new cart.
-4. **Expect:** **HTTP 400** with `reason: "CUSTOMER_LIMIT_REACHED"`, message "You've already used this coupon".
+4. **Expect:** **HTTP 400** with `reason: "CUSTOMER_LIMIT_REACHED"`, message "You've already used this coupon". Since 2026-08-26 this is refused at **apply** time as well as at checkout (§2 D2) — but the checkout claim is still the only real enforcement.
 5. A **different Customer B** applies and orders with `ONCE_EACH` → succeeds, `usedCount: 2`.
 
 ### ✅ C. Concurrent claims don't exceed total cap (stress test)
@@ -401,26 +753,50 @@ one validation (length gate) walked as representative. `tsc -b` and `vite build`
 3. **Expect:** exactly **one** succeeds, the other fails with `CUSTOMER_LIMIT_REACHED`.
 4. The unique index `(couponId, userId, ordinal)` ensures the second insert hits a duplicate-key error → only one redemption row is created.
 
-### ✅ E. Margin guard: coupon doesn't sell below cost (aggregate)
+### ✅ E. Below-cost coupons apply IN FULL (margin guard REMOVED, 2026-08-26)
+
+> **Policy change.** The aggregate margin guard is gone. A coupon now always gives its full discount
+> even when the order therefore sells below cost. Approved by the business: a code we advertised must
+> be honoured, and marketing owns the loss. Every other rule is untouched — minimum order value,
+> expiry, store scope, first-order-only, per-customer and total caps all still refuse as before.
+>
+> This replaces the old §E/§F margin-guard walkthroughs and supersedes
+> `test-coupon-codes-security-fixes.md` §4.
+
 1. Create item "Budget Item" with:
    - Selling price: ₹100
    - Cost price: ₹60
-   - Headroom: ₹40
 2. A customer has 1 unit in cart (subtotal ₹100).
 3. Create coupon `BIG_DISCOUNT` (FLAT ₹60 off, total limit 100).
-4. Apply the coupon → **Expect:** ₹60 coupon is **clamped to ₹40** (the max headroom), so the total becomes ₹60 (not ₹40, which would sell below cost).
-5. The order shows `coupon: { discountAmount: 40 }` (the clamped amount), not the requested ₹60.
-6. **Verify:** the customer sees the clamped discount on the preview AND at checkout (same computation, no surprise).
+4. Apply the coupon → **Expect:** `coupon.discountTotal: 60`, cart total ₹40, `coupon.message: null`.
+   The order sells ₹60 of goods for ₹40 — a ₹20 loss, and that is correct.
+   ❌ Bug if it comes back as **₹0 off** with an apology message — that is the removed guard.
+5. The order shows `coupon: { discountAmount: 60 }` and the line at `salePrice: 40`,
+   `originalSalePrice: 100`, `discountAmount: 60` (per unit).
+6. **Verify:** preview and checkout agree to the paisa (same shared function), and the ₹60 does not
+   change with the item's cost price — cost is no longer an input to the discount at all.
+7. Go deeper: a 95%-off coupon on a ₹100 item costing ₹90.37 → **₹95 off**, ₹5 payable, at any
+   quantity. The order must place successfully, consume stock, and claim exactly one redemption.
+8. **Cost-price disclosure (was the reason for the guard):** nothing on the bill sits at the cost
+   line any more, because the price follows the coupon's own maths. Dividing the ₹ off by the
+   quantity gives ₹95, not the ₹9.63 margin. ✅
 
-### ✅ F. Margin guard: unknown cost (`costPrice: 0`) is skipped
-1. Create item "Mystery Item" with:
-   - Selling price: ₹100
-   - Cost price: 0 (unknown — the repo invariant per costPrice-money-invariant.md)
-2. A customer has this item in the cart (subtotal ₹100).
-3. Apply coupon `AGGRESSIVE` (FLAT ₹80 off).
-4. **Expect:** the coupon computes the headroom as ₹0 (because cost is unknown, never fake it), so the discount is clamped to ₹0.
-5. The order total stays ₹100 (full price), not ₹20.
-6. The coupon application returns a success but with `discountAmount: 0` (the clamp prevented it).
+### ✅ F. Unknown cost (`costPrice: 0`) is a non-event now
+1. Create item "Mystery Item", selling price ₹100, cost price 0 (unknown — the repo invariant per
+   costPrice-money-invariant.md).
+2. Cart it (subtotal ₹100) and apply coupon `AGGRESSIVE` (FLAT ₹80 off).
+3. **Expect:** ₹80 off, total ₹20 — same as it was, but now for the trivial reason that cost is never
+   consulted. Mixing in a second item that *does* have a cost changes nothing either.
+   (Historically this needed a special "all costs unknown → skip the guard" branch, or every coupon
+   in a store with no goods receipts silently gave ₹0. That trap is gone with the guard.)
+
+### ✅ G. A coupon genuinely worth ₹0 is still refused (unchanged)
+1. This path no longer has anything to do with margin. It fires when the engine values the coupon at
+   zero — a zero/unknown-valued discount row, or a basket of nothing but free-gift lines.
+2. **Expect:** the code TYPED at checkout → 400 with *"We couldn't apply this coupon right now — try
+   another one?"*, no order, **no redemption claimed**, `usedCount` unchanged. A code merely sitting
+   on the cart → silently dropped, order prices normally, still nothing claimed.
+3. This is the guard that stops a worthless coupon burning the customer's only use. ✅
 
 ---
 
@@ -488,11 +864,23 @@ This section covers the `POST /admin/pos/sale` flow with coupon support (both pa
 
 ---
 
-## 6. Known tracked follow-up (data-exposure edge case)
+## 6. Cost exposure — CLOSED 2026-08-25, re-closed differently 2026-08-26
 
-### ❌ G. Cost exposure edge case — documenting a tracked limitation
+### ✅ G. Cost exposure edge case — now closed by removing the clamp entirely
 
-**What this is:** This is **not a bug to fix in this pass**, but a known issue being tracked for a separate fix (likely this week). Document it here so a tester encountering unexpected numbers knows it's tracked and not a new defect.
+**Status: fixed, twice over.** The leak needed a *clamp* to exist: a clamped discount priced the cart
+at exactly `Σ cost`, so dividing the ₹ off by the quantity read our per-unit cost straight back.
+
+- 2026-08-25 fix: suppress instead of clamp (₹0 off, cart at full price) — nothing published.
+- **2026-08-26 (current): the margin guard was removed altogether** as a business decision. Coupons
+  always pay out in full, below cost included. There is no clamp and no suppression, so there is
+  again nothing derived from cost anywhere in the response — the price now follows the coupon's own
+  arithmetic and has no relationship to what we paid.
+
+Re-test with §E above. The description below is kept for context on what the leak was.
+
+**What this was:** a known issue tracked for a separate fix after the first mitigation (rounding the
+clamped amount to whole rupees) turned out not to work.
 
 **Symptom:** A customer who buys a large quantity of one item and applies a large-percentage coupon can, by doing the math on the discount shown, estimate the store's cost price for that item. The store's exact purchase cost may be exposed.
 
@@ -509,13 +897,21 @@ This section covers the `POST /admin/pos/sale` flow with coupon support (both pa
 - The exposure is informational (cost estimates), not a financial loss.
 - The maths is observable from any big order with a coupon, independent of this feature.
 
-**When it will be fixed:**
-- Tracked as a separate work item (approx. this week, per the plan).
-- **Fix direction:** show the coupon without the clamp to the customer (e.g., "₹2500 off, capped at ₹2000 to protect our margin"), or obfuscate by rounding the clamped discount.
+**How it was fixed (2026-08-25):**
+- Obfuscation was the wrong direction: any figure derived from the headroom is `(price − cost) × qty`,
+  so the customer divides by their own quantity and the obfuscation washes out. The coupon is
+  suppressed instead — nothing is published.
+
+**How it was fixed AGAIN (2026-08-26):**
+- The guard is gone (business decision). A coupon is always paid in full, so the customer's ₹ off is
+  purely `value%` or the flat rupees — a number they already knew from the poster.
 
 **For testing:**
-- If you see a coupon discount that seems oddly smaller than the percentage suggests (e.g., a 50% coupon yielding only 40% effective discount on a high-volume cart), this is the margin guard + clamp at work. It is expected and correct.
-- If you suspect cost information has leaked (e.g., a customer tells you they reverse-engineered your cost), flag it but know it's a known, tracked limitation.
+- A coupon that is **worth less than the percentage suggests** is impossible: caps aside
+  (`maxDiscountAmount`, and never more than the cart is worth), the customer gets exactly what the
+  coupon says.
+- ❌ Flag it as a regression if a big-percentage coupon on a tight-margin cart gives **₹0** — that is
+  the removed guard resurfacing.
 
 ---
 
@@ -623,7 +1019,36 @@ cd packages/admin && NODE_ENV=test npx jest coupon
 - **Boot degradation** (`packages/admin/__tests__/coupon-boot-index-verification-connectdb.test.js`):
   admin logs CRITICAL and force-disables coupons instead of `process.exit(1)`. This is a regression
   guard for the 2026-08-24 admin crash-loop — do not let the exit come back.
-- **100+ backend tests**, ~30 admin-FE tests.
+- **Checkout refusal tagging** (`packages/user/__tests__/coupon-checkout.test.js`, "coupon failures
+  carry errorType + reason", §2 D3): every coupon refusal on BOTH checkout paths answers
+  `errorType:"COUPON"` + the specific `reason`; a non-coupon failure and a 200 carry neither; and an
+  untagged error that happens to have its own `.reason` (the mongo driver's does) publishes nothing.
+- **Advisory per-customer apply check** (`packages/user/__tests__/coupon-cart.test.js`, §2 D2):
+  refuses on a live HELD/CONFIRMED slot, lets a RELEASED row back in, ignores other customers and
+  uncapped coupons, and **fails open** if the read itself errors.
+- **Android client-side tagging** (`haper-android`, §2 D4/D5): `CheckoutSummaryTest` covers the
+  dialog title (COUPON → "Coupon Issue"; null / unknown tag / empty → "Payment Failed") and the
+  Order Summary coupon row (rendered with the code; omitted for no coupon, blank code, or ₹0
+  discount). `OrderViewModelTest` proves `placeOrder` threads `errorType`/`reason` through and
+  **clears them before every retry** so a coupon tag can't mislabel a later payment failure.
+  `ApiContractTest` round-trips the real §D3 JSON through Gson (tagged, untagged, and the
+  `/cart/coupon/apply` `{ok:false,reason,message}` body) via MockWebServer.
+  `OrderDetailCouponTest` (§3 I) covers the order-detail saved line: named with the amount when a coupon
+  saved money, nothing for no coupon / blank code / ₹0 / null / negative discount, and an explicit
+  assertion that the line **never** contains `-₹` (the bill-reconciliation guard).
+- **iOS client-side tagging** (`haper-ios`, §2 D8/D9): `CheckoutErrorTitleTests` covers the alert
+  title (COUPON / lowercase `coupon` → "Coupon Issue"; nil / `""` / `"COUPONS"` / `"PAYMENT"` →
+  "Payment Failed") and round-trips the real §D3 JSON through `ErrorResponse` → `NetworkError` →
+  title. `AuthModelsTests` locks the additive decode **and the numeric-`code` fix** (numeric code →
+  body still decodes, `code` nil; string code → still `SLOT_UNAVAILABLE`).
+  `NetworkManagerTypesTests` proves the new 5th associated value defaults to nil so every existing
+  4-argument `httpError` call site is unchanged.
+  ⚠️ `xcodebuild test` currently cannot run (pre-existing unrelated compile error in
+  `ViewModelsStateTests.swift`, which blocks the whole test bundle). The above was additionally
+  verified with a standalone runtime harness that mirrors the ViewModel/View wiring and includes
+  **negative controls** — the pre-fix code is re-run against the same inputs and each bug is shown
+  to reproduce (wrong title, "Server Error 400" body, and an identical PIN status line).
+- **100+ backend tests**, ~30 admin-FE tests, **333 Android unit tests** (327 + the 6 in §3 I).
 
 > ⚠️ Both test harnesses connect with `readPreference: "primary"`, but the real services use
 > `secondaryPreferred`. That divergence is exactly what let the missing-index bug ship green, so
@@ -635,9 +1060,28 @@ cd packages/admin && NODE_ENV=test npx jest coupon
 
 - **Backend deploy (dev):** `haper-backend` code + the 3 new collections (coupons, coupon-redemptions, coupon-attempts) created lazily on first write. No migration.
 - **Admin panel deploy (dev):** `haper-admin` code (Coupons CRUD page + POS coupon UI).
-- **Android deploy:** `haper-android` code (Cart screen coupon entry, §2A2) — normal debug build/install; no store release required for dev testing.
-- **iOS deploy:** `haper-ios` code (Cart screen coupon entry, §2A3) — normal debug build/simulator install; no TestFlight/App Store release required for dev testing.
-- **Web deploy (dev):** `haper-web` code (Checkout page coupon entry & form validation, §2A4) — test via `vite build` locally or deploy to dev.
+- **Android — DONE 2026-08-26 (§2 D4, D5):** consumes `errorType:"COUPON"` (§2 D3) to title the
+  checkout dialog **"Coupon Issue"** instead of "Payment Failed", and names the applied coupon in
+  the checkout Order Summary. Needs the backend deploy above to be live to have any effect; with an
+  old backend the fields are simply absent and the app behaves exactly as before.
+- **iOS — DONE 2026-08-26 (§2 D8, D9):** the same two changes as Android's §2 D4/D5 — the checkout
+  alert is titled **"Coupon Issue"** for an `errorType:"COUPON"` refusal, and the Order Summary names
+  the applied coupon. Needs the backend deploy above to be live to have any effect; with an old
+  backend both fields are absent and the app behaves exactly as before. **Also fixed on the way
+  through (iOS-only, pre-existing):** a numeric `code` in the error body broke `ErrorResponse`
+  decoding entirely, so *every* middleware error showed "Server Error 4xx" instead of the real
+  message — see the ⚠️ in §2 D8.
+- **Web — CLOSED 2026-08-26 (§2 D6, D7; §3 G):** the two Android fixes turned out to need **no web
+  change** — web already showed the server's own message in a neutral toast (§2 D6) and already named
+  the applied coupon on checkout (§2 D7). Web does **not** read `errorType`. The one real web gap, the
+  order **detail** page saying only "Discount applied", **was** fixed (§3 G) — a frontend-only change
+  (`types.ts`, `pages/OrderDetail.tsx`); the backend already returned the `coupon` block.
+- **Android — DONE 2026-08-27 (§3 I):** the **order detail** screen now names the coupon
+  (`Coupon <CODE> — you saved ₹X`, informational, never a `-₹` subtraction). Frontend-only; the backend
+  already returned the `coupon` block on `GET /user/order/:orderId`.
+- **Android deploy:** `haper-android` code (Cart screen coupon entry §2A2; checkout coupon dialog + summary row §2 D4/D5; order-detail coupon line §3 I) — normal debug build/install; no store release required for dev testing.
+- **iOS deploy:** `haper-ios` code (Cart screen coupon entry §2A3; checkout coupon alert title + summary row §2 D8/D9) — normal debug build/simulator install; no TestFlight/App Store release required for dev testing.
+- **Web deploy (dev):** `haper-web` code (Checkout page coupon entry & form validation, §2A4; order-detail coupon name, §3 G) — test via `tsc --noEmit` + `vite build` locally or deploy to dev. `haper-web` has no eslint gate and no test suite; those two commands are the whole check.
 - **`main` stays off-limits.** This ships to prod via a manual user-driven deploy only (not a CI/CD auto-merge to main).
 
 ---
@@ -677,4 +1121,467 @@ cd packages/admin && NODE_ENV=test npx jest coupon
 - **Scheduled coupons (future start date):** treated as inactive; error "This coupon code isn't valid" (same as disabled).
 - **Multiple stores, store-specific coupon:** applies only in the scoped store; other stores see "invalid code".
 - **First-order-only coupon for repeat customers:** error "This coupon is for new customers only" (reason `NOT_FIRST_ORDER`).
+
+---
+
+## 11. Coupon Discoverability — Offers screen (Phase 1 backend + admin, Phase 2 Android, Phase 3 iOS)
+
+**Status: BUILT 2026-08-27** — Phase 1 (backend + admin), Phase 2 (**Android** Offers screen) and the **iOS** half of Phase 3 are complete. Web is not built.
+
+**What Phase 1 ships:** A boolean `visible` field on every coupon (defaults `false`/hidden), a toggle in the admin form, a new read-only backend endpoint `GET /user/coupon/available` that lists eligible visible coupons for a specific customer.
+
+**What Phase 2 ships:** The **Android** Offers screen — sections A–E below are the API/admin walkthrough, **section F is the Android app walkthrough**. Web still has no UI; there the list can only be seen via curl/Postman.
+
+**What Phase 3 (iOS) ships:** the same Offers screen on iOS — **section G**. Same card states, same copy, same API; only the two platform-specific navigation differences listed there.
+
+---
+
+### ✅ A. Admin — create a coupon as Hidden (default), then toggle Visible
+
+1. Log in as super-admin to `damin.haper.in` → navigate to **Admin → Coupons**.
+2. Click **Create coupon**.
+3. Fill in the form: code `PUBLIC50`, ₹50 flat discount, min order ₹200, enabled on, etc. (any valid coupon shape).
+4. **Expect:** at the bottom of the form, a section **"Visible in the app's Offers screen"** with a toggle showing **Hidden** (OFF), and helper text: "Hidden coupons still work when the customer types the code."
+5. **Do NOT toggle it yet.** Save the coupon.
+6. **Expect:** coupon is created and appears in the list.
+7. Look at the coupon row in the list.
+8. **Expect:** a badge showing **Hidden** next to the code name.
+9. Now click **Edit** on that coupon.
+10. **Expect:** the toggle reads **Hidden** (OFF).
+11. Click the toggle to turn it **Visible** (ON).
+12. **Expect:** the label next to the toggle changes to **Visible**.
+13. Save the changes.
+14. **Expect:** the list row now shows **Visible** badge instead of **Hidden**.
+15. Edit the coupon again.
+16. **Expect:** the toggle still reads **Visible** (ON) — the saved state persists.
+17. Toggle it back to **Hidden**.
+18. **Expect:** the badge in the list updates to **Hidden** again instantly (no page reload needed).
+
+### ✅ B. Admin — test the Visible/Hidden badge in the coupon list
+
+1. Create two coupons:
+   - `SECRET_CODE` (Hidden, the default)
+   - `PUBLIC_SALE` (create and immediately toggle Visible)
+2. View the coupon list.
+3. **Expect:** both rows show their badge:
+   - `SECRET_CODE` row: **Hidden** badge
+   - `PUBLIC_SALE` row: **Visible** badge
+4. The badge is just informational (no action); clicking the row opens the edit form.
+
+### ✅ C. Admin — existing coupons default to Hidden on first load after deploy
+
+1. **On the **first run** after the feature is deployed**, fetch the coupon list.
+2. **Expect:** every coupon that existed before the feature (or was created without explicitly setting `visible`) reads as **Hidden** in the admin UI.
+3. **Rationale:** a coupon that was only ever meant for a select audience (referral partners, influencers) must never become public by accident on deploy day.
+
+---
+
+### ✅ D. New endpoint — list visible eligible coupons (raw API call)
+
+**Note:** This endpoint is tested via raw API calls (curl/Postman) on dev since no client UI exists yet (Phase 2/3). The endpoint is `GET /user/coupon/available` and requires a customer token + `x-store-id` header.
+
+#### Setup
+1. Create two coupons on admin:
+   - `VISIBLE_CODE` (₹50 off, min ₹200, enabled, **Visible** toggle ON)
+   - `HIDDEN_CODE` (₹50 off, min ₹200, enabled, **Visible** toggle OFF)
+2. Ensure both are scoped to the **same store** where you'll test (Global scope is fine).
+3. Get a valid **customer JWT token** (log in as a customer, copy the auth token).
+4. Know the **store ID** where you logged in (from the store header or admin).
+
+#### Test: Visible coupon appears, Hidden coupon does NOT (leak test)
+
+1. Make a raw **GET** request with curl or Postman:
+   ```
+   GET https://dapi.haper.in/user/coupon/available
+   Headers:
+     Authorization: Bearer <CUSTOMER_JWT>
+     x-store-id: <STORE_ID>
+   ```
+2. **Expect:** **HTTP 200** with response body:
+   ```json
+   {
+     "msg": "Offers fetched successfully",
+     "data": {
+       "coupons": [
+         {
+           "code": "VISIBLE_CODE",
+           "description": "...",
+           "discountType": "FLAT",
+           "discountValue": 50,
+           "discountSummary": "₹50 off",
+           "minOrderValue": 200,
+           "eligibleNow": true,
+           "shortBy": 0,
+           "message": null,
+           "estimatedDiscount": 50,
+           "expiresAt": "2026-12-31T..."
+         }
+       ],
+       "cartSubtotal": 0
+     }
+   }
+   ```
+3. **CRITICAL:** the response includes **ONLY** `VISIBLE_CODE`. `HIDDEN_CODE` is **completely absent** — even though it is eligible, enabled, and in-scope for this customer. This is the feature's core safety guarantee: a hidden coupon NEVER leaks into the Offers list.
+4. ❌ **Regression:** if `HIDDEN_CODE` appears in the response, the `visible` filter is broken or was reverted — escalate immediately (business/secrecy risk).
+
+#### Test: Below-minimum coupon shows with a gap message
+
+1. Create coupon `ALMOST` (₹50 flat, min ₹500, enabled, **Visible**).
+2. As the same customer, call `GET /user/coupon/available` again.
+3. **Expect:** the `ALMOST` coupon appears in the list with:
+   - `"eligibleNow": false`
+   - `"shortBy": 500` (example: if customer's current cart is ₹0, the shortBy is the full min order value)
+   - `"message": "Add ₹500.00 more to use ALMOST."`
+   - `"estimatedDiscount": 0` (because it's not eligible now)
+4. This is the "near-miss" case: show the coupon so the customer knows what to spend to unlock it.
+
+#### Test: Expired or disabled coupon does NOT appear
+
+1. Create coupon `DISABLED_TEST` (enabled OFF, **Visible**).
+2. Create coupon `EXPIRED_TEST` (enabled ON, **Visible**, end date in the past).
+3. Call `GET /user/coupon/available` again.
+4. **Expect:** neither `DISABLED_TEST` nor `EXPIRED_TEST` appears in the list.
+5. **Rationale:** they are genuinely unusable, not just a near-miss — showing them is a tease.
+
+#### Test: Total cap and per-customer cap filter advisories
+
+1. Create coupon `CAP_TEST` (₹50 off, total limit 2, per-customer limit 1, **Visible**).
+2. As **Customer A**, call the endpoint.
+3. **Expect:** `CAP_TEST` appears in the response.
+4. As Customer A, apply and complete an order with `CAP_TEST`.
+5. As Customer A, call `GET /user/coupon/available` again.
+6. **Expect:** `CAP_TEST` **does NOT appear** — the per-customer limit (1) has been reached (advisory filter).
+7. As a **different Customer B**, call `GET /user/coupon/available`.
+8. **Expect:** `CAP_TEST` **still appears** — per-customer limits are per customer, never shared.
+9. Have Customer B also apply and order with `CAP_TEST`.
+10. Now **both** customers have used it once. As a **third Customer C**, call the endpoint.
+11. **Expect:** `CAP_TEST` **still appears** for Customer C (they haven't used it yet, so no per-customer block).
+12. When Customer C applies it and the order closes, the coupon's `usedCount` becomes 2 (matching the total limit).
+13. As a **fourth Customer D**, call `GET /user/coupon/available`.
+14. **Expect:** `CAP_TEST` **does NOT appear** — the total limit (2) has been exhausted (advisory filter).
+
+#### Test: Empty cart is a valid state
+
+1. As a logged-in customer with an **empty cart**, call `GET /user/coupon/available`.
+2. **Expect:** **HTTP 200** (not an error), `data.cartSubtotal: 0`.
+3. Coupons with `minOrderValue > 0` still appear with `eligibleNow: false` and `shortBy: <min_value>`.
+4. Coupons with no minimum (`minOrderValue: 0`) appear with `eligibleNow: true`, `shortBy: 0`, `message: null`.
+5. **Rationale:** a customer browsing Offers before shopping still deserves to see what they could get if they add items.
+
+#### Test: Store-specific coupon scope is honored
+
+1. You have stores A and B (different `storeId`s).
+2. Create coupon `STORE_A_ONLY` (scope: Store A only, **Visible**).
+3. As a customer in **Store A**, call `GET /user/coupon/available` with `x-store-id: <STORE_A_ID>`.
+4. **Expect:** `STORE_A_ONLY` **appears** in the list.
+5. As the same customer in **Store B**, call `GET /user/coupon/available` with `x-store-id: <STORE_B_ID>`.
+6. **Expect:** `STORE_A_ONLY` **does NOT appear** (scope mismatch).
+
+#### Test: Kill switch empties the list
+
+1. Set environment variable `COUPONS_KILL_SWITCH=true` on the backend (or equivalent in your deployment).
+2. Call `GET /user/coupon/available`.
+3. **Expect:** **HTTP 200** with `data.coupons: []` (empty list, no error).
+4. All coupons disappear from the list automatically.
+5. Remove/unset the env var.
+6. **Expect:** coupons reappear on the next call (no backend restart needed).
+
+#### Test: No token or missing store header
+
+1. Call `GET /user/coupon/available` **without** an Authorization header.
+2. **Expect:** **HTTP 401** (not authenticated).
+3. Call `GET /user/coupon/available` **with** a token but **without** the `x-store-id` header.
+4. **Expect:** **HTTP 400** from the geo middleware (existing behavior for any `/user/*` path).
+
+#### Test: Offers degrades to fewer cards, never to a broken screen (security-audit fixes, 2026-08-27)
+
+The Offers list must never return a 500. If any single upstream read fails, that one card disappears
+and the rest of the list still renders. These are hard to force by hand on dev — the automated suite
+proves each one (`packages/user/__tests__/coupon-offers.test.js`, section 6b) — but if you can force
+a failure (e.g. temporarily point the backend at an unreachable DB), the expectations are:
+
+1. The coupon list query fails → **HTTP 200** with `data.coupons: []`, not a 500.
+2. The first-order check fails → **HTTP 200**; a "first order only" coupon is **hidden** (fail closed,
+   so the list never advertises something checkout would refuse); every other coupon still shows.
+3. One coupon's eligibility check or card build fails → **HTTP 200**; only that coupon is missing.
+4. ❌ **Regression:** any 500 from `GET /user/coupon/available` is a bug — an empty list is a success.
+
+#### Test: Server errors don't leak internal detail in production
+
+1. On a **production-mode** backend, force any unhandled server error on any `/user/*` or `/admin/*`
+   route (e.g. a DB outage).
+2. **Expect:** the response body's `message` is exactly `"Something went wrong. Please try again."` —
+   no mongo index names, file paths or replica-set/host names anywhere in the body.
+3. **Expect:** the full original error is still in the server logs (unchanged logging).
+4. **Expect:** 4xx messages are **untouched** — "Coupon not found", validation messages and
+   "Add ₹120.00 more to use MONSOON20." must still reach the user verbatim, in production too.
+5. On dev (`NODE_ENV != production`) the detailed message is still shown — that is the existing
+   convention and is intentional.
+
+---
+
+### ✅ E. Regression — hidden coupon still works when typed manually
+
+1. On the cart/checkout screen, manually type the code `HIDDEN_CODE` (the one you created as Hidden in §D).
+2. Tap **Apply** (or use the existing `POST /cart/coupon/apply` endpoint).
+3. **Expect:** coupon applies successfully, full ₹50 off, no error about visibility.
+4. ❌ **Regression:** if it fails with "not found" or any error, the `visible` field broke the manual apply flow — it must not affect the typing path at all.
+5. **Rationale:** a hidden coupon is "code-only" — it still works perfectly when you know the code and type it. The `visible` field **only** gates appearing in the Offers list; it is never consulted on the apply path.
+
+---
+
+### ✅ F. Phase 2 — Offers screen on ANDROID (built 2026-08-27)
+
+**Android has the Offers screen** (iOS too — see section G; web too — see section H).
+
+Needs the Phase 1 backend deployed to dev. Against an OLD backend (endpoint 404s) the Android screen
+shows its "Couldn't load offers" error card with a Retry button — never a crash and never a blank
+screen.
+
+#### Test: the two entry points
+
+1. Open the app, add items to the cart, open **Cart**.
+2. **Expect:** in the **Coupon** card, under the code input + Apply row, a **"View offers →"** text link.
+3. Type and apply any valid code so the coupon card flips to its applied state.
+4. **Expect:** the "View offers" link is **gone** (entry state only — Remove the coupon to get it back).
+5. Open **Profile**.
+6. **Expect:** under **Preferences**, a first row **"Offers & Coupons" / "See what you can save right now"** with a ticket icon, directly under the Wallet tile. Tapping it opens Offers.
+
+#### Test: the three card states
+
+1. Mark `MONSOON20` (20% off, min ₹499) **Visible** in the admin.
+2. With a cart at **₹379**, open Offers from the Cart link.
+3. **Expect:** a context line **"Your cart: ₹379"** at the top, and the `MONSOON20` card in the
+   **near-miss** state: an **amber** "₹120 more to go" tag, the server's sentence
+   "Add ₹120.00 more to use MONSOON20.", and a **"Continue shopping"** outline button (NOT Apply).
+   The card must NOT look greyed-out or red — being ₹120 short is not an error.
+4. Tap **Continue shopping**. **Expect:** you land on the Home tab.
+5. Add enough to cross ₹499, open Offers again.
+6. **Expect:** the card is now **eligible** — a green **"✓ Eligible"** tag, a green
+   "Saves you ₹X on this order" line, a green-tinted card border, and a filled
+   **"Apply — Save ₹X"** button.
+7. Empty the cart entirely and open Offers from **Profile**.
+8. **Expect:** **no** "Your cart: ₹0" line (it is hidden on an empty cart), no amber gap tag, and
+   every card shows "Add items to your cart, then apply this at checkout." with a
+   **"Copy code"** button instead of Apply.
+9. Tap **Copy code**. **Expect:** the button label swaps to **"Copied"** for ~1.5s and back; you stay
+   on Offers. Long-press any text field and paste — the code pastes.
+
+#### Test: tap to apply (the happy path)
+
+1. Cart above the minimum, open Offers from the Cart's "View offers" link.
+2. Tap **"Apply — Save ₹X"** on an eligible card.
+3. **Expect:** that button shows a spinner + **"Applying…"**; other cards' Apply buttons go disabled
+   for the moment (one coupon call at a time).
+4. **Expect:** on success you are taken **straight back to the Cart**, where the Coupon card now
+   shows the applied code, the green "You saved ₹X" chip, a **Remove** button, and the
+   "Coupon discount" row in Bill Details.
+5. Entering from **Profile** instead: applying takes you to the **Cart** screen (not back to Profile).
+
+#### Test: the coupon runs out between listing and tapping
+
+1. Set a coupon's total limit to 1 and have another customer use it up while your Offers screen sits open.
+2. Tap **Apply** on that card.
+3. **Expect:** you **stay on Offers**. The server's own refusal sentence appears in amber on that card,
+   and the list re-fetches — the exhausted card disappears (or updates) instead of sitting there
+   promising a discount that no longer exists.
+
+#### Test: empty vs error must look different
+
+1. Turn every coupon **Hidden** in the admin, open Offers.
+2. **Expect:** the friendly empty state — **"No offers right now"** / "Check back soon — we add new
+   offers all the time." with a **Continue shopping** button.
+3. Turn airplane mode on and open Offers.
+4. **Expect:** a clearly different card — **"Couldn't load offers"** with a **Retry** button. Turn
+   the network back on and tap Retry; the list loads.
+5. ❌ **A network failure must NEVER render as "No offers right now"** — that would tell a customer
+   there is nothing for them when the truth is the app could not ask.
+
+#### Test: nothing else on Cart or Profile changed
+
+1. Typing a code by hand on the Cart still works exactly as before (including a **Hidden** code).
+2. Remove still works; the Bill Details rows are unchanged.
+3. The Profile screen's Wallet/Referral tiles, Saved Addresses, Notifications, Help rows and Log Out
+   all behave as before — the Offers row is purely additive.
+
+---
+
+### ✅ F2. Android — Offers screen review fixes (built 2026-08-27)
+
+Follow-up to §11 F, from a code review of that same build. Files:
+`app/src/main/java/com/bheldi/ui/screens/offers/{OffersScreen,OffersViewModel}.kt`,
+`app/src/main/java/com/bheldi/ui/screens/cart/CartViewModel.kt`.
+
+1. **Both entry points still land correctly:** open Offers from the Cart's "View offers" link and
+   separately from Profile's "Offers & Coupons" row. **Expect:** identical screen, three card states
+   (eligible / near-miss / copy-only-on-empty-cart) exactly as in §11 F, and tap-to-apply from either
+   entry point lands you back on **Cart** with the coupon shown applied (Profile does not stay on
+   Profile).
+2. **Double-tap on Apply doesn't lose the spinner:** on an eligible card, tap **Apply** twice as fast
+   as you can (two taps in the same gesture, before the button visibly disables).
+   **Expect:** exactly **one** apply request goes out — the button shows the spinner + "Applying…"
+   throughout, and does **not** flicker back to an enabled "Apply" state while the first request is
+   still in flight. It resolves normally (success → Cart, or failure → error shown) once, not twice.
+3. **Already-applied coupon from Profile:** apply a coupon from the Cart, then open Offers again from
+   **Profile** (still showing eligible-tag cards). **Expect:** the card for the code you already have
+   applied shows a disabled **"✓ Applied"** button instead of "Apply — Save ₹X" — tapping elsewhere on
+   the card does nothing; no re-apply call is made. Every other card's Apply button behaves normally.
+4. **Apply-failure toast survives the card disappearing:** set a coupon's total limit to 1, exhaust it
+   from another customer while your Offers screen sits open, then tap Apply on that card (as in §11 F's
+   "coupon runs out between listing and tapping" test). **Expect:** in addition to that test's existing
+   behaviour, a **toast** with the server's refusal sentence appears — and stays legible even in the
+   split second the list-refresh removes that card from view (previously the message could disappear
+   with the card before it was read).
+5. **A failed background refresh isn't silent:** with a coupon applied and the Offers list already
+   showing cards, force the *next* refresh to fail (airplane mode right after an apply attempt that
+   also triggers the refresh). **Expect:** a toast reporting the failure, and the existing (now stale)
+   cards stay on screen rather than the whole screen going blank or silently doing nothing. This is
+   separate from §11 F's "empty vs error" full-screen state, which is unaffected — that still gates on
+   an empty list.
+6. **Near-miss card never shows "Add ₹0 more":** on a near-miss card where the server response has no
+   `message` and no `shortBy` (rare, only reachable via a malformed/older API response), the card shows
+   its amber "more to go" tag with no explanatory line underneath, instead of a nonsense "Add ₹0 more to
+   use CODE." sentence.
+7. **Cart coupon-error no longer goes stale across entry points:** on Cart, type a bad code (e.g.
+   `DOESNOTEXIST`) so the red inline error shows under the input. Now go to **Offers** and successfully
+   apply a different, valid coupon. **Expect:** you land back on Cart in the **applied** state (no error
+   visible, since the applied view replaces the input+error view). Tap **Remove**. **Expect:** the entry
+   state reappears with a **clean** input — the old red error from the bad code you typed earlier does
+   **not** resurface.
+
+`./gradlew assembleDebug` and `./gradlew testDebugUnitTest` both pass with no new warnings.
+
+---
+
+### ✅ G. Phase 3 — Offers screen on iOS (built 2026-08-27)
+
+Everything in section F applies to iOS unchanged (same three card states, same copy, same
+empty/error/loading states, same apply behaviour). Test iOS with section F's steps, plus the
+platform differences below.
+
+Needs the Phase 1 backend deployed to dev. Against an OLD backend (endpoint 404s) the iOS screen
+shows "Couldn't load offers" + **Retry** — never a crash, never a blank screen.
+
+#### iOS-only differences to check
+
+1. **Where the entry points are.** Cart → the **Coupon** card, a **"View offers →"** link under the
+   code input + Apply row (entry state only; apply a coupon and the link disappears with the input).
+   Profile → **Preferences** section, first row **"Offers & Coupons" / "See what you can save right
+   now"** with a ticket icon, directly under the Wallet tile.
+   ❌ There is **no** entry point on iOS **Checkout** — the iOS Checkout screen has no coupon input
+   at all (it only shows the applied-coupon bill row), so there is nothing to sit beside. This is
+   correct, not a missing piece.
+2. **It is a pushed screen, not a sheet.** Offers slides in from the right with an "Offers" title and
+   a back chevron; the **swipe-back-from-left-edge gesture must work**. If it appears as a
+   bottom sheet, that is a bug.
+3. **"Continue shopping" from the Cart entry point closes the whole Cart sheet** (the Cart is itself
+   a sheet on iOS), landing you back on the catalog you were browsing. From the **Profile** entry
+   point the button reads **"Start shopping"** and switches to the **Home** tab.
+4. **Apply success, Cart entry point:** pops back to the Cart sheet immediately, where the Coupon
+   card already shows the applied code + "You saved ₹X" + Remove — that IS the confirmation, so
+   no extra state is shown on Offers itself.
+   **Apply success, Profile entry point (fixed 2026-08-27):** dismiss()ing straight back to the
+   Profile menu gave **zero confirmation** the coupon actually applied — the screen just vanished.
+   Fixed: the applying card now flashes a green **"✓ Applied"** state (checkmark + "Applied", same
+   row height as the Apply button) for ~0.9s before the screen pops back to Profile. ❌ Bug if,
+   from Profile, the screen pops immediately with no flash, or if the flash appears when Offers was
+   opened from the **Cart** entry point (Cart must still pop immediately, unchanged).
+5. **Copy code** puts the code on the iOS pasteboard; the button label swaps to "Copied" for ~1.5s.
+   With VoiceOver on, an announcement "Coupon code X copied" is spoken.
+6. **Pull-to-refresh** on the Offers list re-fetches and now genuinely **awaits** the fetch (fixed
+   2026-08-27 — previously `.refreshable`'s spinner retracted immediately because the closure
+   wasn't `async`, so no loading indicator showed during the refresh). ❌ Bug if the pull spinner
+   snaps back before the list visibly updates on a slow connection. Leaving and re-entering the
+   screen always re-fetches too — a stale list is never shown.
+7. VoiceOver on an eligible card's button reads **"Apply MONSOON20, save 75 rupees"**, not a bare
+   "Apply" — so several offers can be told apart without reading each card.
+8. **Shortfall/min-order amounts round UP, never down (fixed 2026-08-27).** On a near-miss card,
+   the **"₹X more to go"** tag and the **"Min. order ₹X"** meta line both round the raw amount **up**
+   to the next rupee (`10.40` → shows `11`, not `10`). Verify: get a cart exactly ₹10.40 short of a
+   coupon, open Offers. **Expect:** the tag reads **"₹11 more to go"**, matching (or exceeding) the
+   server's own `message` text ("Add ₹10.40 more…") right below it — never a lower number than the
+   message implies. Add exactly ₹10 (trusting an under-rounded tag would have been the bug) and
+   confirm the card is **still** in the near-miss state, not eligible. Then add ₹11 total and confirm
+   it flips to eligible.
+
+#### Test: nothing else on iOS Cart or Profile changed
+
+1. Typing a code by hand on the Cart works exactly as before, including a **Hidden** code, the
+   "coupon is worse than your automatic discount" advisory, and Remove.
+2. Profile's Wallet/Referral tiles, Saved Addresses, Notifications, Help rows and Log Out are
+   unchanged — the Offers row is purely additive.
+
+---
+
+### ✅ H. Phase 4 — Offers page on WEB (built 2026-08-27)
+
+Same three card states, same copy, same empty/error/loading states as Android/iOS (sections F/G) —
+test with those steps, plus the web-only notes below.
+
+Needs the Phase 1 backend deployed to dev. Against an OLD backend (endpoint 404s) the web page shows
+"Couldn't load offers" + **Retry** — never a crash, never a blank screen.
+
+#### Test: the two entry points
+
+1. Open the site, add items to the cart, go to **Checkout**.
+2. **Expect:** in the **Coupon** section, under the code input + Apply row, a **"View offers →"**
+   text link.
+3. Type and apply any valid code so the coupon section flips to its applied state.
+4. **Expect:** the "View offers" link is gone (entry state only — Remove the coupon to get it back).
+5. Open **Profile**.
+6. **Expect:** under Preferences, a row **"Offers & Coupons" / "See what you can save right now"**
+   with a ticket icon, directly under the Wallet tile. Clicking it navigates to `/offers`.
+
+#### Test: the card states
+
+1. Mark a coupon **Visible** in the admin with a min order above your current cart.
+2. Open Offers from the Checkout link. **Expect:** a "Your cart: ₹X" line at the top and the card in
+   the **near-miss** state (amber gap tag, server's sentence, "Continue shopping" button — no Apply).
+3. Add enough to cross the minimum, reopen Offers. **Expect:** **eligible** state — green "✓
+   Eligible" tag, green-tinted border, and (only when the discount is actually > ₹0) a "Saves you
+   ₹X" line above a filled "Apply — Save ₹X" button. A coupon that is eligible but computes to a ₹0
+   discount (margin-guard clamp) must show a bare **"Apply"** button with no "Saves you ₹0.00" line.
+4. Empty the cart, open Offers from Profile. **Expect:** no "Your cart" line, every card in
+   **empty-cart** state ("Add items to your cart, then apply this at checkout." + "Copy code"
+   button). Clicking Copy code shows "Copied" for ~1.5s, then reverts.
+
+#### Test: tap to apply (the happy path)
+
+1. Cart above the minimum, open Offers, click **"Apply — Save ₹X"** on an eligible card.
+2. **Expect:** that button shows a spinner + "Applying…"; every other card's Apply button is also
+   disabled while the call is in flight (one coupon call at a time, whole-page not just the tapped
+   card).
+3. **Expect:** on success you land on **Checkout**, where the coupon section shows the applied code
+   and the "Coupon discount" row in Bill Details.
+
+#### Test: the coupon runs out between listing and tapping
+
+1. Set a coupon's total limit to 1 and have another session use it up while your Offers page sits
+   open.
+2. Click Apply on that card.
+3. **Expect:** you stay on Offers. The server's refusal sentence appears in amber **on that card and
+   stays visible** — the list quietly re-fetches behind it (no skeleton flash), so you never lose the
+   message even if the exhausted coupon disappears from the refreshed list.
+
+#### Test: empty vs error must look different
+
+1. Turn every coupon Hidden in the admin, open Offers. **Expect:** "No offers right now" / "Check
+   back soon" with a Continue shopping button.
+2. Simulate a network failure (devtools offline) and open/reload Offers. **Expect:** "Couldn't load
+   offers" with a Retry button; going back online and clicking Retry loads the list.
+3. ❌ A network/store-resolution failure must never render as "No offers right now".
+
+#### Test: the store-header fix (fresh login)
+
+1. Log out (clearing any cached store), then log back in and navigate straight to `/offers` (via
+   Profile or the Checkout link) without visiting Home first.
+2. **Expect:** Offers loads normally — no "Could not find a store for you" error and no stuck Retry
+   loop. (`/user/coupon/available` now resolves the store header the same way `/user/cart/*` does.)
+
+#### Test: nothing else on Checkout or Profile changed
+
+1. Typing a code by hand on Checkout still works exactly as before, including a Hidden code, the
+   "coupon is worse than your automatic discount" advisory, and Remove.
+2. Profile's Wallet/Referral tiles, Saved Addresses, Notifications, Help rows and Log Out are
+   unchanged — the Offers row is purely additive.
 

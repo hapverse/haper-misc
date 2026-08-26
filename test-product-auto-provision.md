@@ -100,6 +100,33 @@ Three actions that add/change a barcode on a **barcode-less** product now correc
 6. **If** the warehouse half had any warnings (e.g. no serving warehouse, or a partial failure), a second toast: **"Store assignment done, but warehouse provisioning didn't complete. {warning}."**
 7. **Result summary** shows: **Assigned N · skipped M [· failed L] of Z store(s).** (this counts store rows only, not warehouse; warehouse results are shown in the warning toast only.)
 
+## Replication-lag fix — "Product created, but not auto-provisioned" (fixed 2026-08-25)
+
+**Symptom (dev/prod, intermittent):** creating a product with a barcode returned
+*"Product created, but not auto-provisioned. Product not found — nothing was provisioned."*
+even though the product clearly existed. And adding a barcode later sometimes said
+*"No barcode set — nothing was auto-provisioned"* one line after the barcode saved fine.
+
+**Real example:** you save "Atta 1kg" with a barcode. The write goes to the Mongo primary.
+The very next line asked for that product back by its id — and the admin connection reads from a
+**secondary** (`readPreference: secondaryPreferred`). That secondary was a fraction of a second
+behind, so it answered "no such product". Provisioning believed it and created nothing: 0 store
+rows, 0 warehouse rows, until someone pressed **Assign**.
+
+**Fix:** the two call sites now hand provisioning the product document they already have (instead of
+just its id), and the repository's id/iId lookup is pinned to the **primary**, so any future caller
+is safe too.
+
+- ✅ `cd packages/admin && NODE_ENV=test npx jest product-provision-secondary-read` — 5 tests
+  (own 3-node in-memory replica set with replication frozen on the secondaries, so the lag is
+  deterministic, not flaky): create call site, `POST /admin/product`, the already-correct
+  loaded-doc control, a pin that the master lookup never uses `secondaryPreferred`, and
+  `PATCH /admin/product/:id/barcode`.
+- ✅ Manual on dev: create 5-10 products with barcodes back to back → **every** one reports
+  "provisioned to N store(s) and warehouse", none reports "Product not found".
+- ❌ Should never appear again: "Product not found — nothing was provisioned." right after a
+  successful create.
+
 ## Edge cases / notes
 - **Barcode changed to a different value** — `PATCH /admin/product/:id/barcode` with a **different** code does NOT re-trigger provision (that's a SKU migration, separate code path; warehouse rows move instead). If a product is already stranded (barcoded but zero store presence — a real edge case), editing the barcode again won't fix it; use **Assign to stores** as the manual repair.
 - **"Already has barcode"** (409) — single or bulk generate refuse if the product already has a code. This is correct, not a bug (the code is already set; use the barcode modal to change it).

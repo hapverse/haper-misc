@@ -136,11 +136,19 @@ edited the PIN of a saved address.
 - Denied/restricted location permission is checked up front on Refresh (CoreLocation fires no
   callback when denied), so the button surfaces an error instead of looking dead.
 - PIN changed on an already-confirmed address → inline amber prompt "Your PIN changed. Update
-  the pin location to match?" with **Keep current location** / **Snap to new PIN** (both 44pt
+  the pin location to match?" with **Keep current location** / **Update location** (both 44pt
   touch targets). Snapping applies the centroid but leaves it unconfirmed.
+- **2026-08-26 follow-up (matching Android):** the action was renamed **"Snap to new PIN" →
+  "Update location"** (plain language, and a clear either/or against "Keep current location"),
+  and the PIN-source status line now **names the PIN**. Once the coordinate is unconfirmed every
+  further PIN edit applies silently, and the old copy was a static sentence — identical before and
+  after — so a *second* PIN edit read as "nothing happened" even though the coordinate moved.
+  (iOS was less severe than Android here: the Lat/Lng line underneath did change. The copy is now
+  consistent across platforms either way.)
 - Marker + status caption tint green (`AppTheme.success`) when confirmed, amber
-  (`AppTheme.warning`) when not. New copy: "Approximate area from PIN — drag the pin to your
-  exact spot", "Approximate — not yet confirmed", "PIN-based location — tap to confirm on map".
+  (`AppTheme.warning`) when not. Copy: "Approximate area from PIN **841301** — drag the pin to
+  your exact spot" (the un-named variant is still used when the PIN isn't known),
+  "Approximate — not yet confirmed", "PIN-based location — tap to confirm on map".
 - Decision logic lives in `AddressCoordinatePolicy` (same file), unit-tested in
   `haperTests/AddressModelsTests.swift` → `AddressCoordinatePolicyTests`.
 
@@ -168,13 +176,26 @@ edited the PIN of a saved address.
 7. Open a saved address with a precise location → opens **green**, "Saved location". Change the
    PIN → amber prompt appears; the pin does **not** move. ❌ Fail if the pin jumps.
 8. Tap "Keep current location" → prompt closes, pin unchanged, Save still immediate.
-9. Tap "Snap to new PIN" → pin moves to the new area and turns **amber**; Save now opens the map
-   picker for confirmation.
-10. VoiceOver: both prompt actions are reachable buttons with ≥44pt targets.
+9. Tap **"Update location"** (renamed 2026-08-26 — ❌ fail if it still reads "Snap to new PIN") →
+   pin moves to the new area and turns **amber**; the status line reads *"Approximate area from
+   PIN **<that PIN>** — drag the pin to your exact spot"*; Save now opens the map picker for
+   confirmation.
+10. **Second PIN edit (the "nothing happened" check):** without confirming anything, change the PIN
+    again to a *different* valid PIN. **Expect:** no prompt this time (the coordinate is already
+    unconfirmed, so it applies straight away), the map pans, **and the status line now names the
+    NEW PIN**. ❌ Fail if the status sentence is byte-identical to what it said before the edit —
+    that is the bug this rename/naming pass fixed.
+11. Edit the PIN while the amber prompt from step 7 is still open → the prompt **disappears** (it
+    referred to the previous PIN's coordinate) and the pin does not move until the new geocode
+    resolves.
+12. VoiceOver: both prompt actions are reachable buttons with ≥44pt targets, and the status block
+    is read as one combined element (label reflects the named PIN).
 
 **Status:** iOS code DONE on `dev` (uncommitted at time of writing), `xcodebuild build`
 SUCCEEDED, SwiftLint clean, runtime probe green (scenarios A–G, incl. negative controls that
-reproduce both bugs on the pre-fix code). NOT device-verified. Android is a parallel task.
+reproduce both bugs on the pre-fix code). The 2026-08-26 rename + PIN-named status line is also
+DONE, build SUCCEEDED, lint clean, and covered by 3 new `AddressModelsTests` cases plus a runtime
+probe whose negative control reproduces the identical-status-line bug on the pre-fix copy. NOT device-verified. Android is a parallel task.
 `xcodebuild test` still blocked by the unrelated pre-existing `ViewModelsStateTests.swift`
 compile error (`ProfileViewModel.updateLocalError`).
 
