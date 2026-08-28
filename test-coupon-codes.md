@@ -5,8 +5,12 @@ Backend: `haper-backend` (`packages/shared/utils/coupon.utils.js` engine, `packa
 Admin panel: `haper-admin` (`src/pages/Coupons/*` CRUD, `POS/NewSalePage.tsx` coupon entry).
 
 Needs: backend deploy (dev) + admin deploy. No migration. Android checkout coupon entry (§2A2), iOS checkout coupon entry (§2A3), and web checkout coupon entry (§2A4) are now built. The checkout coupon-failure title + coupon summary row are built on Android (§2 D4/D5), iOS (§2 D8/D9), and were already correct on web (§2 D6/D7). The **order detail** screen names the coupon on web (§3 G), admin
-(§3 H) and Android (§3 I) — always as an informational "you saved ₹X" line, never a `-₹` subtraction (the
-item total is already net). All new cart/order fields are additive and default to null/empty.
+(§3 H) and Android (§3 I) — as an informational "you saved ₹X" line, never a `-₹` subtraction (the
+item total is already net). **Android (§3 J), iOS (§3 K), web (§12) and admin (§13) have since gone further:** they rebuild the GROSS item prices
+from each line's preserved `originalSalePrice`, so their Order Details now shows the same per-item prices as
+the cart plus a real `-₹X` coupon row. The informational line survives only as the fallback for
+automatic-discount orders and legacy coupon orders whose lines never stored `originalSalePrice`.
+All new cart/order fields are additive and default to null/empty.
 
 ---
 
@@ -664,6 +668,11 @@ coupon line — only the Order Details modal does. Out of scope for this pass.
 
 ### ✅ I. Android — Order Details names the coupon that was used (built 2026-08-27)
 
+> ⚠️ **Superseded for modern coupon orders by §3.J (2026-08-28).** The informational line described here
+> is now only the **fallback**, used for a coupon order whose lines predate `originalSalePrice`. A coupon
+> order that carries those gross prices shows a real `-₹X` row instead. Steps 4-7 and 11 below still apply
+> as written; steps 1-3 and 8-10 are superseded by §3.J for orders placed after this feature.
+
 **Why this exists (pre-existing gap, not a regression):** the Android **Order Details** screen has *never*
 shown coupon or promo money — its Bill Details card was only `Item Total / Delivery Fee / Platform Fee /
 Wallet Used / Total Paid`. A customer who checked out with a code saw the checkout screen name it (§2 D5)
@@ -712,6 +721,125 @@ still shows nothing on Android's Order Details — the line is gated on a coupon
 an order discounted by a promo rule shows an unexplained lower total, exactly as before. Web (§3.G) and
 admin (§3.H) *do* show a generic "Discount — you saved ₹X" for that case, so Android is now the odd one
 out. The Android **Orders list** also still shows no discount line. Both out of scope for this pass.
+
+### ✅ J. Android — Order Details shows the SAME item prices as the cart, with a real coupon row (built 2026-08-28)
+
+**The bug:** the same coupon order looked like it had two different sets of prices depending on the screen.
+In the **Cart**, "Abhi Cashews Kaju" was **₹239** (struck ₹330) with a separate **-₹50** coupon line. On
+**Order Details** after placing, the same item read **₹203**, struck ₹330, **"38% OFF"**, and Item Total
+was **₹283** instead of ₹333. Customers reasonably read this as being charged different prices.
+
+**Root cause (the backend is correct — do not change it):** at checkout the coupon is deliberately
+*allocated down into each line* for accounting/COGS — `coupon.utils.js` rewrites every line's `salePrice`
+to the post-coupon price — but it **preserves the pre-coupon price in `originalSalePrice`** on the same
+line. Order Details was simply reading the reduced `salePrice`, and computing the "% OFF" badge against it.
+
+**The fix (Android display only):** when an order carries a coupon, Order Details rebuilds the GROSS item
+prices from `originalSalePrice` and then subtracts the coupon for real — exactly the shape Cart/Checkout
+already use. Worked example (the reported order):
+
+| Row | Before | After |
+| --- | --- | --- |
+| Kaju (MRP ₹330) | ₹203, 38% OFF | **₹239, 27% OFF** |
+| Oats (MRP ₹100) | ₹80, 20% OFF | **₹94, 6% OFF** |
+| Item Total | ₹283 | **₹333** |
+| Coupon RAUNAK50 | "you saved ₹50" note | **-₹50** |
+| Delivery / Platform | ₹0 / ₹1 | ₹0 / ₹1 |
+| **Total Paid** | **₹284** | **₹284** (unchanged) |
+
+`333 − 50 + 0 + 1 = 284` ✓ — Total Paid is the one number that was always right and it does not move.
+
+**Gated on a coupon, on purpose:** the separate **automatic-discount** engine writes `originalSalePrice`
+too, but for those orders the reduced `salePrice` genuinely *is* the sale price and there is no coupon row
+to reconstruct. The two engines never both apply to one order (`order/controller.js`), so the fix keys off
+`order.coupon.code`. It also **self-checks**: unless `gross − couponAmount` reconciles with the stored
+`actualOrderValue` (±₹0.01), it falls back to the old §3.I display, which is what makes legacy orders safe.
+
+Files: `haper-android/.../data/model/OrderModels.kt` (new `OrderItem.displayUnitPrice`; `unitPrice` kept
+as-is), `haper-android/.../ui/screens/orders/OrderDetailScreen.kt` (new `orderCouponBreakdown()` helper;
+item price/badge, Item Total and the Bill Details row read it). **No backend, iOS, web or admin change.**
+
+1. Place an order with a coupon (e.g. ₹50 off) on items that also have a catalog discount, then open
+   **Orders → that order**.
+2. **Expect:** each item's price and struck-through MRP are **identical to what the Cart showed** for the
+   same item. ❌ Bug if any item is cheaper here than it was in the cart.
+3. **Expect:** the **% OFF** badge matches the catalog discount (MRP vs the cart price), not an inflated
+   one. Note it **truncates**, so ₹330→₹239 shows **27% OFF**, not 28%.
+4. **Expect:** **Item Total** equals the sum of (cart price × qty) — the gross number — and directly under
+   it a green **`Coupon <CODE>`  `-₹50`** two-column row.
+5. **Expect:** `Item Total − Coupon + Delivery Fee + Platform Fee − Wallet Used = Total Paid`, exactly.
+   ❌ Bug if the rows don't sum, or if Total Paid changed from what the customer was actually charged.
+6. **Wallet + coupon together:** repeat with wallet money applied. **Expect:** both rows subtract and the
+   sum still lands on Total Paid.
+7. **Automatic (non-coupon) discount order:** open an order discounted by a promo rule with no code.
+8. **Expect:** **pixel-identical to before this build** — net prices, no coupon row, no "you saved" line.
+   ❌ Bug if a `-₹` row appears or the item prices jump up (they'd no longer match what was charged).
+9. **No discount at all / pre-coupon legacy order:** **Expect:** unchanged, no crash, never a **₹0** price.
+10. **Legacy coupon order** (placed before `originalSalePrice` was stored): **Expect:** the old §3.I
+    informational `Coupon <CODE> — you saved ₹X` line and net prices — never a broken/doubled subtraction.
+11. **Free gift in a coupon order:** **Expect:** the gift line still shows the **FREE GIFT** pill and
+    `FREE`, and does **not** add anything to Item Total.
+12. **COD order:** **Expect:** same breakdown ("Total Paid" is the amount due on delivery).
+13. **TalkBack:** the coupon row is announced as a label + a negative amount, like the Wallet Used row.
+14. **Dark theme + 200% font scale + rotation:** the coupon row stays green/legible, doesn't clip the
+    amount, and survives rotation (the whole screen is stateless w.r.t. this change).
+15. **POS orders:** a walk-in POS sale with a coupon (§5.A) writes the same fields and behaves identically.
+
+**Automated:** `OrderDetailCouponTest.kt` — now **17** tests (the 6 fallback-note ones plus 11 covering the
+gross rebuild, the reported ₹333/-₹50/₹284 arithmetic, the 27%-vs-38% badge, qty > 1, free-gift lines, the
+no-coupon and legacy-order fallbacks, and the reconciliation guard). Full app suite: **348 passing**.
+
+### ✅ K. iOS — Order Details shows the SAME item prices as the cart, with a real coupon row (built 2026-08-28)
+
+iOS's counterpart to §J — same bug, same root cause, same numbers. It was never screenshotted on iOS, but
+the identical read of the coupon-reduced `salePrice` was confirmed by code (`OrderModels.swift` exposed only
+`unitPrice { salePrice }`, and the Bill's Item Total fell through to the net `actualOrderValue`).
+
+**The fix (iOS display only):** `OrderItem` now decodes `originalSalePrice` (optional — legacy orders have no
+such key) and exposes `displayUnitPrice` (= `originalSalePrice` when > 0, else `salePrice`); `Order` decodes
+the `coupon` snapshot (`code` + `discountAmount`). When — and only when — the order names a coupon **and**
+`gross − coupon` reconciles with the stored `actualOrderValue` (±₹0.01), Order Details renders gross item
+prices, computes the % OFF badge against them, sets **Item Total** to the gross sum, and adds a real green
+`Coupon (CODE)` `-₹50` row directly under it. `unitPrice` is unchanged and still means "what was charged".
+
+| Row | Before | After |
+| --- | --- | --- |
+| Kaju (MRP ₹330) | ₹203, 38% OFF | **₹239, 27% OFF** |
+| Oats (MRP ₹100) | ₹80, 20% OFF | **₹94, 6% OFF** |
+| Item Total | ₹283 | **₹333** |
+| Coupon (CODE) | *(no row at all on iOS)* | **-₹50** |
+| Delivery / Platform | ₹0 / ₹1 | ₹0 / ₹1 |
+| **Total Paid** | **₹284** | **₹284** (unchanged) |
+
+`333 − 50 + 0 + 1 = 284` ✓.
+
+**Same two safety gates as Android:** (a) keyed off `order.coupon.code`, so **automatic-discount** orders —
+where the reduced `salePrice` really is the sale price — are untouched; (b) the reconciliation guard, so a
+coupon order placed before `originalSalePrice` existed keeps its net prices and gets an informational
+`Coupon (CODE)` `You saved ₹50` note instead of a subtraction that wouldn't add up.
+
+Files: `haper-ios/haper/Models/OrderModels.swift` (`OrderItem.originalSalePrice` + `displayUnitPrice`, new
+`OrderCoupon`, `Order.hasCouponCode` / `couponBreakdownReconciles` / `hasCouponDiscount` / `grossItemTotal`),
+`haper-ios/haper/Views/OrderDetailView.swift` (item price + badge + line total + Bill Details).
+**No backend, Android, web or admin change.**
+
+1. Steps **1–15 of §J**, run on the iOS app instead — same expectations, including the automatic-discount,
+   legacy, free-gift, wallet-plus-coupon and COD cases.
+2. **iOS-specific:** VoiceOver reads the coupon row as its label then a negative amount (like Wallet Used).
+3. **iOS-specific:** at the largest Dynamic Type size and on the smallest supported device, the **₹ amount is
+   never truncated** — a long code truncates instead. Check dark mode too (the row is green on both).
+4. **iOS-specific:** the same order opened from **Orders list → detail** and from **Order Success → detail**
+   shows the same numbers.
+
+**Automated:** `haperTests/OrderCouponDisplayTests.swift` — 12 tests (gross prices, the ₹333/-₹50/₹284
+arithmetic, the 27%-vs-38% badge, qty > 1, free-gift lines, automatic-discount and legacy fallbacks, a
+`code: null` coupon block, the reconciliation guard (including a fully-covered order where
+`actualOrderValue` is legitimately 0), and a malformed coupon block that must not wipe the order). The
+**pre-existing** `haperTests` compile break (`ViewModelsStateTests.swift`, unrelated to coupons) still
+blocks a plain `xcodebuild test` on the whole bundle — exclude just that one file to run these:
+```
+xcodebuild test -project haper.xcodeproj -scheme haper -destination 'platform=iOS Simulator,id=<UDID>' CODE_SIGNING_ALLOWED=NO EXCLUDED_SOURCE_FILE_NAMES='ViewModelsStateTests.swift' -only-testing:haperTests/OrderCouponDisplayTests
+```
 
 ---
 
@@ -1080,7 +1208,7 @@ cd packages/admin && NODE_ENV=test npx jest coupon
   (`Coupon <CODE> — you saved ₹X`, informational, never a `-₹` subtraction). Frontend-only; the backend
   already returned the `coupon` block on `GET /user/order/:orderId`.
 - **Android deploy:** `haper-android` code (Cart screen coupon entry §2A2; checkout coupon dialog + summary row §2 D4/D5; order-detail coupon line §3 I) — normal debug build/install; no store release required for dev testing.
-- **iOS deploy:** `haper-ios` code (Cart screen coupon entry §2A3; checkout coupon alert title + summary row §2 D8/D9) — normal debug build/simulator install; no TestFlight/App Store release required for dev testing.
+- **iOS deploy:** `haper-ios` code (Cart screen coupon entry §2A3; checkout coupon alert title + summary row §2 D8/D9; Order Details gross prices + coupon row §3 K) — normal debug build/simulator install; no TestFlight/App Store release required for dev testing.
 - **Web deploy (dev):** `haper-web` code (Checkout page coupon entry & form validation, §2A4; order-detail coupon name, §3 G) — test via `tsc --noEmit` + `vite build` locally or deploy to dev. `haper-web` has no eslint gate and no test suite; those two commands are the whole check.
 - **`main` stays off-limits.** This ships to prod via a manual user-driven deploy only (not a CI/CD auto-merge to main).
 
@@ -1585,3 +1713,134 @@ Needs the Phase 1 backend deployed to dev. Against an OLD backend (endpoint 404s
 2. Profile's Wallet/Referral tiles, Saved Addresses, Notifications, Help rows and Log Out are
    unchanged — the Offers row is purely additive.
 
+
+---
+
+## 12. Web — order detail shows CART prices on a coupon order (built 2026-08-28)
+
+**What was wrong.** On a coupon order the backend deliberately spreads the coupon's ₹ down into
+each line's stored `salePrice` (for COGS/accounting) — correct backend behaviour, unchanged. But
+`haper-web`'s order-detail page displayed that allocated `salePrice`, so the same order looked
+cheaper per item than it did in the cart. Real example: cart showed "Abhi Cashews Kaju ₹239
+(struck ₹330)" + a "-₹50" coupon line; order detail showed "₹203" and an Item Total of ₹283.
+Only the Grand Total (₹284) was right.
+
+**The fix (web only, `pages/OrderDetail.tsx`).** When the order carries a coupon, the page now
+shows the preserved pre-coupon price (`originalSalePrice`) per item and subtracts the coupon once,
+as its own bill row — exactly like the cart. Nothing else changed.
+
+**Files:** `haper-web/pages/OrderDetail.tsx` only (no backend, no schema, no other client).
+
+### ✅ A. A coupon order now matches the cart
+
+1. Add items to cart, apply a coupon, note each item's price and the bill rows, place the order.
+2. Open the order from Orders → order detail.
+3. **Expect** — every per-item price is the SAME number the cart showed (e.g. ₹239, ₹94), struck
+   through against catalog MRP (₹330, ₹100) where MRP is higher.
+4. **Expect** the bill summary reads:
+   - `Item Total ₹333` (gross, the sum of the item prices above)
+   - `Coupon <CODE>  -₹50` (a real subtraction now, not "you saved ₹50")
+   - `Delivery ₹0` (row hidden when 0) · `Platform Fee ₹1`
+   - `Grand Total ₹284`
+5. **Expect the arithmetic to close exactly:** 333 − 50 + 0 + 1 = 284. Grand Total must be the same
+   number it was before this change.
+
+### ✅ B. An automatic-discount order is UNCHANGED
+
+The automatic-discount engine and coupons never both apply to one order, and for automatic
+discounts the reduced `salePrice` genuinely IS the price paid.
+
+1. Place an order with an automatic discount rule active and NO coupon code.
+2. **Expect** exactly the old display: the discounted price in bold with the pre-discount price
+   struck through, `Item Total` = the net amount, and the informational
+   `Discount — you saved ₹X` note (NOT a `-₹X` subtraction).
+
+### ✅ C. A plain order (no coupon, no discount) is UNCHANGED
+
+1. Place an order with no coupon and no discount rule.
+2. **Expect** no strikethrough, no discount/coupon row, Item Total and Grand Total as before.
+
+### ✅ D. Free gift-with-purchase still renders as FREE
+
+1. Place a coupon order that also earns a free gift.
+2. **Expect** the gift line still shows the `FREE` badge (never ₹0.00, never a price, never `NaN`),
+   contributes nothing to Item Total, and the `Free gift` row in the bill summary still appears.
+3. **Expect** the arithmetic still closes (gross Item Total − coupon + fees = Grand Total).
+
+### ❌ Edge cases
+
+- **Legacy coupon order with no `originalSalePrice` on its lines** (placed before the promotions
+  snapshot existed): the page must FALL BACK to the old display (net prices + the informational
+  "you saved ₹X" note). The new gross layout only activates when gross − coupon reconciles exactly
+  to the server's net item total (±₹0.01), so a Grand Total can never stop adding up.
+- **Coupon with `discountAmount` 0** — treated as no coupon; old display.
+- **Float dust:** per-item and Item Total figures are rounded to 2dp for display, so a line like
+  ₹33.33 × 3 shows ₹99.99, never ₹99.99000000000001.
+
+### Deploy
+
+`haper-web` only. Verified with `npx tsc --noEmit` (clean) + `npm run build` (succeeds) — that is
+the whole gate for this repo (no eslint, no test suite). Prod is a manual user-driven deploy.
+
+---
+
+## 13. Admin — Order Details shows CART prices on a coupon order (built 2026-08-28)
+
+Same bug as §12, other surface. The admin panel's **Order Details** modal read each line's
+allocated (post-coupon) `salePrice`, so store staff reconciling an order against what the customer
+actually saw got different numbers: item ₹203 instead of ₹239, Subtotal ₹283 instead of ₹333.
+Backend behaviour is correct and **unchanged** — the coupon is deliberately spread into each
+line's `salePrice` for COGS/refunds/invoices.
+
+**The fix (admin only).** When an order carries a coupon AND the arithmetic reconciles, the modal
+shows the preserved pre-coupon price (`originalSalePrice`) per item, a gross Subtotal, and the
+coupon as one real `-₹X` row right under Subtotal. Cost / P/L / profit columns and the wallet
+refund preview still use the net `salePrice` — accounting is untouched.
+
+**Files:**
+- `haper-admin/src/utils/orders.ts` — new helpers `orderHasCoupon`, `getGrossUnitPrice`,
+  `getGrossSubTotal`, `getCouponDiscountAmount`, `usesCouponGrossDisplay`; `normalizeOrder` gains an
+  additive `grossSubTotal` (the existing `subTotal` is byte-for-byte unchanged for every other screen).
+- `haper-admin/src/pages/Orders/OrderDetailsModal.tsx` — item Price/Total cells, Subtotal row, and
+  the coupon row (informational → real subtraction, for coupon orders only).
+
+### ✅ A. A coupon order now matches the customer's cart
+
+1. On `damin.haper.in`, open an order that used a coupon (e.g. `RAUNAK50`).
+2. **Expect** per-item Price = the catalog price the customer saw (₹239, ₹94), NOT ₹203.11 / ₹79.89.
+3. **Expect** the Payment card reads: Subtotal ₹333 → `Coupon RAUNAK50: -₹50` → Platform Fee ₹1 →
+   Total ₹284. The arithmetic must close: 333 − 50 + 0 + 1 = 284.
+4. **Expect** Total, Payment status and everything else are the same numbers as before the change.
+
+### ✅ B. An automatic-discount order is UNCHANGED
+
+1. Open an order discounted by a **discount rule** (no coupon code).
+2. **Expect** per-item prices are still the reduced `salePrice` (that IS the real sale price here),
+   Subtotal is still the net figure, and the row still reads `Discount applied: customer saved ₹X`
+   — never `-₹X`. A coupon and an automatic rule never both apply to one order.
+
+### ✅ C. A plain order (no coupon, no discount) is UNCHANGED
+
+1. Open any normal order. **Expect** the modal is identical to before (no coupon row at all).
+
+### ✅ D. Super-admin money columns still show cost truth
+
+1. As super-admin, open the coupon order from A.
+2. **Expect** the Cost and P/L columns, and the Cost Price / Profit block, are unchanged — they
+   still use the net `salePrice`, so profit does NOT jump by ₹50.
+
+### ❌ Edge cases
+
+- **Legacy coupon order with no `originalSalePrice` on its lines:** the modal FALLS BACK to the old
+  display (net prices + the informational `Coupon <CODE>: customer saved ₹X`). The new layout only
+  activates when gross − coupon lands on the server's net Subtotal within ₹0.01, so a Total can
+  never stop adding up. Same gate as web (§12).
+- **Free gift line:** still renders `FREE`, contributes ₹0 to the gross Subtotal.
+- **Editing items on a coupon order:** the table shows gross prices while the "To be refunded"
+  preview stays on the net `salePrice` — the refund is what the customer actually paid, so these
+  two figures differ by design on a coupon order.
+
+### Deploy
+
+`haper-admin` only. No backend, no migration. Verified with `npx tsc -b` (clean for the touched
+files) + `npx vitest run` (only the known unrelated `TransfersPage` failure) + `npm run build`.
