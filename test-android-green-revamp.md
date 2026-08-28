@@ -692,7 +692,147 @@ against this section.
 
 ---
 
+## Phase F — Checkout + address (2026-08-29, `bfd4d26`)
+
+Restyles the payment screen, the delivery-slot picker, the payment-failed
+screen, the saved-address list, the add/edit-address form and the full-screen
+map picker to the new design's glass/shadow language. **Money-adjacent screens
+are presentation-only** — no ViewModel, repository, API or navigation change,
+and **not one payment-availability rule was touched**. **Cart screen remains
+out of scope** (separate in-progress session).
+
+### What shipped
+- **Payment screen (§3.16)**: new header ("Payment" + "₹N to pay") on the page
+  background with a hairline; the delivery address is now a glass summary row
+  with a "Change" link; uppercase section eyebrows ("DELIVERY SLOT", "HAPER
+  WALLET", "PAY USING"); the payment methods are the design's list rows —
+  40dp icon tile, name + one quiet line, a 1.6dp outline that turns green when
+  chosen, and a teal ✓ disc; a Razorpay reassurance line; and a "Bill summary"
+  card on the design's deepest shadow. The CTA moved to a sticky footer on the
+  app background (label left, arrow right) instead of a raised white sheet.
+- **🚨 COD availability is unchanged.** COD is still gated *only* by the
+  server's schedule `allowedPaymentMethods`. The design mock's flat "COD is
+  blocked above ₹2,000" rule is an agreed business-rule override and is
+  **deliberately not implemented**. The disabled COD row now states the reason
+  in more readable text than before, but the rule behind it is identical.
+- **Delivery-slot picker (§3.15)**: one shared slot card for the now/schedule
+  choice, the date strip and the time-slot grid — radius 17dp, 1.6dp outline,
+  14sp Quicksand title, 10.5sp subtitle, selected changes both fill and
+  outline. Availability still comes only from the server; unavailable slots
+  are greyed **with the reason in words**, never colour alone.
+- **Payment failed (§3.17)**: the summary card (Amount / Reference in
+  monospace / Reason) moved onto the design's glass panel + shadow.
+- **Saved addresses (§3.14)**: dashed "Add a new address" card, "SAVED
+  ADDRESSES" eyebrow, address cards with a 38dp icon tile, a DEFAULT chip and
+  the teal ✓ on the current address. View / Edit / Delete / "Deliver here"
+  actions are all still there.
+  - **Bug fix — button alignment + text cut-off in "Manage addresses" mode.**
+    On the Profile → Saved Addresses screen (management mode, as opposed to
+    the checkout picker), the View/Edit/Delete row was sometimes misaligned
+    against the address text above it, and long address text was clipped
+    more aggressively than intended. Both are fixed by the same card rebuild
+    that restyled this screen — the action row now aligns consistently and
+    address text truncates sensibly (ellipsis, not a hard cut mid-word).
+- **Add/edit address (§3.14/§3.15)**: the 290dp map area moved to the top of
+  the screen with a white "Move pin" chip; below it a glass card that says in
+  words whether the location is confirmed, approximate-from-PIN, or not set;
+  then the form as 50dp white fields with a 1.4dp outline and **⚠ inline
+  validation** in Danger; "Save as" pills; and the Save button moved from the
+  app bar to a sticky "Save address" footer.
+- **The save gate is unchanged**: an unconfirmed coordinate still opens the map
+  picker instead of saving, and the phone's GPS is still never grabbed on the
+  user's behalf.
+- **Map picker**: white map controls and a proper bottom sheet for the
+  coordinate + "Confirm location".
+- New additive tokens only: `panelShadow`, `billSummaryShadow`,
+  `mapControlShadow`, plus `addressCard`, `paymentMethodRow`,
+  `billSummaryCard`, `formFieldHeight`, `addressMapHeight`, `borderSelected`,
+  `borderField`. New shared `HaperSelectedCheck` component (the teal ✓ used by
+  both the payment list and the address list).
+- **Payment logic itself was reviewed and confirmed unchanged by a payments
+  specialist** as part of this pass: COD availability still comes only from
+  the schedule's `allowedPaymentMethods` (never a rupee threshold), the
+  Razorpay online-payment flow is untouched, and wallet-balance auto-apply on
+  checkout is untouched — this phase is presentation-only around all three.
+
+### Steps
+1. ✅ `./gradlew assembleDebug` and `./gradlew testDebugUnitTest` both pass.
+2. ✅ **Cart → Checkout** — header reads "Payment" with "₹N to pay" beneath it;
+   the address row, slot cards and payment rows all show the new styling.
+3. ✅ **Pay using** — tap between "Online Payment" and "Cash on Delivery": the
+   chosen row gets a green outline and the teal ✓, the other loses both.
+4. ✅ **Schedule a delivery** — tap "Schedule", pick a date and a time slot.
+   Unavailable dates/slots stay greyed **and say why** ("Unavailable", "Full",
+   "Too soon", "Closed"). ❌ A greyed card with no word on it is a regression.
+5. ✅ **COD with a scheduled order** — after picking a scheduled slot, the
+   "Cash on Delivery" row goes disabled and reads "Not available for scheduled
+   orders". ❌ If COD is disabled for any *other* reason — especially an order
+   value threshold — that is a bug: no such rule exists in this app.
+6. ✅ **COD with an immediate ("Now") order** — COD is selectable, whatever the
+   order total. Place a **₹2,000+** COD order end to end to prove it. ❌ COD
+   being blocked on a large "Now" order is the exact regression to watch for.
+7. ✅ **Place a real order both ways** — COD and online (Razorpay) — and
+   confirm both still complete and land on the order-success screen exactly as
+   before. For the online order, follow the Razorpay sheet all the way
+   through (not just to the point it opens) to confirm the end-to-end flow
+   still works.
+7b. ✅ **Wallet balance toggle** — with a test account that has wallet
+   balance, toggle "Use Haper Wallet" on the checkout screen. The applied
+   amount appears in the bill and "To pay" drops accordingly, same as before
+   the restyle — only the visuals changed.
+8. ✅ **Bill summary** — Items / coupon / Delivery / Platform fee / Wallet
+   applied / "To pay" all show the same numbers as before the restyle.
+9. ✅ **Checkout → Change address** — the address list opens with "Step 1 of 2 ·
+   then payment", the dashed "Add a new address" card, and the current address
+   carrying a DEFAULT chip and a teal ✓. Tapping a card selects it and returns.
+10. ✅ **Profile → Saved Addresses** — same screen in management mode; "Deliver
+    here", View, Edit and Delete are all present on each card and still work.
+    Check the View/Edit/Delete row on **every** saved address card, especially
+    ones with a long address line: the three actions stay evenly aligned and
+    the address text truncates with an ellipsis instead of being cut off
+    mid-word. ❌ Misaligned action buttons or awkwardly clipped text is the
+    exact bug this phase fixed — regression.
+11. ✅ **Add an address** — the map sits at the top; typing a valid 6-digit PIN
+    still jumps the pin to that area and the card says "Approximate — not yet
+    confirmed" naming the PIN. Tapping the map (or "Move pin") opens the
+    full-screen picker; "Confirm location" flips it to "Confirmed location".
+12. ✅ **Save with empty required fields** — each bad field turns pink and
+    shows a "⚠ <reason>" line beneath it.
+13. ✅ **Save with an unconfirmed location** — the map picker opens instead of
+    saving, and the address is only saved after you confirm a spot. ❌ Saving
+    straight away, or the pin silently jumping to *your own* current location,
+    is a serious regression.
+14. ✅ **Village/locality dropdown** — still opens the store's village list and
+    picking one fills the field and clears its error.
+15. ✅ Scroll every one of these screens to the very bottom — nothing is hidden
+    behind the sticky button or the bottom nav bar.
+
+### Known gaps (NOT done)
+- **"Place Order" button text for COD orders is shorter than the design.**
+  The mock's CTA reads "Place order · Pay on delivery"; the app's button
+  currently shows a shorter label with no "Pay on delivery" suffix. Cosmetic
+  only — the order still places correctly either way. Flagged for a later
+  phase; don't report it as a functional bug.
+
+### Edge cases
+- **Builds without a Google Maps key**: the map area and the "Move pin" chip
+  disappear entirely, the header strapline changes to "Capture your exact spot
+  with GPS", and a "Capture location" / "Refresh current location" button is
+  the way to set the coordinate. Verified on a deliberately keyless build.
+  ❌ A blank grey rectangle where the map should be, or no way at all to set a
+  location, means this fallback broke.
+- The payment-failed screen is only reachable after a genuinely declined or
+  cancelled gateway payment, so it was verified by code review rather than on
+  device — worth an eyeball next time a test payment is cancelled at the
+  Razorpay sheet.
+- The address card hides the contact name when the address has a nickname
+  ("Home"/"Work"), matching the design. Unlabelled addresses still show the
+  name, so no address is ever nameless.
+
+---
+
 ## Deploy
-Phases A, B, C1, C2, D, and E1 are **already on `dev`** (`d2ad773`, `3afd791`,
-`5a77cf4`, `10c8a30`, `5a19e9c`, `215c635`, `2cd1bdd`) — direct commits under
-the current git workflow, no PR/deploy step. Ships with the next Android build.
+Phases A, B, C1, C2, D, E1 and F are **all on `dev`** (`d2ad773`, `3afd791`,
+`5a77cf4`, `10c8a30`, `5a19e9c`, `215c635`, `2cd1bdd`, `bfd4d26`) — direct
+commits under the current git workflow, no PR/deploy step. Ships with the
+next Android build.
