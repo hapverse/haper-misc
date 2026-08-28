@@ -831,8 +831,69 @@ out of scope** (separate in-progress session).
 
 ---
 
+## Phase G1 — Orders list + Order Success (2026-08-29, `dev@d28b498`)
+
+Restyles the Orders list (Active/Past tabs) and the Order Success confirmation
+screen to the new design's glass/shadow language, and fixes one real bug found
+along the way. **No ViewModel, API or navigation change** — same order data,
+same checkout/order-placement logic as before. **Order Detail (tapping into a
+specific order) and the cancel-order flow are explicitly out of scope** — a
+separate follow-up phase (G2), not built yet.
+
+### What shipped
+- **Orders list restyled** — order cards on the new shadow/colour tokens: order
+  ID, a status pill (e.g. "Cancelled", "Order Placed"), up to 3 item
+  thumbnails, price, and a "Track order ›" / "View details ›" link depending
+  on order state.
+  - **Bug fix — "+N" extra-items badge.** The badge that shows how many items
+    beyond the first 3 thumbnails an order has was counting only items that
+    *had* a product photo, so orders with 4+ items where some items lacked a
+    photo either undercounted the badge or made it disappear entirely. It now
+    counts off the order's **total item count**, not the subset with photos.
+  - **Bug fix — last card hidden behind the bottom nav.** The last order card
+    in a long list sat partially behind the floating bottom nav pill; the list
+    now has correct bottom spacing so the last card clears it.
+  - **Bug fix — empty state placement.** The "no orders yet" empty state (both
+    Active and Past tabs) wasn't clear of the bottom nav and wasn't properly
+    centred; it now sits centred in the visible area above the nav.
+- **Order Success screen** — the teal checkmark circle now uses the design's
+  exact shadow/gradient plus a subtle **pulsing glow** animation around it.
+  Still **no delivery-time estimate anywhere** on the screen — same app-wide
+  no-invented-ETA rule as every other phase.
+
+### Steps
+1. ✅ `./gradlew assembleDebug` and `./gradlew testDebugUnitTest` both pass.
+2. ✅ **Orders tab** — Active/Past toggle switches correctly. Cards show the
+   new shadow styling, order ID, status pill and thumbnails.
+3. ✅ **Order with 4+ items where some lack product photos** — the "+N" badge
+   shows the correct remaining count (total items − 3), not undercounted and
+   not missing. ❌ A missing badge or a count that ignores photo-less items is
+   the exact bug this phase fixed — regression.
+4. ✅ **Scroll to the last order in a long list** — the card is fully visible,
+   not hidden behind the bottom nav pill. ❌ A partially-obscured last card is
+   a regression.
+5. ✅ **Empty state** (reachable on a test account with no orders, on either
+   tab) — "no orders yet" is centred in the visible area, clear of the bottom
+   nav, and the screen doesn't scroll.
+6. ✅ **Place a real order** — Order Success shows the teal checkmark with a
+   soft pulsing glow, "Order placed", the order ID, and **no delivery-time
+   text anywhere** on the screen.
+7. ❌ **Order Detail (tap into a specific order) and cancel-order** — not part
+   of this phase. Don't report Order Detail's old layout or the cancel flow
+   against G1 — that's phase G2.
+
+### Known gaps (NOT done)
+- **"Browse the store" button on the empty orders screen** — present in the
+  design mock, not wired up this phase. Needs a small additional bit of
+  navigation wiring. Tracked as a follow-up, not a regression.
+- **Order Detail screen and the cancel-order flow** — deliberately excluded
+  from this phase; both still use the old, pre-revamp layout/behaviour. That's
+  phase G2.
+
+---
+
 ## Deploy
-Phases A, B, C1, C2, D, E1 and F are **all on `dev`** (`d2ad773`, `3afd791`,
-`5a77cf4`, `10c8a30`, `5a19e9c`, `215c635`, `2cd1bdd`, `bfd4d26`) — direct
-commits under the current git workflow, no PR/deploy step. Ships with the
-next Android build.
+Phases A, B, C1, C2, D, E1, F and G1 are **all on `dev`** (`d2ad773`,
+`3afd791`, `5a77cf4`, `10c8a30`, `5a19e9c`, `215c635`, `2cd1bdd`, `bfd4d26`,
+`d28b498`) — direct commits under the current git workflow, no PR/deploy step.
+Ships with the next Android build.
