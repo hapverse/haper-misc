@@ -521,7 +521,78 @@ same cart totals as before.
 
 ---
 
+## Phase D — Browse + discovery (2026-08-29, `dev@215c635`)
+
+Restyles the Categories, Aisle listing, Search and product-card screens to the
+new design's glass/shadow language, and fixes one real bug found along the
+way. **No ViewModel, API or navigation change** — same category/search data,
+same cart logic as before.
+
+### What shipped
+- **All Categories screen** (`AllCategoriesScreen.kt`) — restyled to the new
+  colors/shadows/spacing tokens. Stays a **single-column scrollable list** —
+  checked against the real design source and confirmed a grid is *not* the
+  intended layout here (Phase A's "Known gaps" note above, about a separate
+  all-categories screen not existing in the app's IA, is unrelated: this is
+  the existing Categories tab, restyled in place).
+- **Aisle listing screen** (`AisleListingScreen.kt`, the subcategory rail
+  inside a category) — subcategory filter chips and the "Under ₹50" filter
+  restyled with the new shadow/colour tokens. Selected state is now visually
+  distinct: **mint background, green border and green text**, versus a plain
+  white/hairline chip when unselected.
+- **Search screen** (`SearchScreen.kt`) — **a real bug was found and fixed**:
+  the search input box was clipping the placeholder text ("Search for milk,
+  atta, fruit…") vertically, cutting off the top/bottom of the letters. The
+  field was rebuilt and now renders the full placeholder correctly.
+- **Product cards** (`ProductCard.kt`, `ItemCard.kt` — shared by Home, Aisle
+  listing and Search) — visual token/shadow pass, plus a visible fix: the
+  in-cart quantity stepper ("− 1 +", shown once an item is in the cart) is now
+  a **pill/lozenge shape**, noticeably rounder than the plain "+" add button
+  shown on items not yet in the cart. The two controls are meant to look
+  different — this matches the design spec.
+
+### Steps
+1. ✅ `./gradlew assembleDebug` and `./gradlew testDebugUnitTest` both pass.
+2. ✅ **Categories tab** — open it. Confirm it's still a **single-column list**
+   (not a grid), with the new card styling (updated colours/shadows/spacing).
+   Tap into any category — it opens the aisle listing as before. ❌ If it's
+   rendered as a grid, that's a regression against the design source, not the
+   intended change.
+3. ✅ **Inside an aisle/category** — tap a subcategory filter chip: it turns
+   **mint background with a green border and green text**; unselected chips
+   stay plain. Tap "Under ₹50": same selected treatment. Tap it again to
+   clear it — it returns to the unselected look and the full list returns.
+4. ✅ **Search tab** — tap the search field. The placeholder "Search for milk,
+   atta, fruit…" must render **fully, top and bottom of every letter visible**
+   — no clipping. ❌ If the top or bottom of the text is cut off, this is the
+   exact bug this phase fixed; flag it as a regression, not a known gap.
+5. ✅ Type a query — results still return (data path unchanged). Tap a recent
+   search chip (if any are present from prior searches) — it re-runs that
+   search.
+6. ✅ **Search result rows still look old-style** — this is a **known gap**,
+   not a bug. Only the search field itself and the empty-state panel were
+   restyled this phase; the row layout (image well, name, weight, price,
+   add/stepper) still uses the pre-revamp styling. Do not report this as a
+   missed restyle — it's flagged for a later phase below.
+7. ✅ **Stepper roundness** — add an item to the cart from any product grid
+   (Home, Aisle listing, or Search results). Look at that same item's card
+   again: the "− 1 +" stepper control is now clearly **more rounded (pill
+   shape)** than the plain "+" add button shown on other, not-yet-added items
+   on the same screen. Compare the two side by side on one screen if possible
+   — the shape difference should be obvious, not subtle.
+8. ✅ **Cross-screen consistency** — repeat step 7 on Home and on Search
+   results, not just Aisle listing. All three surfaces share the same
+   `ProductCard`/`ItemCard`, so the stepper shape should look identical
+   everywhere an item is in the cart.
+
+### Known gaps (NOT done)
+- **Search result rows** — still the old, pre-revamp row styling. Only the
+  search field and empty states were restyled this phase. Flagged for a later
+  phase; don't confuse this with "search is fully done."
+
+---
+
 ## Deploy
-Phases A, B, C1, and C2 are **already on `dev`** (`d2ad773`, `3afd791`,
-`5a77cf4`, `10c8a30`, `5a19e9c`) — direct commits under the current git
-workflow, no PR/deploy step. Ships with the next Android build.
+Phases A, B, C1, C2, and D are **already on `dev`** (`d2ad773`, `3afd791`,
+`5a77cf4`, `10c8a30`, `5a19e9c`, `215c635`) — direct commits under the current
+git workflow, no PR/deploy step. Ships with the next Android build.
