@@ -1229,12 +1229,74 @@ as before.
 
 ---
 
+## Phase H2 — Wallet + Refer & Earn (2026-08-29, `dev@a7f5ff5`)
+
+Restyles the Wallet and Refer & Earn screens to the new design's glass/shadow
+language, and fixes **two real bugs** on Wallet found along the way. **No
+ViewModel, API or navigation change** — same balance/transaction data, same
+`refCode` from `GET /user/profile` as before.
+
+### What shipped
+- **Wallet screen** restyled — dark green balance card at the top, transaction
+  history grouped into a list below it. **No "Add money" feature** — by design
+  the wallet is credit/refund-only, there is no top-up flow anywhere in the
+  app, and none was added this phase.
+- **Bug fix — infinite spinner on a failed history load.** Loading more
+  transaction history (scrolling to the bottom of a long list) used to spin
+  forever with no way out if that request ever failed (e.g. a dropped
+  connection). It now shows a "Tap to retry" row instead of a stuck spinner.
+- **Bug fix — rare crash risk in the transaction list.** A new transaction
+  arriving while the list was mid-scroll could, in rare cases, crash the
+  screen. This was a rendering/list-diffing fix under the hood, not a visual
+  change — there is nothing new to look at, only nothing to see wrong.
+- **Refer & Earn screen** restyled — referral code in a dashed-border card,
+  a copy-to-clipboard button, a share button. **No referral-history/list
+  feature** — same as the Phase A/Known-gaps note above, there is still no
+  backend support for a list of who used your code, so none was built.
+
+### Steps
+1. ✅ `./gradlew assembleDebug` and `./gradlew testDebugUnitTest` both pass.
+2. ✅ **Wallet screen** — dark green balance card at the top shows the real
+   balance; the transaction history below it is grouped into a list with the
+   new styling. ❌ An "Add money" / top-up button anywhere on this screen is a
+   regression — none exists by design, don't expect one.
+3. ✅ **Scroll the transaction list to the bottom** to trigger "load more"
+   (only testable on a test account with **10+** transactions). Confirm more
+   history loads in without a stuck/endless spinner.
+4. ⚠️ **Retry on a failed load — needs a real network drop to trigger.** Could
+   not be exercised end-to-end this session (would need to kill connectivity
+   mid-scroll on a 10+-transaction account). Verified by code review only: a
+   failed "load more" should show a "Tap to retry" row instead of a spinner
+   that never resolves. ❌ A spinner that just spins forever with no retry
+   option is the exact bug this phase fixed — if you can reproduce a dropped
+   connection, this is the regression to watch for.
+5. ✅ **Scroll quickly through a long transaction list** — no crash, list
+   renders smoothly. (This step exists to cover the list-diffing fix in step
+   above; there's no visual difference to check, only stability.)
+6. ✅ **Refer & Earn** (Profile → Refer & Earn) — your real referral code
+   shows in a dashed-border card. Tap "Copy" — code is copied to the
+   clipboard and a confirmation (toast/snackbar) appears. Tap "Share" — the
+   Android share sheet opens with an invite message.
+7. ❌ **No referral history/list on this screen** — not a gap introduced this
+   phase, see Phase A's "Known gaps" above; don't report it here either.
+
+### Known gaps (NOT done)
+- **Orders screen has the same "infinite spinner on a failed load" issue**
+  the Wallet fix addressed — **not fixed in this phase**, flagged as a
+  separate follow-up. Do not report it against H2; it's a pre-existing,
+  known issue on a different screen.
+- **Retry-on-failure (step 4 above) was not verified live** — code review
+  only, no test account/connectivity setup available to force a failed
+  "load more" this session.
+
+---
+
 ## Deploy
-Phases A, B, C1, C2, D, E1, F, G1, G2, E2 and H1 are **all on `dev`**
+Phases A, B, C1, C2, D, E1, F, G1, G2, E2, H1 and H2 are **all on `dev`**
 (`d2ad773`, `3afd791`, `5a77cf4`, `10c8a30`, `5a19e9c`, `215c635`, `2cd1bdd`,
-`bfd4d26`, `d28b498`, `f3a1fb6`, `a461bc0`, `a4658c9`) — direct commits under
-the current git workflow, no PR/deploy step. Ships with the next Android
-build.
+`bfd4d26`, `d28b498`, `f3a1fb6`, `a461bc0`, `a4658c9`, `a7f5ff5`) — direct
+commits under the current git workflow, no PR/deploy step. Ships with the
+next Android build.
 
 (`b6123b4` "added code" also landed on `dev` around the same time, just before
 Phase G2 — that's a cart-formatting fix from a separate, concurrent session,
