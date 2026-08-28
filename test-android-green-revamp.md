@@ -322,7 +322,107 @@ after verification — the existing nav bar's layout already handles it correctl
 everywhere except the two `navigationBarsPadding()` removals above. No further
 padding changes were needed. Not a gap to revisit.
 
+## Phase C1 — Home screen restyle (2026-08-28, `dev@10c8a30`)
+
+Restyles four existing Home pieces (banner carousel, wallet/referral row, header,
+loading state) to the new design's glass/shadow language. **No new screens, no
+backend calls changed** — banners and wallet balance still come from the same
+data as before.
+
+### What shipped
+- **Banner carousel** — full-bleed card per page (the old 44dp side-peek is
+  gone), radius 24dp, a real drop shadow (`bannerShadow`), and a 1dp green ring
+  (`BannerWellRing`) drawn on top of the image, last, so the ring survives even
+  when the image is full-bleed. Pagination dots animate width 7dp → 20dp and
+  colour on the active dot over 250ms (`animateDpAsState` / `animateColorAsState`),
+  instead of jumping between fixed sizes.
+- **Wallet/referral row** (`WalletStrip`) — plain white `Surface` + flat shadow
+  replaced with a 150° white→mint glass fill (`glassRowShadow` + `GlassMintPale`)
+  and a 1dp white border, radius unchanged (21dp).
+- **Header** (`HomeHeroCard`) — the store-name pill, the alerts button, and the
+  search bar all moved from flat white/`shadow()` to the same glass-fill +
+  dedicated shadow-helper pattern (`storePillShadow`, `headerIconButtonShadow`,
+  `searchFieldShadow`). The alerts bell icon tint changed from `Color.White` to
+  `GreenDeep` (`#20654E`). **No ETA/time text was added** — the design mock's
+  eyebrow line is `"DELIVERING IN {storeEta}"`, but the app has no ETA field, so
+  that slot keeps the design's font size/position and shows the delivery address
+  instead (see the source comment at `HomeHeroCard`).
+- **Loading state** — the old `homeVM.isLoading` branch was a full-screen
+  40%-black scrim + centered dialog (spinner, "Finding your nearest store",
+  syncing copy) that sat **on top of** the whole screen and ate all touch input.
+  It's replaced by `HaperProductCardSkeleton` × 6 (`HAPER_SKELETON_CARD_COUNT`)
+  laid out inline in the product grid — same card radius/padding/image-well/text-row
+  geometry as a real `ProductCard`, so nothing reflows when real cards swap in.
+  New condition: `homeVM.isLoading && homeVM.featuredItems.isEmpty()` — this is
+  the fix for the address-change bug below. When no store is resolved yet, a
+  "Finding your nearest store…" caption still shows above the skeleton grid.
+
+### Steps
+1. ✅ `./gradlew assembleDebug` passes.
+2. ✅ **Cold start** — kill and relaunch the app. Before the store resolves, Home
+   shows a shimmering **skeleton grid** (6 card-shaped placeholders, "Finding
+   your nearest store…" caption above them) — **not** a spinner dialog and
+   **not** a darkened/blocked screen. You can still scroll/tap the header,
+   banners area, etc. while it loads.
+3. ✅ When real data lands, the skeletons are replaced by actual product cards
+   with **no visible layout jump** — card size/spacing should look identical
+   before and after the swap.
+4. ✅ **Regression check — change delivery address from Home** (switch store via
+   the header pill, or change the saved address so a different store resolves):
+   the skeleton grid **reappears** while the new store's data loads, then swaps
+   to the new store's real cards. ❌ **This is the specific bug that was found
+   and fixed during review** — previously, changing address cleared only
+   `featuredItems`, but the loading condition was gated on category data too, so
+   the *old* store's category tiles stayed on screen, stale and still tappable,
+   with no loading feedback at all. If you see stale content with no skeleton
+   during a store switch, this regressed.
+5. ✅ **Banner carousel** — swipe through all banners. Confirm:
+   - Full-width single-card-per-page (no sliver of the next banner peeking in).
+   - Each banner has a visible 1dp **green edge ring** on top of the image.
+   - A soft drop shadow under the card.
+   - Pagination dots: the active dot is a wider rounded-rect (~20dp), inactive
+     dots are small circles (~7dp); switching pages animates the width/colour
+     change smoothly, it doesn't snap.
+   - **Tapping a banner** does the right thing depending on how it's configured
+     in the backend: `category` type opens that category, `item` type opens
+     that item's detail screen, `url` type opens the system browser, and
+     `internal-url` type opens an in-app Custom Tab (not the system browser).
+     ❌ If a banner does nothing on tap, check its `actionType`/`actionValue` in
+     the backend banner config first — this is a data issue, not new client logic.
+6. ✅ **Header — no delivery-time text, ever.** Check all three states: before
+   any store is resolved (cold start / "Finding your nearest store…"), after a
+   store resolves normally, and when location permission is needed/denied. In
+   none of these should you see a time estimate like "10 minutes" or "10 mins"
+   anywhere in the header. This is a deliberate product rule (the app never
+   promises a delivery time it can't guarantee) — flag it as a bug, not a
+   missing feature, if a time ever appears.
+7. ✅ **Alerts bell** (top-right of header) is **dark green**, not white. ❌ If
+   it's still white, the icon tint didn't pick up `GreenDeep`.
+8. ✅ **Wallet row tap** — tapping the "Haper Wallet · ₹{balance}" row navigates
+   to the Wallet screen (unchanged behavior, just the new glass-card look).
+9. ✅ Store-name pill and search bar in the header both show the glass
+   (white→pale-mint gradient) look with a thin white border, matching the
+   wallet row and banner treatment — not a flat white fill.
+
+### Edge cases
+- **The address-change skeleton bug (caught in review, not shipped broken)**:
+  the loading condition was originally going to key off whichever data field
+  emptied first per section (categories vs. featured items), which meant an
+  address change — which only clears `featuredItems`, not `categories` — would
+  leave old category tiles on screen with no loading indicator. The fix scopes
+  the skeleton to `isLoading && featuredItems.isEmpty()` specifically so it
+  fires on every store re-resolve, cold start or mid-session. Test step 4 above
+  is the direct regression check for this; don't skip it.
+- The skeleton's TalkBack label ("Loading products") is only announced once
+  per batch — the first placeholder card carries it, the other five are
+  silent — so a screen reader doesn't say "loading" six times in a row.
+- Banner `HorizontalPager` no longer has trailing `contentPadding`, so the old
+  "next banner peeks in on the right" affordance is gone by design — the dots
+  now carry the "there's more" signal instead.
+
+---
+
 ## Deploy
-Both phases are **already on `dev`** (`d2ad773`, `3afd791`, `5a77cf4`) — direct
-commits under the current git workflow, no PR/deploy step. Ships with the next
-Android build.
+Phases A, B, and C1 are **already on `dev`** (`d2ad773`, `3afd791`, `5a77cf4`,
+`10c8a30`) — direct commits under the current git workflow, no PR/deploy step.
+Ships with the next Android build.
