@@ -422,7 +422,106 @@ data as before.
 
 ---
 
+## Phase C2 — Store picker + floating cart bar (2026-08-28, `dev@5a19e9c`)
+
+Two independent presentation-only changes. **No ViewModel, data-model, API or
+navigation change** — the same store list, the same `selectStore()` call, the
+same cart totals as before.
+
+### What shipped
+- **Store picker is now a bottom sheet, not a dropdown menu.** Tapping the store
+  name in the Home header (only possible when more than one store serves you)
+  opens a "Choose a store" sheet from the bottom of the screen instead of a small
+  grey menu anchored to the header. Each store is a white card with a shop-front
+  icon tile, the store name, its address underneath, and — on the store you're
+  using right now — a small teal gradient tick on the right. Picking a store does
+  exactly what the old menu did.
+  - **Caught in review before this shipped**: the first version of the sheet
+    laid the store list out as a plain `Column`, which doesn't scroll — with 7+
+    stores the rows past the visible sheet height would have been unreachable,
+    with no indication more existed. Fixed by wrapping the list in its own
+    scrollable `Column` (`weight(1f, fill = false)` + `verticalScroll`) inside
+    the sheet, so the title/subtitle stay pinned and only the store list scrolls.
+- **Floating "View cart" bar restyled.** Same bar, new look: dark-green 120°
+  gradient (`#1E3A30 → #2F6250`), radius 22dp, soft green shadow, and the amount
+  on the right in mint (`#8FE8D9`). All colours/radii now come from theme tokens
+  — the file previously had none.
+- **Cart-bar subtitle carries no delivery time.** The design's line is
+  `{eta} · {storeName}`; the app shows the **store name only** (and
+  "Ready to check out" when no store name is known), the same override the Phase
+  C1 header used.
+- Cart bar now announces itself to TalkBack as one control
+  ("View cart, 3 items, total ₹540, <store>") instead of four separate texts.
+
+### Steps
+1. ✅ `./gradlew assembleDebug` and `./gradlew testDebugUnitTest` pass (383 tests,
+   0 failures).
+2. ✅ **Open the store sheet** — on Home, tap the store name in the green header.
+   A sheet slides up from the bottom titled "Choose a store" with the subtitle
+   "Stock and prices vary by store." ❌ If a grey dropdown appears anchored under
+   the header instead, the old menu is still in place.
+   - Note: the store name is only tappable when **two or more** stores serve your
+     address. With one store, tapping still opens the address screen (unchanged).
+     This whole section is only testable end-to-end on a test account whose
+     delivery address is served by 2+ stores — check the account's serviceable
+     stores first if the pill doesn't respond to a tap.
+3. ✅ **Current store is marked** — the store you're on has a teal circular tick
+   on the right, a green outline and a slightly deeper mint icon tile. The others
+   have a pale hairline outline and no tick.
+4. ✅ **Switching works** — tap another store. The sheet closes, the header store
+   name changes, and Home reloads that store's categories/products (the skeleton
+   grid from Phase C1 should appear while it loads).
+5. ✅ **Dismissing does nothing** — open the sheet, then swipe it down / tap the
+   dark area above it / press Back. The sheet closes and the store is unchanged.
+6. ✅ **Rotate with the sheet open** — the sheet stays open after rotation.
+6b. ✅ **Long list scrolls** (only testable with a test account serving **7+**
+   stores — this is the specific bug fixed during review, see above): open the
+   sheet, and confirm the "Choose a store" title/subtitle stay fixed at the top
+   while the store list underneath scrolls. Scroll to the very last row and
+   confirm it's fully visible and tappable, not cut off by the sheet's bottom
+   edge or the system nav bar. ❌ If the sheet doesn't scroll and stores below
+   the fold are unreachable, this is the exact regression from the pre-review
+   version.
+6c. ✅ **Kill the app with the sheet open** — enable Android Developer Options →
+   "Don't keep activities", open the store sheet, then background the app (Home
+   button) so the OS destroys the process, and reopen it from the app switcher.
+   The app should resume showing Home normally, with the sheet either **closed**
+   or, if it does restore mid-restart, showing the same store list correctly —
+   not a blank/frozen sheet.
+7. ✅ **Cart bar look** — add an item to the cart, then look at the bar floating
+   above the bottom nav on Home. Dark-green gradient left-to-right, rounded 22dp
+   corners, a count pill on the left, "View cart" in white with the **store name**
+   above it, and "₹<amount> →" on the right in **mint**, not white.
+8. ✅ **No delivery time on the cart bar** — the small line above "View cart"
+   must never read something like "10 mins · Chapra Store". Store name only.
+   Flag any time estimate as a bug, not a missing feature.
+9. ✅ **Where the cart bar shows** (unchanged from before): Home, Categories,
+   Search and an Aisle/category listing. It should **not** float on Orders,
+   Profile, Cart or Checkout. It also still appears above the add-to-cart bar on
+   the **item detail** screen — that is pre-existing behaviour, not new.
+10. ✅ **Regression — tapping the cart bar** opens the Cart screen from every
+    screen that shows it.
+
+### Edge cases
+- **No CLOSED chip was built.** The design shows a red "CLOSED" badge on stores
+  that aren't currently open. Android has **no open/closed information per
+  store** — `StoreModel` only carries id/name/address/mapUrl, and nothing else on
+  the client knows a store's hours. Rather than invent it, the chip is left out.
+  It needs a backend field on the nearest-store response first. ❌ Don't file
+  "CLOSED chip missing" as a UI bug.
+- The sheet's subtitle is deliberately "Stock and **prices** vary by store", not
+  the design's "Stock and **delivery time** vary by store" — the app never quotes
+  a delivery time anywhere, so promising one in the sheet copy would break the
+  same rule as step 8.
+- The per-store row border and icon-tint in the design mock are bound to
+  variables the prototype never defines; selection drives both here (brand green
+  + deeper mint on the active store).
+- Store cards are ~64dp tall, above the 48dp minimum touch target, and each row
+  reads as one TalkBack item.
+
+---
+
 ## Deploy
-Phases A, B, and C1 are **already on `dev`** (`d2ad773`, `3afd791`, `5a77cf4`,
-`10c8a30`) — direct commits under the current git workflow, no PR/deploy step.
-Ships with the next Android build.
+Phases A, B, C1, and C2 are **already on `dev`** (`d2ad773`, `3afd791`,
+`5a77cf4`, `10c8a30`, `5a19e9c`) — direct commits under the current git
+workflow, no PR/deploy step. Ships with the next Android build.
