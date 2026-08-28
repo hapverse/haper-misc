@@ -215,5 +215,114 @@ All wired to real data — nothing is a static mock-up.
   deleted (branch is `revamp-no-delete`).
 - Dark theme unchanged — `HaperTheme` remains light-only, as before.
 
+---
+
+## Phase A — theme foundation (2026-08-28, `dev@d2ad773`)
+
+Purely additive. **No screen or behavior changed** — this is groundwork the later
+phases build on. Nothing below needs a visual check; it's here so a tester knows
+why the diff exists and doesn't go looking for a UI change that isn't there.
+
+### What shipped
+- `ui/theme/Shadows.kt` — 5 new Compose Modifier helpers (`cardShadow`,
+  `headerShadow`, `primaryButtonShadow`, `navShadow`, `fabShadow`) porting the
+  design's CSS box-shadows 1:1 via Compose 1.9's `dropShadow`/`innerShadow`.
+- `ui/theme/Dimens.kt` — new dp constants.
+- `ui/theme/Color.kt` — ~40 new named color tokens matching the design spec.
+- `Theme.kt`'s `HaperElevation` — 3 old shadow helpers **deprecated, not removed**
+  (still compile, still work) in favour of the new ones above.
+- Same day, `dev@3afd791`: Quicksand display weights swapped from an approximated
+  variable-font interpolation to the real static Google-served weight files
+  (500/600/700) — matching how Poppins already loaded.
+
+### Steps
+1. ✅ `./gradlew assembleDebug` passes — the new Shadows/Dimens/Color files
+   compile clean and nothing that referenced the deprecated `HaperElevation`
+   helpers broke.
+2. ✅ Launch the app and spot-check a few Quicksand headings (Home store name,
+   Login/OTP headlines, Item detail price) — glyphs should look identical to
+   before this pass, just sourced from the correct static weight file instead of
+   an interpolated one. There's no "before" build to diff against on-device;
+   this is a source-fidelity fix, not a visual redesign.
+3. ❌ Nothing else to check — no screen calls the new shadow helpers or color
+   tokens yet. If a screen looks different after this commit, that's a
+   regression, not the intended effect of Phase A.
+
+### Edge cases
+- The 3 deprecated `HaperElevation` shadow helpers are still callable
+  (deprecation warning only) — existing call sites keep working until a later
+  phase migrates them to the new `Shadows.kt` helpers one screen at a time.
+- Deprecated ≠ removed: don't expect a compile error from old call sites.
+
+---
+
+## Phase B — bottom nav reach (2026-08-28, `dev@5a77cf4`)
+
+The bottom nav pill (Home/Categories/Orders/Profile + centre cart FAB) previously
+rendered on 3 screens (home, search, aisle). It now rides along on every screen of
+the main graph by **deny-list**, not allow-list: hidden only on
+`splash`/`login`/`otp`/`maintenance`/`forceUpdate` (`NoBottomNavRoutes` in
+`MainActivity.kt`). The active tab is now derived from the current route
+(`navTabForRoute`), not just the user's last tap.
+
+### Steps
+1. ✅ `./gradlew assembleDebug` and `./gradlew testDebugUnitTest` both pass —
+   covers the new `NavTabForRouteTest.kt`.
+2. ✅ **Nav bar absent** only on: splash, login, OTP, maintenance wall,
+   force-update. ❌ If it's missing anywhere else (cart, checkout, order detail,
+   profile, wallet, settings, alerts, notifications, referrals, FAQ, about,
+   saved/add/edit address, edit profile, delete-account, support, webview), that's
+   a regression — the design wants it present on all of these now.
+3. ✅ **Home / Search / any `aisle/...` screen** — Home tab highlighted on
+   home/search, Categories tab on aisle. (Unchanged from before this phase.)
+4. ✅ **Order detail** (`orderDetail/...`) — **Orders** tab highlighted, even
+   though you got there from Home or a push notification.
+5. ✅ **Wallet, Refer & earn, Settings, Alerts, Notifications, Edit profile,
+   Delete account, Support, FAQ, About, in-app webview (Terms/Privacy)** — all
+   highlight the **Profile** tab.
+6. ✅ **Cart, Checkout, Order success** and anything else not covered above —
+   **Home** tab highlighted (the fallback in `navTabForRoute`).
+7. ✅ On the tab host itself (`main` route) tapping a tab still works exactly as
+   before — the user's own tap wins, route-based highlighting doesn't override it.
+8. ✅ **Cart FAB from Checkout** — tap it, land on the existing Cart screen (not a
+   second Cart pushed on top of Checkout). Press Back from there — you should
+   **not** loop back into Checkout's cart-adjacent state; back-stack should read
+   as if you navigated to Cart normally.
+9. ✅ **Cart FAB from Order success** (`orderSuccess/...`) — tap it, go to Cart.
+   Press Back from Cart — you should land on **Home** (`main`), never back on the
+   "order placed" success screen. This was the specific loop the fix targets:
+   success screens must stay un-re-enterable by Back.
+10. ✅ **Bottom padding cleanup** — Checkout's bottom action bar and Edit
+    profile's "Save changes" button still sit correctly above the nav bar /
+    system nav, now relying on the nav bar's own layout instead of a
+    `navigationBarsPadding()` call removed from each screen. ❌ If either button
+    is now hidden behind the system nav bar or the app's bottom nav pill, that's
+    a regression from this cleanup — flag it, don't just re-add the modifier.
+
+### Edge cases
+- **Deliberate, not a bug**: tapping the cart FAB while mid-way through filling
+  out a **new** delivery address inside Checkout discards that in-progress
+  address form. Same behavior as backing out of any half-filled form elsewhere
+  in the app. Test it explicitly so it doesn't get "fixed" later: open Checkout →
+  Add new address → type a few fields but don't save → tap the cart FAB → the
+  address form is gone, cart opens normally.
+- Routes with no design counterpart (`deleteAccount`, `support`, `faq`, `about`,
+  `webview`) follow their entry point and land on the **Profile** tab — this is
+  a judgment call baked into `ProfileGroupRoutes`, not something the design spec
+  states explicitly.
+- `NoBottomNavRoutes` lists `splash`/`login`/`otp`/`maintenance`/`forceUpdate` as
+  a **guard for future routes**, even though none of those five are actual
+  `NavHost` routes today (they render above the NavHost or live in a separate
+  auth graph). Don't be surprised the set looks unused if you grep the nav graph
+  — it's intentionally defensive.
+
+### Dropped from this pass
+A planned "scroll padding" sweep across screens was **confirmed unnecessary**
+after verification — the existing nav bar's layout already handles it correctly
+everywhere except the two `navigationBarsPadding()` removals above. No further
+padding changes were needed. Not a gap to revisit.
+
 ## Deploy
-Ships with the next Android build. No PR/deploy dependency.
+Both phases are **already on `dev`** (`d2ad773`, `3afd791`, `5a77cf4`) — direct
+commits under the current git workflow, no PR/deploy step. Ships with the next
+Android build.
