@@ -592,7 +592,107 @@ same cart logic as before.
 
 ---
 
+## Phase E1 — Product Detail + Coupons (2026-08-29, `dev@2cd1bdd`)
+
+Restyles the Item Detail and Offers (coupons) screens to the new design's
+glass/shadow language, and fixes **two real bugs** found along the way.
+**No ViewModel, API or navigation change** — same item data, same
+add-to-cart/coupon-apply logic as before. **Cart screen is explicitly out of
+scope** for this phase — it has separate, unrelated work in progress from
+another session and was deliberately left untouched; don't test Cart changes
+against this section.
+
+### What shipped
+- **Bug fix — "Total" label was stacking vertically.** The price block beside
+  the "Add to Cart" button had `weight(1f)` while the button itself was an
+  unweighted child of the same `Row`. `HaperPrimaryButton` lays its content out
+  in a `fillMaxWidth()` inner `Row`, so as an unweighted sibling it got measured
+  against the *whole* bar width and claimed all of it — leaving the weighted
+  price column 0dp wide, which wrapped "Total" and the price to one
+  character/digit per line, partly hidden behind the button. Fixed by making
+  the price column intrinsic-width and giving the CTA the weight instead, so
+  neither can starve the other.
+- **Bug fix — hero image showed an unwanted white box behind non-white
+  products.** The product photo's multiply-blend (used so the photo reads
+  correctly against the screen's tinted background) had its offscreen
+  compositing layer on the *image itself*. That meant the blend's backdrop was
+  the image's own empty layer, not the real screen surface behind it — so the
+  photo's white JPEG ground survived as a visible white rectangle instead of
+  disappearing into the background. Fixed by moving the `CompositingStrategy
+  .Offscreen` layer to the `Box` that contains the hero image, and painting the
+  real surface colour (`SurfaceApp`) inside that same layer before the image is
+  drawn, so the multiply blend has the right backdrop.
+- **Item Detail — rest of the screen restyled**: no app bar; back/cart buttons
+  now float over the hero image itself (which scrolls with the content,
+  per the design's `.dc.html:426-433`). Category/subcategory label, product
+  name in Quicksand, veg/non-veg mark (logic unchanged — still only shown when
+  the item actually carries diet-type data), stock label, price row with
+  "Save ₹N" and "% OFF" badges, unit-price line, and the quantity stepper (cap
+  at 6, per README §3.11/§4 — unchanged cap logic).
+- **Coupons/Offers screen restyled**: coupon-code entry field and "Apply"
+  button on the new glass token set, and each coupon card's decorative
+  circular **notch** cut into its left/right edges. The notch itself already
+  existed (`BlendMode.Clear` punching a hole via an offscreen compositing
+  layer) — this pass added the **1px hairline ring** around each notch
+  (`.dc.html:633`) that the original version didn't draw, plus moved the
+  notch's diameter to a shared `HaperDimens` token.
+- New `Dimens.kt`/`Shadows.kt` tokens: `itemHeroHeight`, `couponNotchDiameter`,
+  `stickyBarShadow`, `stickyStepperShadow`, `infoTileShadow`, `glassRowShadow`
+  (shared file also touched by Phase C1/C2 — additive only, no existing token
+  changed value).
+
+### Steps
+1. ✅ `./gradlew assembleDebug` and `./gradlew testDebugUnitTest` both pass.
+2. ✅ **Open any product's detail page** — near the "Add to Cart" button, the
+   "Total" label and the price render as **normal horizontal text**, fully
+   visible, not stacked into single letters/digits and not cut off behind the
+   button. ❌ If you see vertically-stacked characters or the price hidden
+   under the CTA, this is the exact bug this phase fixed — regression.
+3. ✅ **Product photo** — confirm it displays with no odd white rectangle
+   behind it, on **both** a white-background product photo and a non-white one
+   (a coloured pouch/bottle is the best test — the bug only showed on
+   non-white photos). ❌ A visible white box behind the photo edges is the
+   second bug this phase fixed — regression.
+4. ✅ **Back/cart buttons** float directly over the hero image (no app bar
+   above it), and the hero scrolls with the rest of the content.
+5. ✅ Category/subcategory label, product name, stock label, price with
+   "Save ₹N" / "% OFF" badges, and unit-price line all show the new styling.
+6. ✅ **Veg/non-veg mark** — only appears when the item actually has diet-type
+   data (unchanged logic, just restyled). ❌ Don't expect it on items with no
+   diet-type field — that's correct, not a gap.
+7. ✅ **Add to cart from this screen** — tap "Add to Cart", confirm the
+   quantity stepper appears and works (+ / −), and caps at **6** — the "+"
+   button disables past 6.
+8. ✅ **Go to Coupons/Offers** (from Cart) — the code entry field and "Apply"
+   button show the new glass styling.
+9. ✅ **Coupon card notch** — each card has a small circular notch cut into
+   both its left and right edges, each with a thin **1px ring outline**
+   (`BorderHairline`) around the cutout. ❌ A notch with no visible ring, or no
+   notch at all, is a regression against this pass.
+10. ✅ **Apply a real coupon code** — confirm it still applies correctly
+    (discount reflects, success/error messaging is the same as before). This
+    pass is visual only; functionality is unchanged.
+11. ❌ **Cart screen** — not part of this phase. If you spot something odd on
+    Cart itself, don't report it against E1 — it belongs to the separate,
+    in-progress session mentioned above.
+
+### Edge cases
+- Both bugs were pre-existing (not introduced by an earlier revamp phase) —
+  they predate this restyle pass and were caught while touching this screen,
+  not caused by it.
+- The hero's multiply-blend fix only works because the offscreen layer and the
+  `SurfaceApp` background are painted on the **same** `Box` — if the layer
+  modifier and the background colour ever get split across different
+  composables again, the white-box bug can come back silently (it won't fail a
+  build or test, only look wrong on device).
+- The coupon notch's hole-punch (`BlendMode.Clear`) still needs
+  `CompositingStrategy.Offscreen` on the card's own `Box`, same pattern as the
+  hero image fix — the ring is drawn as a second pass after the hole so it
+  isn't erased by the same clear.
+
+---
+
 ## Deploy
-Phases A, B, C1, C2, and D are **already on `dev`** (`d2ad773`, `3afd791`,
-`5a77cf4`, `10c8a30`, `5a19e9c`, `215c635`) — direct commits under the current
-git workflow, no PR/deploy step. Ships with the next Android build.
+Phases A, B, C1, C2, D, and E1 are **already on `dev`** (`d2ad773`, `3afd791`,
+`5a77cf4`, `10c8a30`, `5a19e9c`, `215c635`, `2cd1bdd`) — direct commits under
+the current git workflow, no PR/deploy step. Ships with the next Android build.
