@@ -1581,6 +1581,37 @@ Follow-up to §11 F, from a code review of that same build. Files:
 
 ---
 
+### ✅ F3. Android — Offers screen typed-entry-row fixes (built 2026-08-28)
+
+Second-round code review of the same Offers screen, on the on-screen **typed code entry row**
+(the field at the top of Offers, separate from the per-card Apply buttons). Files:
+`app/src/main/java/com/bheldi/ui/screens/offers/OffersScreen.kt`,
+`app/src/main/java/com/bheldi/ui/screens/cart/CartViewModel.kt`.
+
+1. **Typed-code success now gives feedback:** on Offers, type a valid, currently-unlisted coupon code
+   into the entry row (one not shown as a card below) and tap **APPLY**. **Expect:** you land on
+   **Cart** with the coupon applied — same landing behaviour as tapping Apply on a card — instead of
+   the input silently clearing with no navigation.
+2. **Typed-code error still displays correctly:** type a bad code (e.g. `DOESNOTEXIST`) into the entry
+   row and tap **APPLY**. **Expect:** a red error message appears **fully readable** below the field
+   (not clipped/squeezed) — the field grows to fit the error text.
+3. **Notch is now a real cutout:** open Offers with at least one coupon card showing. **Expect:** each
+   card has two small semicircular notches cut into its left/right edges (a "ticket" look) that show
+   the **screen background showing through**, not a same-colour circle sitting on top — look closely at
+   the card's shadow near the notch: the shadow is also interrupted there, confirming it's a real
+   cutout and not an overlay.
+4. **Typed-apply spinner has a TalkBack label:** with TalkBack on, tap APPLY on the entry row while a
+   request is in flight. **Expect:** TalkBack announces "Applying coupon" (not silence) while the
+   spinner shows, and "Apply coupon" when idle.
+5. **Typed-apply in flight disables card buttons too:** type a valid code, tap APPLY, and *before* it
+   resolves, try tapping Apply on one of the coupon cards below. **Expect:** the card's Apply button is
+   disabled (not tappable) while the typed request is still in flight — no flash-then-vanish spinner on
+   the card.
+
+`./gradlew assembleDebug` passes with no new warnings.
+
+---
+
 ### ✅ G. Phase 3 — Offers screen on iOS (built 2026-08-27)
 
 Everything in section F applies to iOS unchanged (same three card states, same copy, same
