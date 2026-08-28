@@ -1131,11 +1131,110 @@ pass. The 6-per-item cap is still enforced by the same code; only the way the
 
 ---
 
+## Phase H1 — Profile + Edit/Delete/Restore Account (2026-08-29, `dev@a4658c9`)
+
+Restyles the Profile, Edit Profile, Delete Account and Restore Account screens
+to the new design's glass/shadow language, and fixes one real navigation bug
+and two small OTP-robustness issues found along the way. **No ViewModel, API
+or navigation-graph change** — same profile data, same delete/restore logic
+as before.
+
+### What shipped
+- **Profile screen** (`ProfileScreen.kt`) restyled — avatar, name, phone,
+  wallet-balance card, referral-code card, the menu rows (Offers, Addresses,
+  Notifications, Refer & Earn, Settings, Support), and Log out.
+  - **Bug fix — "Edit" only worked if you hit the button exactly.** The
+    identity row's edit action lived on a small "Edit" chip only; the mock
+    (`Haper Green App.dc.html:1124-1127`) puts the tap target on the **whole
+    name/photo row**. The row now carries `clickable(onClickLabel = "Edit
+    profile", onClick = onEditProfile)`; the "Edit" chip is now a static,
+    non-clickable visual label — tapping anywhere on the avatar/name area
+    opens Edit Profile.
+  - **Bug fix — phone + email were squeezed onto one line and getting cut
+    off.** The contact line under the name showed phone and email together.
+    It now shows **phone only** (`+91 <number>`) — email already has its own
+    read-only row on the Edit Profile screen, so nothing is lost.
+  - Debug-only environment switcher (`BuildConfig.DEBUG` block, dev-team use
+    only, never shown in a release build) restyled to be the **plainest,
+    quietest row on the screen** — still functional, just visually
+    de-emphasized so it doesn't compete with real menu items.
+- **Edit Profile screen** (`EditProfileScreen.kt`) restyled — name field,
+  locked email/phone rows, referral-code entry, delete-account link.
+- **Delete Account screen** (`DeleteAccountScreen.kt`) restyled — warning
+  copy (permanent deletion, wallet forfeiture, pending orders block deletion)
+  and the OTP confirmation step.
+  - **Fix — OTP field now locks while a request is in flight.** The 6-digit
+    OTP input is `enabled = !deleteVM.isLoading`; previously it stayed
+    editable during the network call.
+  - **Fix — OTP field auto-focuses when the step appears.** Stage 2 (reason +
+    OTP) renders in place, no navigation — a new `LaunchedEffect
+    (deleteVM.otpStageReached)` calls `FocusRequester.requestFocus()` the
+    moment that stage flips in, so the keyboard is already up and the first
+    box is ready to type into.
+- **Restore Account screen** (`RestoreAccountScreen.kt`) restyled — for
+  accounts inside their 30-day grace period after deletion.
+- Shared `HaperButton` component updated (loading/enabled split, matching the
+  pattern used by the other CTAs across the revamp).
+
+### Steps
+1. ✅ `./gradlew assembleDebug` and `./gradlew testDebugUnitTest` both pass.
+2. ✅ **Profile screen — tap anywhere on the name/photo area** (not just the
+   "Edit" chip — try the avatar, the name text, the empty space around them)
+   — Edit Profile opens every time. ❌ If only the small "Edit" chip responds,
+   this is the exact bug this phase fixed — regression.
+3. ✅ **Contact line under the name** shows the phone number only
+   (`+91 XXXXXXXXXX`), fully visible, not cut off, and **no email** on this
+   line. ❌ Phone+email squeezed together or clipped is the second bug this
+   phase fixed — regression.
+4. ✅ **Edit Profile** — name field is editable, email and phone rows are
+   read-only (matching what's under the account) and display the same
+   values as before the restyle, referral code entry works, and "Delete my
+   account" link is present.
+5. ✅ **Delete Account with a test account that has pending orders** — the
+   pending-orders warning shows with the real count and blocks progress past
+   that step. This is **existing, unchanged behaviour** being re-confirmed
+   under the new styling, not new risk — flag it only if it stops blocking.
+6. ⚠️ **Needs testing on a clean account (no pending orders) — Delete
+   Account OTP step.** Could not be exercised end-to-end this session; every
+   test account available had pending orders blocking the flow before OTP is
+   reached. Verified by code review only:
+   - OTP field should be **disabled/locked** the moment you tap the send-OTP
+     CTA (while `deleteVM.isLoading` is true) and re-enable if the request
+     fails.
+   - The OTP field should **auto-focus and bring up the keyboard** the
+     instant the OTP step appears, no extra tap needed.
+   Run this on a real device with a genuinely clean test account before
+   trusting it fully.
+7. ✅ **Restore Account** (reachable within 30 days of deleting a test
+   account) — restyled copy and CTA, "Restore my account" still restores the
+   account and returns you to a normal signed-in state.
+8. ✅ **Developer debug switcher** (Profile screen, **debug builds only** —
+   confirm it's absent entirely on a release build) — still lets you switch
+   environments, but now renders as a subdued, de-emphasized row rather than
+   standing out among the real menu items.
+
+### Edge cases
+- The "Edit" chip is now purely decorative — don't expect a ripple/press
+  state on the chip itself; the ripple should be on the whole row.
+- The pending-orders block is unrelated to this phase's OTP fixes — it was
+  already correct before this restyle and is only re-listed here because
+  it's the reason the OTP step above couldn't be verified live.
+- Stage 2 of Delete Account (reason + OTP) renders **in place** on the same
+  screen, not as a separate navigation destination — the auto-focus fix
+  relies on that (`LaunchedEffect` keyed off a state flip, not `onCreate`).
+
+### Known gaps (NOT done)
+- **Delete Account OTP step has no live end-to-end pass** — see step 6 above.
+  This is a test-coverage gap, not a known bug; don't confuse the two.
+
+---
+
 ## Deploy
-Phases A, B, C1, C2, D, E1, F, G1, G2 and E2 are **all on `dev`** (`d2ad773`,
-`3afd791`, `5a77cf4`, `10c8a30`, `5a19e9c`, `215c635`, `2cd1bdd`, `bfd4d26`,
-`d28b498`, `f3a1fb6`, `a461bc0`) — direct commits under the current git
-workflow, no PR/deploy step. Ships with the next Android build.
+Phases A, B, C1, C2, D, E1, F, G1, G2, E2 and H1 are **all on `dev`**
+(`d2ad773`, `3afd791`, `5a77cf4`, `10c8a30`, `5a19e9c`, `215c635`, `2cd1bdd`,
+`bfd4d26`, `d28b498`, `f3a1fb6`, `a461bc0`, `a4658c9`) — direct commits under
+the current git workflow, no PR/deploy step. Ships with the next Android
+build.
 
 (`b6123b4` "added code" also landed on `dev` around the same time, just before
 Phase G2 — that's a cart-formatting fix from a separate, concurrent session,
