@@ -1013,12 +1013,130 @@ Neither rule was touched — only their paint.
 
 ---
 
+## Phase E2 — Cart (2026-08-29, `dev@a461bc0`)
+
+The last piece of Phase E. Cart was bundled with Product Detail and Coupons in
+the plan; those two shipped as E1, the cart screen waited because a separate
+session was fixing money rounding on the same file (`b6123b4`). That fix is on
+`dev` now, so this phase restyles on top of it.
+
+**Nothing about money or the quantity cap changed.** The rounding helper the
+other session added (`formatRupeesRounded`) is untouched — every price on the
+screen is produced by the exact same call as before, and its 6 unit tests still
+pass. The 6-per-item cap is still enforced by the same code; only the way the
+"+" button *looks* when you hit the cap was restyled.
+
+### What shipped
+- **Header** — the design's back chip + "Your cart" with a quiet "4 items" line
+  under it, over a hairline. (The mock's second line also says "… · 12 min from
+  Haper Mart"; the ETA half is deliberately left out — the app never invents a
+  delivery time.)
+- **One card for the whole list.** Every cart line now sits inside a single
+  glass card, separated by hairlines, instead of four separate floating cards.
+  Each line: 56dp product tile, name, pack size, struck MRP + green price, and
+  the teal quantity stepper on the right.
+- **"+ Add more items"** row closes the card and takes you back to shopping —
+  straight from the mock.
+- **Coupons not showing up was investigated this session and is not an app
+  bug.** Coupons default to hidden until an admin explicitly makes them
+  visible in admin/backend config — confirmed by live-testing that the app
+  correctly fetches and renders coupons once one is made visible. If a coupon
+  "isn't showing" again, check its visibility flag in admin first.
+- **Free-delivery strip** moved above the list (it used to sit under it) and is
+  now the design's mint strip with a delivery-truck icon. The "you still need
+  ₹X more" version keeps its amber colours.
+- **Coupon row** — instead of a code box sitting in the cart, there's now a
+  single "Apply a coupon ›" row that opens the Coupons & offers screen, which
+  already has the code box (shipped in Phase E1) and the list of coupons. When a
+  coupon *is* applied, the cart shows a dashed-teal card with the code, "You
+  saved ₹X on this order" and Remove — plus any warning the server sends.
+- **Bill details** — heading + the design's deepest "money" card: Item total,
+  Coupon discount / Discount, Delivery fee (FREE in teal), Platform fee, a
+  divider, then **To pay** in bold, and a mint "You save ₹260 on this order"
+  chip at the bottom. The old duplicate summary card at the very top of the cart
+  (item count + subtotal + savings) is gone — every number on it is now in the
+  header or in this card.
+- **Sticky footer** — "Proceed to pay   ₹1366 →" on the design's 54dp gradient
+  button, over a hairline with the soft upward shadow.
+- **Empty cart** — unchanged layout, button now reads "Start shopping" (the
+  mock's wording) instead of "Continue shopping".
+- **Loading** — three shimmering placeholder lines in the real card shape,
+  instead of a spinner.
+
+### Steps
+1. ✅ `./gradlew assembleDebug` and `./gradlew testDebugUnitTest` both pass —
+   389 tests, 0 failures, including the 6 `CartScreenFormatRupeesTest` rounding
+   tests. ❌ Any of those 6 failing means the money fix was disturbed.
+2. ✅ **Open the cart with items in it** — one card holds all the lines with
+   hairlines between them, "+ Add more items" at the bottom, coupon row below
+   it, then Bill details, then the sticky "Proceed to pay" bar.
+3. ✅ **Check the numbers against a calculator.** Line prices, Item total,
+   Platform fee, To pay and the "You save ₹N" chip must all agree with what the
+   old build showed for the same cart (example verified: 9 + 69 + 38 + 1249 =
+   ₹1365 item total, + ₹1 platform fee = **₹1366 To pay**, savings ₹260).
+   ❌ Any price off by ₹1 versus the previous build is a regression.
+4. ✅ **Tap "+" on one line until it reads 6** — the "+" glyph visibly fades out
+   and stops responding; "−" stays fully white and still works. The header count
+   and the bill update on every tap. ❌ Being able to reach 7 is a business-rule
+   regression, not a styling one.
+5. ✅ **Tap "−" back down** — the line returns to 1 and the bill follows.
+   Removing the last one of a line drops the line from the card.
+6. ✅ **Tap "Apply a coupon"** — opens Coupons & offers, which has the code box
+   at the top. Applying a code there and coming back shows the dashed-teal
+   "CODE applied / You saved ₹X" card in the cart, with a working Remove.
+   ❌ There is deliberately **no code box in the cart any more** — that is the
+   change, not a bug. The only place to type a code is the Coupons screen.
+6b. ✅ **A coupon that is visible on dev** — from Offers, apply it. It shows on
+   the Offers list once an admin has marked it visible (see Known gaps below
+   if a coupon you expect isn't listed — check its visibility flag in admin,
+   not the app). Confirm it applies correctly and shows on Cart per step 6.
+7. ✅ **Empty the cart** — 96dp bag icon, "Your cart is empty", "Milk, atta,
+   fresh vegetables — the usuals are two taps away." and a "Start shopping"
+   button. The sticky pay bar and the "4 items" subtitle both disappear.
+8. ✅ **Pull down to refresh** — still works, green spinner.
+9. ✅ **Scroll to the bottom** — nothing hides behind the sticky bar or the
+   bottom nav pill.
+10. ✅ **A cart with a free gift** — the gift line appears as the last line
+    *inside* the same card (FREE GIFT tag, "FREE", a fixed quantity of 1 with no
+    stepper), and the gift nudge banner still shows above the coupon row.
+
+### Edge cases
+- **Rounding is untouched.** Every ₹ on this screen goes through the same
+  `formatRupeesRounded` call as before this phase; a row can still legitimately
+  read ₹1 off the sum of its parts, which is the documented, accepted behaviour
+  from the earlier fix. A reviewer byte-compared every price calculation on
+  this screen before/after the restyle diff specifically to confirm the
+  visual pass didn't disturb `b6123b4`'s rounding fix — verified untouched.
+- **The list is no longer virtualised** (all lines are one card, as the design
+  draws it). A cart is short and capped at 6 per item, so this is fine — but a
+  ridiculous cart (50+ distinct lines) is worth a scroll-smoothness check.
+- **Stepper tap targets** are the design's 28×34dp, matching the product-card
+  stepper shipped in Phase D — slightly smaller than the old 32×38dp.
+
+### Known gaps (NOT done)
+- **"Deliver to <address>" row above the pay button.** The mock puts the
+  delivery address in the sticky footer. The cart screen has no address data of
+  its own, and wiring it in would mean touching a ViewModel — out of scope for a
+  styling phase. The address stays where it is, on checkout.
+- **"Delivery instructions" card** ("Ring the bell once · leave at the door").
+  No such field exists in the app; not faked.
+- **"1 item went out of stock" banner.** The cart has no out-of-stock signal to
+  drive it.
+- **"4 codes available for you"** under the coupon row — the count isn't
+  available on this screen, so the line reads "Browse the codes you can use on
+  this order" instead of a made-up number.
+- **Applied-coupon card** — verified live this session once a coupon was made
+  visible in admin (see "What shipped" above); if dev has no visible/eligible
+  coupon at test time, fall back to code review for this specific card.
+
+---
+
 ## Deploy
-Phases A, B, C1, C2, D, E1, F, G1 and G2 are **all on `dev`** (`d2ad773`,
+Phases A, B, C1, C2, D, E1, F, G1, G2 and E2 are **all on `dev`** (`d2ad773`,
 `3afd791`, `5a77cf4`, `10c8a30`, `5a19e9c`, `215c635`, `2cd1bdd`, `bfd4d26`,
-`d28b498`, `f3a1fb6`) — direct commits under the current git workflow, no
-PR/deploy step. Ships with the next Android build.
+`d28b498`, `f3a1fb6`, `a461bc0`) — direct commits under the current git
+workflow, no PR/deploy step. Ships with the next Android build.
 
 (`b6123b4` "added code" also landed on `dev` around the same time, just before
 Phase G2 — that's a cart-formatting fix from a separate, concurrent session,
-unrelated to this revamp.)
+unrelated to this revamp; Phase E2 above restyles on top of it.)
