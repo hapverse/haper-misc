@@ -5,10 +5,9 @@ feed of a customer's ACTIVE + PAST orders, latest-first, paginated. Against **de
 (`dapi.haper.in`). Each step says **what to do** and **what to expect** (✅ good / ❌ should
 be blocked).
 
-> **Backend only — no client (Android/iOS/web) consumer wired up yet.** This endpoint needs a
-> backend deploy to dev before any app team can start integrating against it. There is nothing
-> to click through in the customer app for this yet — verify via the API directly (curl/Postman)
-> or via the automated tests below.
+> **Android is now wired up** (see §6) — the Orders tab consumes this endpoint and its
+> Active/Past tab switcher is gone. iOS and web still call the old
+> `GET /user/order?status=ACTIVE|PAST`, which is unchanged and still served.
 
 ---
 
@@ -69,6 +68,45 @@ hasn't yet turned into a placed order).
 - ✅ Missing/invalid `x-store-id` or no auth token still behaves exactly like every other
   `/user/order/*` route (**401** with no token).
 
+## 6. Android client — the Orders tab (one flat list)
+The Android Orders tab now calls this endpoint instead of the old
+`GET /user/order?status=ACTIVE|PAST` pair.
+
+1. Open the app → **Orders** tab.
+   ✅ There is **no Active / Past tab switcher** — one continuous list.
+   ✅ Active and finished orders are interleaved in **pure date order** (newest first), exactly
+      as the server returns them. An older active order does **not** get pulled to the top.
+   ✅ Each card carries its own status pill (`Order Placed`, `Delivered`, `Cancelled`, …).
+   ✅ The `Track order ›` link shows only on **active** orders; finished/cancelled ones read
+      `View details ›`.
+2. Check the header subtitle under "Your orders".
+   ✅ Reads `{total} orders` using the server's all-time `total` — e.g. `15 orders` even while
+      only the first page of 10 is on screen.
+   ❌ It must **never** claim a time window ("in the last 30 days") — `total` is all-time.
+   ❌ It must never show a count derived from how many rows have loaded so far.
+3. Scroll to the bottom of the list.
+   ✅ Page 2 loads automatically and appends.
+   ✅ Once the server says `hasMore: false`, the trailing spinner disappears and no further
+      request is made. (Previously the client guessed "a full page of 10 means there's more",
+      which fired one wasted request against an exactly-10-order account.)
+4. Pull down to refresh.
+   ✅ Refetches `page=1` and resets pagination.
+5. Open an order, then press back.
+   ✅ Order detail still loads — confirm `GET /user/order/:orderId` is **not** shadowed by the
+      new `/history` route (the router registers `/history` first on purpose).
+   ✅ Returning to the list refetches page 1.
+6. A customer with **no orders at all**.
+   ✅ One unified empty state: **"No orders yet"** / "Your first order lands here, with live
+      tracking and a one-tap reorder."
+   ❌ The old per-tab "No active orders" copy must not appear anywhere.
+7. Place an order (checkout) — the success path refetches the list.
+   ✅ Returning to Orders shows the new order at the top and `total` incremented by one.
+
+**Backward-compatibility note:** the Android `OrderListResponseData.total` / `.hasMore` are
+**nullable**. Against a backend that predates this endpoint's envelope, `total` stays null (the
+subtitle simply hides) and `hasMore` falls back to the old page-size heuristic — no crash. This
+matters because Gson decodes a missing JSON key to `null`, not to the Kotlin default.
+
 ---
 
 ### Notes for devs
@@ -88,3 +126,11 @@ hasn't yet turned into a placed order).
 - Covered by `packages/user/__tests__/order-history.test.js`: combined feed sort order, hidden
   status exclusion, pagination boundary + `hasMore`, missing-`page` default, `page=0`/`page=-1`
   rejection, cross-user isolation, and the pre-existing 401-no-token case.
+- **Android client**: `ApiService.getOrderHistory(page)`, `OrderViewModel.fetchOrderHistory()`
+  (+ `totalOrders`), `OrdersScreen`. The old `ApiService.getOrders(status, page)` binding and
+  `OrderViewModel.fetchOrders(status, …)` were **removed** — nothing on Android called them
+  once the tab switcher went away. The backend's `GET /user/order?status=` is untouched and
+  still used by admin/iOS/web.
+- Android coverage: `OrderViewModelTest` (server `hasMore` beats the page-size heuristic,
+  `total` exposed and left null when absent, `clearAll` drops it) and `ApiContractTest`
+  (`total`/`hasMore` decode, and a response omitting both decodes to null without crashing).
