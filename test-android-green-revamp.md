@@ -892,8 +892,133 @@ separate follow-up phase (G2), not built yet.
 
 ---
 
+## Phase G2 — Order detail + cancel window (2026-08-29, `dev@f3a1fb6`)
+
+The second half of Orders: the **order detail screen** you land on when you tap
+an order, and the **cancel-order reason sheet**. This is the phase the plan
+flagged as the riskiest of the whole revamp, because the same screen carries the
+cancel window, the invoice download, and it's where a delivery push notification
+opens.
+
+**The one rule of this phase: nothing about *whether* you can cancel changed.**
+Only how the cancel window *looks*. There are two separate things that were
+easy to confuse and were kept strictly apart:
+- a **normal order** gets a 60-second free-cancellation countdown after you
+  place it, and
+- a **scheduled-delivery order** gets its own, much longer window that the
+  server decides.
+
+Neither rule was touched — only their paint.
+
+### What shipped
+- **Status hero** at the top: a tinted well with a round status disc, the
+  status name in its own colour, and when it was ordered. A delivered order
+  gets the teal gradient disc from the design; a cancelled one stays red, a
+  refunded one stays purple — the colour follows the real status instead of
+  being fixed.
+- **Live status stepper** — replaces the old flat 5-segment progress bar with
+  a vertical timeline: a teal ✓ on every stage already passed, a **green
+  pulsing dot** on the stage the order is on right now, grey for what's still
+  ahead, joined by a hairline rail. The five stage names are the app's own
+  existing status names (Order Placed / Assigned / Processing / Out for
+  Delivery / Delivered) — **no new wording was invented**.
+- **Cancel window card** — the countdown is now its own card: "Free
+  cancellation window" with a large green `0:26` clock, a green progress bar
+  that drains as the seconds tick, the remaining-seconds line, and an outlined
+  red "Cancel order" button. Same 60 seconds as before, same disappearing act
+  when it runs out.
+- **Items, Bill, address, rider, refunds, short-pick changes** — all moved onto
+  the revamp's glass cards with section headings (ITEMS / BILL / DELIVERY
+  ADDRESS / …). Items get the design's 46dp product tile, "300 g · Qty 1" line
+  and struck-through MRP with a "% OFF" tag. The bill's last line is now
+  "**Paid**" in bold.
+- **Cancel reason sheet** — restyled to match the app's other bottom sheets
+  (rounded top, glass panel, drag handle) with the design's own rounded reason
+  rows and green radio buttons. **Wording is unchanged**: still "Cancel
+  Order?", "Yes, Cancel" and "No".
+  - **Bug fix — unselected reason rows were see-through.** The rows weren't
+    fully opaque, so the order detail screen behind the sheet bled through
+    them slightly. Now solid white, as the design intends.
+- **Accessibility fix — the "No" (dismiss) button.** It was implemented as a
+  selectable option, so TalkBack announced it as a toggle you "select" rather
+  than a button you tap, and its hit area was under the standard minimum tap
+  target. It's now a proper button: announced correctly by screen readers and
+  meets the minimum tap-target size.
+- **Bug fix — content hidden behind the bottom nav.** The bottom of the order
+  detail screen (the invoice button / cancel card) sat under the floating nav
+  pill. It now has the correct clearance.
+
+### Steps
+1. ✅ `./gradlew assembleDebug` and `./gradlew testDebugUnitTest` both pass.
+2. ✅ **Open any order from the Orders tab** — status hero, stepper, address,
+   ITEMS and BILL cards all render on the new styling. Scroll to the very
+   bottom: nothing is hidden behind the bottom nav pill. ❌ Anything cut off at
+   the bottom is a regression.
+3. ✅ **The stepper's live dot pulses** (a soft green glow that breathes) and
+   the rail visibly connects each dot to the next. Stages already passed show a
+   teal ✓.
+4. ✅ **Place a fresh Cash-on-Delivery order, then open it within 60 seconds** —
+   the "Free cancellation window" card is there, the clock counts *down*, and
+   the green bar shrinks in step with it.
+5. ✅ **Wait for the clock to hit 0:00 without touching anything** — the whole
+   cancel card disappears and the rest of the screen is unaffected. ❌ A stuck
+   clock, a card that lingers past zero, or a card that never appears at all is
+   a regression of the cancel window itself, not the styling.
+6. ✅ **Tap "Cancel order" inside the window** — the reason sheet opens on the
+   new styling: 7 reasons, each a rounded row with a green radio. Rows are
+   **solid white**, not see-through. ❌ Being able to read the order screen
+   through the reason rows is the exact bug fixed during this phase.
+7. ✅ **Pick "Other"** — a "What went wrong?" note box and a `0/180` counter
+   appear, and **both "Yes, Cancel" and "No" stay reachable at the bottom**,
+   even with the keyboard open. ❌ Buttons pushed off-screen is an old bug (F1)
+   that must not come back.
+8. ✅ **Tap "No"** — the sheet closes and **the order is still active**, not
+   cancelled. With TalkBack on, "No" is announced as a button, not a selection
+   toggle, and its tap target meets the standard minimum size.
+9. ✅ **A delivered order** — shows the teal disc, all 5 stages ✓/passed, the
+   star rating card, and a full-width "Download invoice" button that actually
+   downloads. ❌ The invoice button appearing on a *non-delivered* order is a
+   regression — it is delivered-only, unchanged.
+10. ✅ **A scheduled-delivery order** — its own "Scheduled delivery" card with
+    the booked slot, the change/cancel deadlines, and "Change slot" / "Cancel
+    order" buttons appearing exactly as often as they did before. ❌ A button
+    appearing or disappearing versus the old build is a regression — the rule
+    behind it was deliberately not touched.
+11. ✅ **Tap an order push notification** — it still opens straight to that
+    order's detail screen.
+
+### Edge cases
+- **The 60-second cancel-window logic itself was not touched** — verified
+  byte-identical by an independent code review. Only its visual appearance
+  (colours, timer display, progress bar) was restyled this phase. If the
+  countdown's actual timing/behaviour looks wrong, that's a pre-existing issue,
+  not something this phase introduced.
+- **Note for testers**: dev now carries 2 extra orders left over from this
+  phase's verification — `HP45199080` and `HP47489081`. Both are still active
+  (not cancelled). Safe to ignore, or clean up if they get in the way of
+  another test pass.
+
+### Known gaps (NOT done)
+- **"Reorder" button.** The design's footer pairs "Download invoice" with a
+  "Reorder" button. The app has no reorder feature, so the invoice button takes
+  the full width instead. Reorder is a real feature, not styling — separate
+  work.
+- **Map / rider-on-a-map panel.** The design's tracking screen shows a live map
+  with rider and store pins. There is no live rider location available, so this
+  was not built rather than faked.
+- **"₹20 restocking fee" line.** The design's cancel card warns about a ₹20 fee
+  after the timer ends. Haper has no such fee, so that sentence was left out.
+- **Per-stage timestamps** under each stepper stage ("6 of 3 items picked…").
+  No per-stage time data exists on the order, so the stages show names only.
+
+---
+
 ## Deploy
-Phases A, B, C1, C2, D, E1, F and G1 are **all on `dev`** (`d2ad773`,
+Phases A, B, C1, C2, D, E1, F, G1 and G2 are **all on `dev`** (`d2ad773`,
 `3afd791`, `5a77cf4`, `10c8a30`, `5a19e9c`, `215c635`, `2cd1bdd`, `bfd4d26`,
-`d28b498`) — direct commits under the current git workflow, no PR/deploy step.
-Ships with the next Android build.
+`d28b498`, `f3a1fb6`) — direct commits under the current git workflow, no
+PR/deploy step. Ships with the next Android build.
+
+(`b6123b4` "added code" also landed on `dev` around the same time, just before
+Phase G2 — that's a cart-formatting fix from a separate, concurrent session,
+unrelated to this revamp.)
