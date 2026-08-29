@@ -1542,16 +1542,104 @@ byte-identical, which is deliberate: they are authentication screens.
 
 ---
 
+## Phase J — Derived screens: WebView, Location Needed (2026-08-29, `dev@ad56c4d`)
+
+Restyles the three screens that had **no design mock** anywhere (confirmed
+against both design source files, closing out the last item Phase A's/G1's
+"Known gaps" kept pointing at). Landed on `dev` as `ad56c4d` ("android:
+restyle webview, location-needed card and sheet screens").
+
+**This closes out all derived/no-mock screens** — every screen without a
+design counterpart (Store Closed in Phase I, and now WebView + both Location
+Needed surfaces here) has been accounted for. Nothing derived remains
+unrestyled.
+
+### What shipped
+- **In-app WebView** (Terms of Service, Privacy Policy and other legal/policy
+  pages, reached from About's "Legal" card and Login's footer links) —
+  header, back button and loading bar restyled to match the app's design
+  system. **The policy content itself is unchanged** — it's fetched from
+  `haper.in`, not rendered from app code, so there's nothing to check inside
+  the page beyond "does it load".
+- **"Location needed" card** (shown inline on Home when the app can't resolve
+  a delivery location — permission denied, no saved address, or a network
+  error while resolving one) — restyled to the glass/shadow language, with a
+  **distinct message per reason** (permission needed / no address / network
+  error) and a retry button.
+- **"Location needed" bottom sheet** — a fuller-screen version of the same
+  flow, shown in certain flows — restyled to match the app's other bottom
+  sheets (same glass-panel look as the Phase C2 store picker).
+- **Bug fix — sheet was see-through.** The location sheet's background let
+  content behind it show through faintly; it's now fully opaque, matching
+  every other sheet in the app.
+- **Bug fix — retry button looked dead while checking.** The retry button
+  visually greyed out the instant it was tapped (while the location check
+  was in flight), reading as disabled/broken even though it was still doing
+  work. It now stays visually active for the whole check.
+- **Closes out the last "no design mock" screens.** WebView and both Location
+  Needed surfaces were confirmed to have no counterpart in either design
+  source file — same verification standard as Phase I's Store Closed screen.
+
+### Steps
+1. ✅ **Profile → About → Terms of Service** (Legal card) — the in-app
+   WebView opens with the restyled header (title + back button matching the
+   app's other headers) and a loading bar in the app's brand colour while the
+   page loads. ❌ A generic system-styled header/back button, or a default
+   Android/Chrome-style loading bar, is a regression.
+2. ✅ **Profile → About → Privacy Policy** — same check as step 1.
+3. ✅ **Login footer → Terms of Service / Privacy Policy** — same WebView,
+   same restyled chrome, opened from the other entry point. ❌ It must not
+   leave the app to an external browser (same rule as Phase I's Login
+   no-regression check).
+4. ✅ **Location Needed card — permission denied.** Deny location permission
+   (or revoke it in system settings, then reopen the app) and land on Home.
+   The card shows the **permission-needed message** and a retry button.
+5. ✅ **Location Needed card — no saved address.** On a fresh account with no
+   saved address and location permission denied/unavailable, Home shows the
+   **no-address message** — distinct wording from step 4, not the same
+   generic copy.
+6. ✅ **Location Needed card — network error.** If reachable (e.g. by
+   dropping connectivity while the app tries to resolve location), the card
+   shows the **network-error message** — a third, distinct wording. ⚠️ Needs a
+   real network drop to trigger; if you can't force this state, treat it as
+   code-review-only for this run and flag it for a follow-up pass with
+   connectivity control.
+7. ✅ **Retry button** on the card — tap it while it's checking. The button
+   stays **visually active** (not greyed/dimmed) for the whole check, then
+   either resolves a location (card disappears, Home loads normally) or
+   re-shows the same message if it still can't resolve. ❌ A button that
+   looks disabled/greyed out during the check is the exact bug this phase
+   fixed — regression.
+8. ✅ **Location Needed bottom sheet** (reachable from whichever flow
+   surfaces it — check with whoever wired the entry point if it isn't
+   obvious). Confirm it's **fully opaque** — nothing behind it should be
+   visible through the sheet. ❌ Any see-through/translucent content behind
+   the sheet is the exact bug this phase fixed — regression.
+9. ✅ **Sheet styling matches the rest of the app** — same glass-panel look,
+   corner radius and shadow as the Phase C2 store-picker sheet and other
+   sheets elsewhere in the app, not a plain white sheet.
+
+### Known gaps (NOT done)
+- **Network-error state (step 6) needs a forced connectivity drop** to
+  exercise live — same caveat Phase H2 flagged for its own retry-on-failure
+  check.
+
+---
+
 ## Deploy
-Phases A, B, C1, C2, D, E1, F, G1, G2, E2, H1, H2, H3 and I are **all on
+Phases A, B, C1, C2, D, E1, F, G1, G2, E2, H1, H2, H3, I and J are **all on
 `dev`** (`d2ad773`, `3afd791`, `5a77cf4`, `10c8a30`, `5a19e9c`, `215c635`,
 `2cd1bdd`, `bfd4d26`, `d28b498`, `f3a1fb6`, `a461bc0`, `a4658c9`, `a7f5ff5`,
-`c59a147`, `775d766`) — direct commits under the current git workflow, no
-PR/deploy step. Ships with the next Android build.
+`c59a147`, `775d766`, `ad56c4d`) — direct commits under the current git
+workflow, no PR/deploy step. Ships with the next Android build.
 
 **Phase I closes out the screen-content pass of the whole revamp** — every
 screen in the plan (Home, Browse, Item detail, Cart, Checkout, Orders,
 Account area, and now Entry/blocking states) has been restyled.
+
+**Phase J closes out all derived/no-mock screens** — WebView and both
+Location Needed surfaces had no design counterpart in either source file;
+with `ad56c4d` on `dev`, no derived screen remains unrestyled.
 
 **Phase H3 completes Phase H (Account area) in full** — Profile, Edit
 Profile, Delete/Restore Account, Wallet, Refer & Earn, Settings, Alerts,
