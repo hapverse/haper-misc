@@ -1291,12 +1291,141 @@ ViewModel, API or navigation change** — same balance/transaction data, same
 
 ---
 
+## Phase H3 — Settings, Alerts, Notifications, About, FAQ, Support (2026-08-29, `dev@c59a147`)
+
+The last piece of Phase H. Restyles Settings, Alerts and Notification
+preferences, plus About, FAQ and Customer Support, to the new design's
+glass/shadow language. **This closes out Phase H (Account area) entirely** —
+H1 (Profile/Edit/Delete/Restore, `a4658c9`) + H2 (Wallet/Refer, `a7f5ff5`) +
+H3 below cover every Account-area screen. **No ViewModel, API or navigation
+change** — same toggle state, same support contact data as before.
+
+### What shipped
+- **Settings, Alerts, Notification preferences** restyled — grouped cards
+  with the revamp's shadow/colour tokens; toggle logic untouched.
+- **About, FAQ, Support were rebuilt mid-session, not just restyled.** The
+  first pass treated these three as having no design mock and gave them a
+  plain token pass. Partway through, real mocks were found for all three, so
+  they were rebuilt to match:
+  - **FAQ** (`FAQScreen.kt`) — was one flat list of questions; now grouped
+    under 3 uppercase category headings — **Orders and delivery**,
+    **Payments and refunds**, **Returns and issues** — each question its own
+    expandable card (`FAQGroup`/`faqGroups`).
+  - **About** (`AboutScreen.kt`) — centered logo, version info, a
+    **"Company"** card (Operated by: Hapverse Private Limited / Website:
+    haper.in / Contact: support email — each row tappable where it makes
+    sense), and a separate **"Legal"** card with Terms of service / Privacy
+    policy rows that open the in-app webview.
+  - **Support** (`CustomerSupportScreen.kt`) — contact channels now a
+    **2-column grid** of glass cards (Call support / Email us), each with a
+    tinted icon well, instead of a single stacked list.
+- **Content accuracy — two mock copy lines were removed, not shipped.**
+  Neither could be verified as factual, so they're simply absent rather than
+  guessed at:
+  - A **"Registered: Chapra, Bihar, India"** company-registration line on
+    About. **Needs your review** — the "Company" card currently has no
+    registered-address row at all.
+  - A **"Someone answers between 7 AM and 11 PM"** support-hours line on
+    Support. **Needs your review** — the Support screen currently makes no
+    claim about hours.
+  If either line is actually correct, it can be added back with confirmed
+  wording; check the "Company"/"Legal" card and the Support header for the
+  absence of both before signing off.
+- **Known gaps (design shows these, not built)** — a "Still stuck? Contact
+  support" link at the bottom of FAQ, and a "Read the FAQs" link on Support.
+  Both need new navigation wiring. Not bugs: both destinations are already
+  reachable today, just via Settings rather than cross-linked from each
+  other.
+- **Fix — Notification Settings loading state spacing.** The loading branch's
+  content had no clearance above the floating bottom nav bar; it now uses
+  the same `HaperSpacing.scrollBottomPadding` the loaded state already had.
+- New `Shadows.kt` tokens (29 lines added) backing the About/FAQ/Support
+  card and grid shadows.
+
+### Steps
+1. ✅ `./gradlew assembleDebug` and `./gradlew testDebugUnitTest` both pass.
+2. ✅ **Settings** (Profile → Settings) — grouped cards on the new styling;
+   every row still navigates to the same destination as before.
+3. ✅ **Alerts** and **Notification preferences** — restyled, and every
+   toggle still reads/writes the same setting as before (flip one, leave the
+   screen, come back — the state persisted).
+4. ✅ **Notification preferences — loading state.** Trigger it (fresh
+   navigation to the screen, or throttle the network) — the loading content
+   has clear space above the bottom nav bar, not flush against it. ❌ Content
+   touching/behind the nav bar is the exact spacing bug this phase fixed.
+5. ✅ **FAQ** — 3 category headings in order: "Orders and delivery",
+   "Payments and refunds", "Returns and issues". Each question is its own
+   card, not one long list. Tap a card — it expands to show the answer; tap
+   again — it collapses. ❌ One flat undivided list is the pre-H3 layout —
+   regression.
+6. ❌ **FAQ — no "Still stuck? Contact support" link at the bottom.** Known
+   gap, not a bug — see above.
+7. ✅ **About** (Profile → Settings → About, or wherever it's linked from) —
+   centered logo at the top, version info beneath it, then a **"Company"**
+   card (Operated by / Website / Contact rows) and a separate **"Legal"**
+   card (Terms of service, Privacy policy). ❌ **No "Registered: …" row
+   anywhere on this screen** — flag it to Priyanka/business if you believe
+   that line should exist; do not treat its absence as a bug to fix
+   yourself.
+8. ✅ **About — Website and Contact rows are tappable** (Website opens the
+   in-app webview at haper.in, Contact opens the support email flow as
+   appropriate). Terms of service / Privacy policy rows in the Legal card
+   open `https://haper.in/terms` / `https://haper.in/privacy` in the in-app
+   webview (not an external browser).
+9. ✅ **Support** — Call support and Email us show as a **2-column grid**
+   of cards, each with an icon. Tap "Call support" — the phone dialer opens
+   with the support number pre-filled. Tap "Email us" — the device's email
+   app opens a new message addressed to the support email. ❌ A single
+   stacked list instead of a 2-column grid, or either tap doing nothing, is
+   a regression.
+10. ✅ **Support — "keep your order ID ready" note** still shows below the
+    channel grid, unchanged copy.
+11. ❌ **Support — no "Someone answers between 7 AM and 11 PM" line
+    anywhere.** Same as About's registration line — flag it if you believe
+    it's correct and should be restored; don't add it back without confirmed
+    wording.
+12. ❌ **Support — no "Read the FAQs" link.** Known gap, not a bug.
+
+### ⚠️ Needs business confirmation before shipping copy
+Two lines from the design mock are **currently absent from the app**, not
+wrong — they were deliberately not shipped because nobody on this pass could
+verify them:
+- About screen: **"Registered: Chapra, Bihar, India"**
+- Support screen: **"Someone answers between 7 AM and 11 PM"**
+If either is accurate, confirm exact wording with the business owner and a
+follow-up commit can add it back. Until then, treat their absence on About
+and Support as correct, not a gap to silently "fix" by re-adding the mock's
+unverified text.
+
+### Edge cases
+- The About/FAQ/Support rebuild happened **mid-session** after the initial
+  no-mock assumption was found to be wrong — if you're diffing against an
+  early build from the same day, the first-pass token-only version of these
+  three screens is not what shipped; only `c59a147`'s final state matters.
+- FAQ card expand/collapse state is **local to the screen** (not persisted)
+  — leaving and returning to FAQ starts every card collapsed again. That's
+  existing behaviour, not new.
+
+### Known gaps (NOT done)
+- **FAQ → "Still stuck? Contact support" link** — not wired; needs new
+  navigation. Reachable today via Settings → Support.
+- **Support → "Read the FAQs" link** — not wired; needs new navigation.
+  Reachable today via Settings → FAQ.
+- **Two copy lines withheld pending business confirmation** — see the
+  callout above. Not a build gap, a content-accuracy hold.
+
+---
+
 ## Deploy
-Phases A, B, C1, C2, D, E1, F, G1, G2, E2, H1 and H2 are **all on `dev`**
+Phases A, B, C1, C2, D, E1, F, G1, G2, E2, H1, H2 and H3 are **all on `dev`**
 (`d2ad773`, `3afd791`, `5a77cf4`, `10c8a30`, `5a19e9c`, `215c635`, `2cd1bdd`,
-`bfd4d26`, `d28b498`, `f3a1fb6`, `a461bc0`, `a4658c9`, `a7f5ff5`) — direct
-commits under the current git workflow, no PR/deploy step. Ships with the
-next Android build.
+`bfd4d26`, `d28b498`, `f3a1fb6`, `a461bc0`, `a4658c9`, `a7f5ff5`, `c59a147`) —
+direct commits under the current git workflow, no PR/deploy step. Ships with
+the next Android build.
+
+**Phase H3 completes Phase H (Account area) in full** — Profile, Edit
+Profile, Delete/Restore Account, Wallet, Refer & Earn, Settings, Alerts,
+Notification preferences, About, FAQ and Customer Support are all restyled.
 
 (`b6123b4` "added code" also landed on `dev` around the same time, just before
 Phase G2 — that's a cart-formatting fix from a separate, concurrent session,
