@@ -1416,12 +1416,142 @@ unverified text.
 
 ---
 
+## Phase I — Entry + blocking states + the new Store Closed screen (2026-08-29, `dev@775d766`)
+
+The last screen-content phase. Covers Splash, Login, OTP, Maintenance, Force
+Update, No connection, and builds the one designed screen the app never had:
+**Store closed** (`errstore`, screenshot 29).
+
+**No ViewModel, repository, API or navigation change. Login and OTP were not
+edited at all** — they were verified as already matching the design and left
+byte-identical, which is deliberate: they are authentication screens.
+
+### What shipped
+- **Store Closed screen — NEW.** `StoreClosedScreen` added to
+  `ui/screens/components/ErrorScreens.kt` (same file as its two siblings,
+  following that file's existing convention). 92dp `DangerSurface` well
+  (radius 30dp), Quicksand 600 heading, body copy, then the recovery actions.
+  `title`/`icon` are parameters — the screen **defaults to** a storefront
+  glyph and "This store is closed" (a genuinely closed store), but a caller
+  can override both, which is exactly what Maintenance does (below).
+- **Recovery action reuses the existing store switcher** (`StorePickerSheet`
+  from Phase C2) — no new sheet was built. The mock's "Notify me when it
+  opens" is deliberately **not** built (no backend), and the mock's "opens at
+  7:00 AM · Chapra Main, 3.4 km away" line is not synthesised (the client has
+  no opening-hours or store-distance field).
+- **Maintenance vs Store Closed stay two distinct messages, on purpose.**
+  `MaintenanceScreen`'s store-scoped branch (`maintenanceScope == "store"`)
+  now renders `StoreClosedScreen`'s *layout*, but always **overrides** its
+  title/icon to `"This store is briefly down"` + a wrench (`Icons.Default
+  .Build`) — never the default "closed" copy. A deploy-window maintenance
+  wall must never read as "this store has shut down". The bare "This store
+  is closed" + storefront copy is reserved for a store that's actually
+  closed, not one that's temporarily down. Global (non-store) maintenance is
+  untouched: still "We'll be back soon!".
+- **Countdown card restyled** — the mock's eyebrow + Quicksand clock over a
+  white card with a hairline, replacing the old `surfaceVariant` chip. Used by
+  the store-scoped maintenance branch only (global maintenance has its own,
+  separately-restyled countdown card in the same file).
+- **Global maintenance heading/body centring fixed** — the heading rendered
+  left-aligned because `textAlign = Center` had no width to centre within.
+  Before: heading hugged the left padding edge. After: centred.
+- **Force Update, No connection restyled** — Force Update's heading moved
+  from a plain 22sp Poppins-weight bold to Quicksand 23sp/600, body to
+  13.5sp/Medium/21.6sp line height, matching the error-screen family. No
+  Internet's heading is now explicitly Quicksand 600 (was defaulting to 700),
+  a deliberately calmer weight than the red server-error state.
+- **Instrumented test comment fixed, no stale assertions found.**
+  `MaintenanceScreenTest.kt`'s doc comment referenced old line numbers in
+  `MaintenanceScreen.kt` that moved once the store-scoped branch was
+  refactored to call `StoreClosedScreen`; the comment was corrected to
+  describe the new `onChangeAddress` → `StoreClosedScreen` secondary-action
+  path instead of a line number. The actual `onNodeWithText(...)` assertions
+  already read `"This store is briefly down"` and `"We'll be back soon!"`
+  going in — nothing there needed changing. (These are `androidTest`
+  instrumented tests — they need a device/emulator and were **not run** this
+  session, only confirmed to compile.)
+
+### How to test
+1. ✅ **Splash** — cold start the app. Green gradient, two translucent
+   circles, cream logo tile, tagline, ring spinner, "HAPVERSE PRIVATE
+   LIMITED" at the bottom. ❌ any Material spinner or white background.
+2. ✅ **Login** — log out (or fresh install). 250dp gradient header with the
+   faint duotone watermark, 80dp logo tile, "SIGN IN" eyebrow, 54dp phone
+   field with `+91` prefix, teal ✓ at 10 digits, gradient "Send OTP", OR
+   divider, "Continue with Google", legal footer with working links. This is
+   a **no-regression check only** — nothing changed here this phase.
+3. ✅ **OTP** — request a code. Back chevron, "Verify your number", masked
+   number + green "Change", six cells (first one teal-bordered when empty),
+   30s resend countdown then "Resend", CTA disabled until 6 digits. Enter a
+   wrong code — cells turn Danger + the error card appears. Also a
+   no-regression check only.
+4. ✅ **Force Update** — Quicksand 23sp/600 "Time to update" heading (not the
+   old plain-bold look), body text sits closer to the heading and reads at
+   13.5sp. ❌ Poppins/system-sans heading here is a regression.
+5. ✅ **No connection** — turn off Wi-Fi and mobile data. Neutral (not red)
+   92dp well, "You're offline" in Quicksand at the calmer 600 weight (not
+   bold-700), "Reconnecting…" footnote.
+6. ⚠️ **Maintenance — store-scoped, temporary.** Needs a store-scoped
+   maintenance window on dev (`maintenanceScope: "store"` in app config) — if
+   you can't trigger one, treat this as a code-review-only check (see the
+   citations under "What shipped" above). If reachable: red 92dp well with a
+   **wrench icon**, heading reads **"This store is briefly down"**
+   (never "closed"), server message, the restyled countdown card, and "Try a
+   different delivery address" when logged in. ❌ If the heading says "This
+   store is closed" or shows the storefront icon during a maintenance
+   window, that's the exact mix-up this phase is designed to prevent —
+   regression.
+7. ⚠️ **Store Closed — genuinely closed store.** Same caveat: not reachable
+   through any live app-config value today (see Known gaps) — verify by
+   code review of `StoreClosedScreen`'s defaults (`ErrorScreens.kt`). Default
+   heading is **"This store is closed"** with a **storefront icon**, distinct
+   from maintenance's wrench/"briefly down" wording above. ❌ Do not report
+   "can't find the Store Closed screen on dev" as a bug — flag it as the
+   known wiring gap below instead.
+8. ✅ **Maintenance — global.** Heading "We'll be back soon!" is now
+   **centred**, not hugging the left edge. ❌ Left-aligned heading is the
+   exact bug this phase fixed — regression.
+
+### Known gaps (NOT done)
+- **The Store Closed screen's own default copy has no live trigger yet.**
+  `StoreClosedScreen` is only ever invoked from `MaintenanceScreen`'s
+  store-scoped branch, and that branch **always overrides** the title/icon
+  to the "briefly down" wrench copy — so the default "This store is closed"
+  storefront copy cannot currently be seen by changing any app-config value
+  on dev. Wiring a real "closed" (not "under maintenance") state to this
+  screen is a separate piece of work, not done here.
+- **"Choose another store" is not wired to real store data yet.**
+  `MaintenanceScreen` gained `stores` / `selectedStoreId` / `onSelectStore`
+  parameters, all defaulted to "no switcher", so the CTA does not render
+  today. Activating it needs a **one-line change in `MainActivity.kt`** at
+  the `MaintenanceScreen(...)` call site (passing `homeVM.availableStores`,
+  `homeVM.selectedStoreId`, `homeVM::selectStore`) — deliberately left out
+  because `MainActivity.kt` was out of scope for this phase. This is a
+  flagged follow-up, **not a regression**.
+- **Moot on dev today either way** — dev has only one store, so even once
+  wired the CTA would stay hidden by design (`stores.size > 1` gate);
+  switching to the same closed store isn't a recovery action.
+- **No-connection has no "Try again" button** unlike the mock — the app
+  auto-retries on reconnect. Adding a real retry needs a callback from
+  `MainActivity.kt`.
+- **The Android system splash (before Compose starts) is white**, not the
+  brand gradient — that lives in `themes.xml`, not in this phase's files.
+- **Splash/Login taglines differ from both design HTML copies** ("…store,
+  delivered" vs "…in your pocket" / "Groceries in ten minutes"). Treated as a
+  product copy decision, not drift, and left alone.
+
+---
+
 ## Deploy
-Phases A, B, C1, C2, D, E1, F, G1, G2, E2, H1, H2 and H3 are **all on `dev`**
-(`d2ad773`, `3afd791`, `5a77cf4`, `10c8a30`, `5a19e9c`, `215c635`, `2cd1bdd`,
-`bfd4d26`, `d28b498`, `f3a1fb6`, `a461bc0`, `a4658c9`, `a7f5ff5`, `c59a147`) —
-direct commits under the current git workflow, no PR/deploy step. Ships with
-the next Android build.
+Phases A, B, C1, C2, D, E1, F, G1, G2, E2, H1, H2, H3 and I are **all on
+`dev`** (`d2ad773`, `3afd791`, `5a77cf4`, `10c8a30`, `5a19e9c`, `215c635`,
+`2cd1bdd`, `bfd4d26`, `d28b498`, `f3a1fb6`, `a461bc0`, `a4658c9`, `a7f5ff5`,
+`c59a147`, `775d766`) — direct commits under the current git workflow, no
+PR/deploy step. Ships with the next Android build.
+
+**Phase I closes out the screen-content pass of the whole revamp** — every
+screen in the plan (Home, Browse, Item detail, Cart, Checkout, Orders,
+Account area, and now Entry/blocking states) has been restyled.
 
 **Phase H3 completes Phase H (Account area) in full** — Profile, Edit
 Profile, Delete/Restore Account, Wallet, Refer & Earn, Settings, Alerts,
