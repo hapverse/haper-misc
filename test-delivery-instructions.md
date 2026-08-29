@@ -1,6 +1,6 @@
 # Test: delivery instructions (customer note on an order)
 
-**Area:** Backend + Android + Admin.
+**Area:** Backend + Android + Admin + Delivery (rider) app.
 - Backend: `packages/shared/models/orders.schema.js` (`deliveryInstructions`),
   `packages/shared/constants/order.constant.js` (`DELIVERY_INSTRUCTIONS_MAX_LENGTH`),
   `packages/user/src/routes/order/validator.js` (`placeOrder`),
@@ -9,9 +9,10 @@
   `CheckoutScreen.kt` (passes it through), `OrderViewModel.placeOrder`, `OrderModels.kt`
   (`PlaceOrderRequest`, `Order`), `OrderDetailScreen.kt` (read-back).
 - Admin: `src/types/order.ts`, `src/pages/Orders/OrderDetailsModal.tsx`.
+- Delivery: `data/model/OrderModels.kt` (`DeliveryOrder`), `ui/home/DeliveryHomeScreen.kt`.
 
 **PR/deploy:** backend deploy **first** (the field must exist before an app build sends it), then
-the Android release, then admin. Order matters only for the write path — an old app simply omits
+the Android release, then admin and the rider app. Order matters only for the write path — an old app simply omits
 the key and the order saves with `deliveryInstructions: null`.
 
 ## What changed
@@ -59,6 +60,14 @@ never be rejected for length alone.
   `Delivery instructions` block below the address, separated by a hairline, with the note.
 - ✅ An order without a note shows the address card unchanged — no empty block, no stray divider.
 
+### Delivery (rider) app
+- ✅ Open an assigned order → **Delivery address** card shows a tinted "Customer instructions"
+  block under the address with the note. It is highlighted rather than run in with the address,
+  because it is the one line on that card the rider has to act on.
+- ✅ An order without a note shows the address card exactly as before.
+- The backend needed no change: `getDeliveryDetail` already uses `.select({ __v: 0 })`, so the
+  field was arriving before the UI existed.
+
 ## Edge cases
 - **Pre-feature orders** have no `deliveryInstructions` key at all. Android's `Order.deliveryInstructions`
   is nullable (Gson decodes a missing key to `null`, never the Kotlin default), and the admin type
@@ -68,10 +77,9 @@ never be rejected for length alone.
 - The note is **display-only** — never parsed, never used for routing or fees.
 
 ## Not covered
-- **Picker / delivery apps do not surface it yet.** The field is returned by their order-detail
-  reads (both use `.select({ __v: 0 })`, an exclusion projection, so it flows automatically), but
-  neither UI renders it. That is the obvious next step — the rider is the person the note is
-  actually for.
+- **The picker app does not show it, deliberately.** The picker has no address handling at all —
+  it packs items and never sees the customer's address — so a "ring the bell" note has no place
+  there. It is a rider instruction, not a packing one.
 - **No edit-after-placement.** The note is frozen at checkout; there is no endpoint to change it.
 - **Not on the order list/board.** `getActiveBoardOrders` uses an inclusion projection that does not
   include the field, deliberately — a note belongs on the detail, not a board row.
