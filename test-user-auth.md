@@ -37,8 +37,11 @@ The copy is **not verbatim**. Five things were deliberately changed or hardened 
   deleted by then, so their code was dead and — because resends are cooldown- and cap-limited —
   they could be locked out of signup for up to 15 minutes. Now the OTP is burned only at the very
   end, once nothing can still reject the request.
-- **N3 — the master OTP never voids a genuine pending code.** Master-OTP logins are for internal
-  testing; they must not delete the real SMS code a customer is holding.
+- **N3 — the master-OTP bypass is REMOVED (2026-08-30).** Login/signup used to also accept a fixed
+  static code (`OTP_FOR_USER_REGISTRATION`) for ANY phone number, with no environment gate — i.e.
+  anyone who knew that string could log into any customer account in production. Both the OTP and
+  the Google `verify-phone` paths (and the frozen `packages/auth` twin) now accept **only** the real
+  cached SMS code.
 - **N4 — the resend cooldown is claimed atomically.** Two taps on "Resend" at the same instant used
   to both read the old "last sent" timestamp and both send an SMS. SMS costs money.
 - **N5 — Google email lookup is an exact indexed match**, not a case-insensitive regex.
@@ -74,8 +77,9 @@ Plus dedicated per-route **rate limiters** (section 7), which `packages/auth` do
 
 - **Dev:** base URL `https://dapi.haper.in` (the user service). Prefix every path with `/user/auth`.
 - **Local:** `cd packages/user && npm run dev` (reads `.env`), then `http://localhost:<port>/user/auth/...`.
-- You need a **real phone** to read the SMS, **or** use the master OTP `OTP_FOR_USER_REGISTRATION`
-  (env var; `898444` in the test env). Master OTP works for any phone number.
+- You need a **real phone** to read the SMS. There is **no master/bypass OTP any more** — the only
+  accepted code is the one actually sent and cached. On dev you can read the cached code straight
+  from Redis (`<phone>_OTP`); automated tests seed that key themselves.
 - These routes are **exempt from the geo/store middleware** (`middleware/geo.js`) — no
   `latitude`/`longitude` headers are needed. A logged-out user has not picked a store yet.
 
@@ -152,14 +156,17 @@ This is the most important behaviour from the fix loop. Test it in this exact or
 - Contrast with `packages/auth`: there, step 2 kills the code and step 3 (a replay) still works.
   Deliberately divergent — do not "fix" the twin.
 
-### 4. N3 — the master OTP must not void a pending code
-- ✅ Request a real OTP for a number, then log in on that **same number** with the **master OTP**
-  → **200**.
-- ✅ The genuine SMS code is **still usable**: log in again with the real OTP → **200**, and *now*
-  it is burned (a further replay → 400).
-- ✅ Same guarantee on the Google path — see 6c.
-- Why: the master OTP is not cache-backed, so burning "the OTP" after a master login would delete
-  a real customer's pending code as a side effect of an internal test login.
+### 4. N3 — the master OTP is rejected
+- ❌ Log in with the old master OTP (`995518` / whatever `OTP_FOR_USER_REGISTRATION` holds) on a
+  phone with no pending code → **400** `"Invalid or expired OTP"`, and **no user row is created**.
+- ❌ Same call while a genuine OTP is pending → **400**, and the pending code is **left alone**
+  (a rejection never costs the user their code — N2).
+- ✅ The real SMS code still works right after that rejected attempt → **200**, and *now* it is
+  burned (a further replay → 400).
+- ✅ Same on the Google path — see 6c.
+- Note: the delivery-rider drop-off OTP (`OTP_FOR_ORDER_COMPLETION` = `898444`) is a **separate**
+  mechanism and is deliberately unchanged. The account-**deletion** confirm step still honours
+  `OTP_FOR_USER_REGISTRATION` too (authenticated-only) — flagged, not yet changed.
 
 ### 5. N4 — resend cooldown is an atomic claim, cap wins over cooldown
 - ✅ Fire **two `get-otp` calls for the same new number at the same instant** → exactly **one**
@@ -206,15 +213,15 @@ This is the most important behaviour from the fix loop. Test it in this exact or
   (read-only, dev cluster).
 
 #### 6c. verify-phone
-- ✅ Correct OTP (real or master) + no existing phone account → creates a `sType: GOOGLE` account
+- ✅ Correct (real, cached) OTP + no existing phone account → creates a `sType: GOOGLE` account
   with the lower-cased email, Google `sub` as `sId`, the Google picture as avatar, and a `refCode`.
 - ✅ Existing phone account with the **same** Google `sub`, or with **no** `sId` yet → merged/linked
   and logged in (same `_id`).
 - ❌ Existing phone account linked to a **different** Google account → **400**
   `"This phone number is already linked to another Google account. Please use that account to login."`
 - ✅ **The OTP is burned here too** (N1): a replay of the same code → **400**.
-- ✅ **Master OTP does not burn** a pending code (N3) — verify by then redeeming the real code on
-  `/user/auth/otp/login` successfully.
+- ❌ **Master OTP is rejected here too** (N3) → **400**, no account created, and the pending real
+  code stays redeemable on `/user/auth/otp/login`.
 - ✅ A **404 bad referral code** on this endpoint also leaves the OTP alive and retryable (N2).
 - ❌ Empty body / missing `otp` → **403**; unverified Google email → **403**; wrong OTP → **400**;
   Google token failure → **401**.
