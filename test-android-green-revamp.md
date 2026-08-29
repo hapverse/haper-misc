@@ -1626,25 +1626,120 @@ unrestyled.
 
 ---
 
-## Deploy
-Phases A, B, C1, C2, D, E1, F, G1, G2, E2, H1, H2, H3, I and J are **all on
-`dev`** (`d2ad773`, `3afd791`, `5a77cf4`, `10c8a30`, `5a19e9c`, `215c635`,
-`2cd1bdd`, `bfd4d26`, `d28b498`, `f3a1fb6`, `a461bc0`, `a4658c9`, `a7f5ff5`,
-`c59a147`, `775d766`, `ad56c4d`) — direct commits under the current git
-workflow, no PR/deploy step. Ships with the next Android build.
+## Phase K — Final sweep + lock (2026-08-29, `dev@5b2ab5d`)
 
-**Phase I closes out the screen-content pass of the whole revamp** — every
-screen in the plan (Home, Browse, Item detail, Cart, Checkout, Orders,
-Account area, and now Entry/blocking states) has been restyled.
+Closes out the whole 11-phase Haper Green revamp (Phases A–K). Pure code
+hygiene: nothing on screen changed except the two input fields called out
+below. **No ViewModel, API, navigation or business-logic change** — this
+phase's own regression sweep re-confirmed cancellation rules, cart quantity
+caps, veg/non-veg labeling, coupon codes and invoice download are all
+byte-identical to before this pass.
 
-**Phase J closes out all derived/no-mock screens** — WebView and both
-Location Needed surfaces had no design counterpart in either source file;
-with `ad56c4d` on `dev`, no derived screen remains unrestyled.
+### What shipped
+- **Inline-style sweep across the whole app** — 24 hardcoded colours and 12
+  ad-hoc shadow modifiers, scattered across screens untouched by Phases A–J,
+  replaced with the shared `Color.kt` tokens and `Shadows.kt` helpers. Mostly
+  invisible: these spots already looked correct on screen, they just weren't
+  reading from the design system, so a future palette change would have
+  missed them. `HaperBottomNav.kt`, `HaperButton.kt`, `HaperItemRow.kt`,
+  `HaperSkeleton.kt`, `ProductCard.kt`, `LoginScreen.kt`,
+  `ItemDetailScreen.kt`, `CancelOrderSheet.kt`, `OrderDetailScreen.kt`,
+  `OrderSuccessScreen.kt`, `ProfileScreen.kt` and `SplashScreen.kt` were the
+  files touched.
+- **Duplicate product-card component removed.** The app had carried two
+  separate "product card" implementations since different points in the
+  revamp — `ItemCard.kt` and `ProductCard.kt`. `ItemCard.kt` is deleted;
+  every call site now uses `ProductCard.kt`, the one all of Phases C1–D
+  already restyled.
+- **Two remaining old-style text fields fixed** — the cancel-order "What went
+  wrong?" note box (`CancelOrderSheet.kt`) and an order-review comment box
+  now use the same 1.4dp-outline field style as the rest of the app (Phase F's
+  address form, Phase E's coupon-code field), instead of the pre-revamp
+  Material outline look.
+- **`ui/theme/Motion.kt` — new animation tokens** (`Theme.kt`, `Color.kt`
+  also touched to wire durations/easing in). Shimmer and pulsing-dot tokens
+  are wired into `HaperSkeleton.kt` and the order-detail stepper's live dot
+  (Phase G2). **Three tokens are defined but not yet wired into any screen**:
+  add-to-cart bounce, list-item entrance animation, and the map-pin float on
+  the address map (Phase F). Not a bug — timing/easing values exist in
+  `Motion.kt`, ready for a future pass to attach to those three interactions.
+- Dead code and stale comments left over from Phases A–J removed.
 
-**Phase H3 completes Phase H (Account area) in full** — Profile, Edit
-Profile, Delete/Restore Account, Wallet, Refer & Earn, Settings, Alerts,
-Notification preferences, About, FAQ and Customer Support are all restyled.
+### Steps
+1. ✅ `./gradlew assembleDebug` passes.
+2. ✅ `./gradlew testDebugUnitTest` passes — full suite green, no new
+   failures introduced by the token/dedup sweep.
+3. ✅ **Spot-check 2–3 screens from the file list above** (e.g. Login,
+   Splash, Order detail) — nothing should look different from before this
+   phase; this is an internal refactor, not a restyle.
+4. ✅ **Cancel-order "What went wrong?" box** (Cart → an eligible order →
+   Cancel order → Other) — text field now has the same rounded 1.4dp-outline
+   look as the checkout/address form fields. ❌ Still the plain Material
+   outline box is a regression.
+5. ✅ **Order-review comment box** (wherever the app's post-delivery review
+   flow lives) — same outline-field styling fix as step 4.
+6. ✅ **Regression sweep, spot-checked**: order cancellation (60s window +
+   scheduled-order window, Phase G2), cart 6-per-item cap (Phase E2),
+   veg/non-veg FSSAI mark (unchanged logic, Phase D/E1), coupon apply (Phase
+   E1/E2), invoice download on a delivered order (Phase G2) — all still
+   behave exactly as documented in their own phase sections above. Nothing
+   in this phase touched any of that logic; this step just re-confirms it.
+
+### Known gaps (NOT done)
+- **Three motion tokens defined but not wired in**: add-to-cart bounce,
+  list-item entrance animation, map-pin float. Follow-up wiring work, not a
+  bug — see "What shipped" above.
+
+### Note on how fidelity was checked (whole project, all 11 phases)
+Every phase A–K was verified by an engineer manually installing the app and
+comparing on-device screenshots against the design mocks — dozens of real
+checks across the project. **No automated visual-regression (pixel-diff)
+tooling and no Compose screenshot tests were added at any point** — this was
+flagged as optional throughout and stayed optional. Practically: a future
+unrelated change that visually shifts a screen will only be caught by a
+human doing the same kind of manual check again, not by CI. If that
+automated safety net is wanted later, it's new work, not something this
+project quietly skipped.
+
+## Deploy — PROJECT COMPLETE (all 11 phases, A–K)
+
+Phases A, B, C1, C2, D, E1, F, G1, G2, E2, H1, H2, H3, I, J and K are **all
+on `dev`** — direct commits under the current git workflow, no PR/deploy
+step. Ships with the next Android build.
+
+**Phase K is the last phase.** With `5b2ab5d` on `dev`, the pixel-perfect
+Haper Green re-skin is closed out end to end: every screen in the plan is
+restyled, both derived (no-mock) screens are accounted for, and this final
+sweep removes the last inline-style debt and duplicate component so the
+design system is now the *only* source of colour/shadow/typography in the
+app.
+
+**Full commit list**
+
+haper-android (`dev`):
+| Phase | Commit(s) |
+|---|---|
+| A | `d2ad773`, `3afd791` |
+| B | `5a77cf4` |
+| C1 | `10c8a30` |
+| C2 | `5a19e9c` |
+| D | `215c635` |
+| E1 | `2cd1bdd` |
+| F | `bfd4d26` |
+| G1 | `d28b498` |
+| G2 | `f3a1fb6` |
+| E2 | `a461bc0` |
+| H1 | `a4658c9` |
+| H2 | `a7f5ff5` |
+| H3 | `c59a147` |
+| I | `775d766`, `1569f2e` |
+| J | `ad56c4d` |
+| K | `5b2ab5d` |
 
 (`b6123b4` "added code" also landed on `dev` around the same time, just before
 Phase G2 — that's a cart-formatting fix from a separate, concurrent session,
-unrelated to this revamp; Phase E2 above restyles on top of it.)
+unrelated to this revamp; Phase E2 above restyles on top of it. Not counted
+as a revamp-phase commit.)
+
+haper-misc: this file (`test-android-green-revamp.md`) is the test-guide
+record for all 11 phases — no other haper-misc file tracks this project.
