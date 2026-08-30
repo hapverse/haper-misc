@@ -39,6 +39,16 @@ never be rejected for length alone.
   the instructions field is empty, not carrying the previous order's note.
 - ✅ **Long note is capped client-side.** Paste >200 characters; input stops accepting at 200.
 
+### Android — dismissing the keyboard
+- ✅ **The keyboard has a Done key.** Tap the instructions field — the IME's action key reads
+  **Done** (not a newline arrow). Tapping it closes the keyboard and the card's amber focus
+  border goes away. The typed note stays in the field.
+- ✅ **Sentence capitalisation.** The first letter typed is auto-capitalised, as in any note field.
+- ✅ **Leaving the cart closes it too.** With the keyboard open, tap **Proceed to pay** (or the
+  "Change" address chip) — the keyboard is gone on the next screen, not left hanging over it.
+- ✅ **Enter no longer inserts a line break.** The field is still up to 3 lines tall for long
+  notes that wrap, but Enter now means "I'm done" rather than a new line.
+
 ### Android — "Deliver to" row
 - ✅ Cart footer shows `Deliver to {label} · {street}` over the full address line, with a mint
   **Change** chip. Tapping either the row or the chip opens the address list.
@@ -75,6 +85,8 @@ never be rejected for length alone.
 - **Whitespace-only note** (`"   "`) is trimmed server-side to `""` then normalised to `null`, so it
   is treated as "no note" rather than an empty instruction.
 - The note is **display-only** — never parsed, never used for routing or fees.
+- **A note typed but never dismissed still saves.** Tapping "Proceed to pay" straight from the
+  keyboard keeps the text — closing the keyboard is not a commit step.
 
 ## Not covered
 - **The picker app does not show it, deliberately.** The picker has no address handling at all —
