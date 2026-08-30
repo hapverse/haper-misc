@@ -157,16 +157,54 @@ This is the most important behaviour from the fix loop. Test it in this exact or
   Deliberately divergent — do not "fix" the twin.
 
 ### 4. N3 — the master OTP is rejected
-- ❌ Log in with the old master OTP (`995518` / whatever `OTP_FOR_USER_REGISTRATION` holds) on a
+- ❌ Log in with the old master OTP (`995518`, the retired `OTP_FOR_USER_REGISTRATION` value) on a
   phone with no pending code → **400** `"Invalid or expired OTP"`, and **no user row is created**.
 - ❌ Same call while a genuine OTP is pending → **400**, and the pending code is **left alone**
   (a rejection never costs the user their code — N2).
 - ✅ The real SMS code still works right after that rejected attempt → **200**, and *now* it is
   burned (a further replay → 400).
 - ✅ Same on the Google path — see 6c.
-- Note: the delivery-rider drop-off OTP (`OTP_FOR_ORDER_COMPLETION` = `898444`) is a **separate**
-  mechanism and is deliberately unchanged. The account-**deletion** confirm step still honours
-  `OTP_FOR_USER_REGISTRATION` too (authenticated-only) — flagged, not yet changed.
+### 4b. Both remaining master-OTP overrides are gone (2026-08-30)
+
+⚠️ **Status as of 2026-08-30: only the account-deletion half has landed.** The delete-confirm
+override is gone, but `config.otp` still exists in `packages/shared/config/index.js` and
+`packages/delivery` still accepts `OTP_FOR_ORDER_COMPLETION` (`898444`) on rider drop-off — the
+rider bullets below are **not testable yet**. Two flows to re-test:
+
+- **Account deletion confirm** (`POST /user/profile/delete-account/confirm`, logged-in user):
+  - ❌ Send `otp: 995518` while a genuine delete-OTP is pending → **400** `"Invalid or expired OTP"`,
+    account stays **ACTIVE**, and the real SMS code is **not** burned.
+  - ✅ Immediately retry with the real SMS code → **200**, account goes `DELETED_SOFT`, wallet
+    forfeited, the caller's token stops working.
+  - ❌ Send a wrong OTP **5 times** → each is **400**; the **6th** call is **429** `RATE_LIMITED`
+    with `data.retryAfterSec` (15-minute window), even if the 6th carries the correct code. A
+    successful delete clears the counter.
+  - ❌ Send **6 wrong OTPs at the same instant** (parallel, so they land on different pm2
+    workers) → at most **5** get a 400; the counter is an atomic Redis INCR now, so parallel
+    attempts can no longer overshoot the cap. The 15-minute window still starts at the **first**
+    failure, it does not slide forward with each attempt.
+- **Account restore** (`POST /user/profile/restore-account`):
+  - ✅ Delete an account holding **50** coins (wallet drops to **0**), then restore inside the
+    30-day window → **200**, wallet is back to **50** and the lifetime `total` is still **50**
+    (the give-back must not double-count lifetime earnings).
+  - ✅ Fire **3 restore calls with the same `restoreToken` at the same instant** → the wallet ends
+    at **50**, not 150. Only one caller performs the give-back; the others still restore normally.
+  - ✅ Restoring an account that was deleted with a **0** balance credits nothing.
+  - ✅ **Ledger and coins move together.** If the wallet write fails mid-restore (force it by
+    breaking the wallet update, e.g. mock `WalletRepository.upsertWallet` to throw), the call
+    returns **5xx**, the account stays `DELETED_SOFT`, coins stay **0**, and **no**
+    `ACCOUNT_RESTORE_REFUND` row appears in wallet history. Retrying the same `restoreToken`
+    then pays the **50** coins exactly once. A refund row in admin wallet-history with no
+    matching coin credit is a **bug** — the two share one Mongo transaction now.
+  - ❌ Restore after the 30-day window → **410**; ❌ a garbage `restoreToken` → **401**.
+- **Rider drop-off** (`PATCH /delivery/order/mark-status` with `status: CLOSED`):
+  - ❌ Close an OUT_FOR_DELIVERY order with `otp: 898444` → **400** `"Invalid OTP. N attempt(s)
+    remaining."`, order stays OUT_FOR_DELIVERY. Real riders must ask the customer for their code.
+  - ✅ The customer's real per-order `deliveryOtp` still closes it → **200**.
+  - ✅ The 5-attempt lockout is unchanged: a rejected `898444` costs one attempt; 5 wrong codes →
+    **429** `"Too many incorrect OTP attempts on this order."` even with the right code afterwards.
+  - ⚠️ Ops impact: dispatch/testers who used `898444` to close stuck orders must now use the
+    admin order screen instead — there is no rider-side override any more.
 
 ### 5. N4 — resend cooldown is an atomic claim, cap wins over cooldown
 - ✅ Fire **two `get-otp` calls for the same new number at the same instant** → exactly **one**
