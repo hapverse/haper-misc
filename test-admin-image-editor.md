@@ -115,6 +115,24 @@ For **Item** re-editing, if an admin clicks on a pending thumbnail (before savin
    - ✅ **Expect:** only the **first edited image is staged** (the second and third are not processed).
    - ✅ **Expect:** you can still **select more files** (or try to upload without the second/third).
 
+### ✅ D1. Editor interaction does not accidentally close parent modal
+
+1. **Open a Product Add modal** (or Item Add modal).
+2. **Fill in product details** (name, price, etc.).
+3. **Click the multi-image upload area** and **select a photo**.
+   - ✅ **Expect:** the ImageEditorModal opens.
+4. **Inside the editor, interact with controls:** drag the crop box, move the Zoom slider, adjust Brightness and Contrast sliders.
+   - ✅ **Expect:** all controls respond normally.
+   - ✅ **Expect:** the **parent Product/Item modal remains open** in the background.
+   - ✅ **Expect:** none of these interactions **accidentally close the parent modal**.
+5. **Click on the editor's dark backdrop area** (the dark surround/overlay, outside the editor panel and controls).
+   - ✅ **Expect:** the backdrop click **closes only the ImageEditorModal** (same behavior as Cancel).
+   - ✅ **Expect:** you return to the parent Product/Item form, which **remains open**.
+6. **Verify intentional closes:** reopen the editor and click **"Use this photo"** or **"Cancel"**.
+   - ✅ **Expect:** only these buttons close the editor by design; accidental interactions do not trigger a close.
+
+> **Note:** this was a real bug found and fixed same-day (2026-08-31) — clicks inside the editor (crop box drag, slider adjustments) were bubbling up and closing the parent ProductModal/ItemModal. Fixed via backdrop-click guard: only clicks on the editor's dark backdrop (outside the editor panel itself) close the editor; internal interactions do not propagate.
+
 ---
 
 ## ✅ Happy path — Item (multi-file queue + re-edit pending)
@@ -325,6 +343,7 @@ If issues arise after commit:
 
 ## Notes for dev/QA
 
+- **Fixed (2026-08-31): Editor backdrop click guard.** Clicks inside the editor (crop box drag, slider adjustments) were bubbling up and closing the parent Product/Item modal. Fixed via exact-target backdrop-click guard in ProductModal.tsx: only clicks on the editor's dark backdrop (outside the editor panel) close the editor; internal interactions do not propagate. See test ✅ D1.
 - **No backend contract.** The editor is 100% client-side. No API changes, no database schema, no migrations — just a React component and a canvas.
 - **Output size is capped intentionally.** The 1600px long edge + 0.85 JPEG quality keeps the final image under 5MB (backend limit). This is a hard constraint — do not remove or increase it.
 - **Blob URL cleanup is critical.** On every modal close, revoke the blob URL via `URL.revokeObjectURL()`. Leaking blob URLs causes memory/storage buildup and can crash the browser on repeated edits. This was a real bug during review.
