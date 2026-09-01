@@ -159,7 +159,47 @@ Still open (separate follow-ups, **not** in this change): the admin UI shows a p
 
 ---
 
+## 9. Rider marks **Undelivered** in the delivery app (stock + audit parity)
+Until this change, only the *admin* "Undelivered" restored stock. When a **rider** marked the
+same status from the delivery app the backend just flipped the status — the goods came back to
+the store physically but the app still counted them as sold, so the catalogue quantity was
+permanently short.
+
+1. Note the current quantity of every item on an order that is **Out for Delivery**
+   (Admin → Inventory). Example: order has 3 × "Aashirvaad Atta 5kg", stock shows 20.
+2. In the **delivery app**, open that order → mark **Undelivered** with a reason.
+   ✅ Order status becomes **Undelivered** (unchanged behaviour).
+   ✅ Stock goes **back up** — "Aashirvaad Atta 5kg" now shows **23**.
+   ✅ Admin → order → **Order Activity** shows a new row: status change → Undelivered, actor
+   role **rider**, source `delivery_app`, with the rider's reason.
+   ❌ **No** refund / wallet credit, even for a prepaid (Razorpay) order — the customer's wallet
+   balance, `refundedAmount` and the refunds list must all be unchanged. Money only comes back
+   when an admin later moves the order to **Admin Cancelled** (§1–§8). This is deliberate:
+   Undelivered is recoverable — dispatch can reassign a rider and retry the same day.
+3. **No double restock.** Try to mark the same order Undelivered again from the app.
+   ✅ Rejected (invalid transition / state changed) and the stock stays at 23 — not 26.
+   ✅ Same if an admin afterwards sets **Admin Cancelled** on that Undelivered order: the admin
+   path already skips restock when the previous status was Undelivered.
+4. **Scheduled orders**: an order booked into a delivery slot gives its seat back when the rider
+   marks it Undelivered (Admin → Scheduled slots shows one more seat free). A normal
+   (non-scheduled) order is unaffected and must not error.
+
+---
+
 ### Notes for devs
+- §9 lives in `markDeliveryStatus` (`packages/delivery/src/routes/order/controller.js`). It mirrors
+  the admin path's `restockStatuses` guard: restock only when the order moves INTO
+  `[ADMIN_CANCELED, UN_DELIVERED, REFUND_SUCCESS]` from a status not already in that list, and
+  `stockRestored: true` is stamped in the SAME status write (the Razorpay `payment.failed`
+  webhook gates on that flag). This handler has **no** MongoDB transaction on purpose (write-lock
+  conflicts with cron/admin writers); the `{ status: currentStatus }` filter on the status update
+  is the single-winner claim, so the compensations after it run at most once. A compensation
+  failure is logged and recorded in the audit row's metadata rather than rolled back — the status
+  change is already committed and must not be reported as failed to the rider.
+- Covered by `packages/delivery/__tests__/order.test.js`
+  (`describe("PATCH /delivery/order/mark-status — UN_DELIVERED compensations")`).
+- Known gap, **not** in this change: the picker app's own line-level paths write audit rows, but
+  no rider-side status change other than `UN_DELIVERED` is audited.
 - The push is deferred to post-commit by `queueOrderEvent` (`packages/shared/utils/order-event.utils.js`):
   transactional writes emit only after `commitTransaction`; a rolled-back/aborted attempt drops
   the queued events (so retries never double-send).
