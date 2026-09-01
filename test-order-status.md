@@ -55,6 +55,7 @@ Quick sanity that the retry/idempotency wrapper didn't change existing behavior:
 - ✅ Out for Delivery → **Undelivered** → stock is restored; status Undelivered.
 - ✅ Prepaid order → **Admin Cancelled** → refund credited to wallet (one refund push); a
   second Cancel on the same order returns the **"already Cancelled"** note (no double refund).
+  (COD orders that spent wallet coins also refund now — see §8.)
 - ✅ Cancelled order → **Open** (reopen) → wallet clawback + stock re-deducted as before.
 
 ## 6. Orders list page tiles only count live orders  (money-display bug fix)
@@ -102,6 +103,60 @@ Do this in the **Android/iOS customer app** (the tabs only exist there):
 5. Admin → **Users → a user → order history** uses the same Active/Past filter:
    ✅ an undelivered/refunded order now shows under **Past** there too.
 
+## 8. Admin cancel refunds wallet coins on COD orders too  (real-money bug fix)
+
+Wallet coins are deducted at checkout for **every** payment method, COD included. Example: a
+₹100 COD order where the customer paid ₹26 from wallet coins and would hand ₹74 cash to the
+rider. If an admin cancels that order, the ₹26 is real customer money already taken.
+
+Before this fix the cancel-refund only ran for prepaid orders (Razorpay / Wallet / Store-pickup
+prepaid), so those ₹26 were silently kept — 18 out of 18 admin-cancelled COD+wallet orders on
+dev had `refundedAmount: 0`. (A customer-side cancel already refunded correctly — different
+code path.)
+
+1. Place a COD order using some wallet coins (e.g. ₹26 of a ₹100 order). Note the customer's
+   wallet balance.
+2. Admin → **Orders** → that order → status **Admin Cancelled**.
+   ✅ Customer's wallet increases by exactly **₹26** (the coins, not the ₹100 order value —
+   the cash was never collected).
+   ✅ Order shows `refundedAmount: 26` and one `refunds[]` entry; the customer gets the
+   "Order cancelled — refund credited 💰 ₹26" push.
+   ❌ Must **not** refund the full ₹100 / order price.
+3. Plain COD order with **no** wallet coins → **Admin Cancelled**:
+   ✅ refund amount **₹0**, wallet untouched, no refund push (unchanged behavior).
+4. Prepaid order whose Razorpay payment was **already refunded** by an earlier partial edit,
+   but which also spent wallet coins:
+   ✅ the wallet portion is still refunded on cancel; the gateway payment is **not** refunded
+   a second time.
+5. Sub-₹1 wallet amount (e.g. ₹0.50 of coins) → **Admin Cancelled**:
+   ✅ cancel succeeds (200), refund amount 0, no wallet credit, no error — refunds are whole
+   rupees only.
+6. Reopen a cancelled COD+wallet order back to **Open**:
+   ✅ the ₹26 clawback is taken back out of the wallet (blocked with a clear message if the
+   customer already spent it).
+7. **Double-refund prevention.** Customer self-cancels a prepaid order — ₹90 charged on Razorpay
+   + ₹10 of wallet coins. The user-cancel path refunds all ₹100 in **one** entry. Now an admin
+   marks that same order **Admin Cancelled**:
+   ✅ refund amount **₹0**, wallet untouched, no new `refunds[]` entry, `refundedAmount` stays 100.
+   ❌ Must **not** credit ₹10 again (the wallet portion was already inside that one ₹100 entry).
+8. **Reopen, then cancel again.** Take that same ₹90 + ₹10 order, **Reopen** it (₹100 is clawed
+   back out of the wallet, `refundedAmount` resets to 0, the old `refunds[]` row is kept as
+   audit history), then **Admin Cancelled** it again:
+   ✅ refund amount **₹100** — the full captured + wallet amount goes back.
+   ❌ Must **not** refund only ₹10 (that would permanently strand the ₹90 gateway portion the
+   customer paid).
+9. **Failed-payment order with coins.** A `PAYMENT_FAILED` prepaid order that spent ₹30 of coins
+   (Razorpay attempted and failed — a payment id exists but nothing was captured) →
+   **Admin Cancelled**:
+   ✅ ₹30 refunded (coins only).
+   ✅ the refund note carries **no** `(pay <id>)` marker — that marker means "this refund settles
+   that gateway capture", and nothing was ever captured here.
+
+Still open (separate follow-ups, **not** in this change): the admin UI shows a plain
+"Confirm cancel" with no refund amount for COD+wallet orders; the admin order-**edit**
+(item-removal) refund path still skips COD orders that used wallet coins; the delivery app's
+`ADMIN_CANCELED` path has no refund logic.
+
 ---
 
 ### Notes for devs
@@ -112,6 +167,18 @@ Do this in the **Android/iOS customer app** (the tabs only exist there):
   bounded retry loop (fresh session per attempt) and short-circuits when the order is already in
   the requested status.
 - Covered by `packages/admin/__tests__/order-close-notification.test.js` (Issue 2 + Issue 5).
+- §8 (wallet refund on COD cancel) lives in the same `markOrderAdmin`: the cancel-refund gate is
+  `isCancelTransition && Math.floor(cancelRefundAmount) >= 1` — gated on the AMOUNT, never on the
+  payment method (`capturedAmount` is naturally 0 without a gateway capture, so a coin-free COD
+  order still refunds nothing). The amount itself is simply
+  `max(0, capturedAmount + walletUsed − refundedAmount)`: **every** refund-writing path in the
+  repo `$inc`s `refundedAmount`, so that one field is already the complete running total of money
+  given back. Do **not** reintroduce per-entry note parsing to work out what's still owed — an
+  earlier version summed the marker-bearing `refunds[]` entries and both double-refunded the
+  wallet portion (§8.7) and stranded the gateway portion after a reopen (§8.8). The
+  paymentId-in-note marker is now used for ONE thing only: deciding whether this refund should
+  stamp `(pay <id>)`, which additionally requires `capturedAmount > 0` (§8.9).
+  Refund tests live in `packages/admin/__tests__/order-refund.test.js`.
 - §6 (page-tiles bug) logic lives in `haper-admin/src/utils/orders.ts`
   (`REVENUE_COUNTED_STATUSES`, `FAILED_ORDER_STATUSES`, `computeOrdersPageSummary`) — extracted
   out of `OrdersList.tsx`'s `useMemo` so it's unit-testable without rendering the page. Covered

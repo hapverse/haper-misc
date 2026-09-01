@@ -1581,6 +1581,37 @@ Follow-up to §11 F, from a code review of that same build. Files:
 
 ---
 
+### ✅ F3. Android — Offers screen typed-entry-row fixes (built 2026-08-28)
+
+Second-round code review of the same Offers screen, on the on-screen **typed code entry row**
+(the field at the top of Offers, separate from the per-card Apply buttons). Files:
+`app/src/main/java/com/bheldi/ui/screens/offers/OffersScreen.kt`,
+`app/src/main/java/com/bheldi/ui/screens/cart/CartViewModel.kt`.
+
+1. **Typed-code success now gives feedback:** on Offers, type a valid, currently-unlisted coupon code
+   into the entry row (one not shown as a card below) and tap **APPLY**. **Expect:** you land on
+   **Cart** with the coupon applied — same landing behaviour as tapping Apply on a card — instead of
+   the input silently clearing with no navigation.
+2. **Typed-code error still displays correctly:** type a bad code (e.g. `DOESNOTEXIST`) into the entry
+   row and tap **APPLY**. **Expect:** a red error message appears **fully readable** below the field
+   (not clipped/squeezed) — the field grows to fit the error text.
+3. **Notch is now a real cutout:** open Offers with at least one coupon card showing. **Expect:** each
+   card has two small semicircular notches cut into its left/right edges (a "ticket" look) that show
+   the **screen background showing through**, not a same-colour circle sitting on top — look closely at
+   the card's shadow near the notch: the shadow is also interrupted there, confirming it's a real
+   cutout and not an overlay.
+4. **Typed-apply spinner has a TalkBack label:** with TalkBack on, tap APPLY on the entry row while a
+   request is in flight. **Expect:** TalkBack announces "Applying coupon" (not silence) while the
+   spinner shows, and "Apply coupon" when idle.
+5. **Typed-apply in flight disables card buttons too:** type a valid code, tap APPLY, and *before* it
+   resolves, try tapping Apply on one of the coupon cards below. **Expect:** the card's Apply button is
+   disabled (not tappable) while the typed request is still in flight — no flash-then-vanish spinner on
+   the card.
+
+`./gradlew assembleDebug` passes with no new warnings.
+
+---
+
 ### ✅ G. Phase 3 — Offers screen on iOS (built 2026-08-27)
 
 Everything in section F applies to iOS unchanged (same three card states, same copy, same
@@ -1713,6 +1744,133 @@ Needs the Phase 1 backend deployed to dev. Against an OLD backend (endpoint 404s
 2. Profile's Wallet/Referral tiles, Saved Addresses, Notifications, Help rows and Log Out are
    unchanged — the Offers row is purely additive.
 
+## 12. Info icon reveals the coupon description (Offers screen, all 3 clients)
+
+**Status: BUILT, UNCOMMITTED (2026-08-30)** — no backend change (`description` already existed and
+was already returned by `/user/coupon/available`); Android, iOS, and web all changed on their
+respective repos, no commit/push/deploy has happened yet on any of the three.
+
+**Why:** each card used to show a truncated inline `description` paragraph in the card body. Now the
+description moves to a popup/sheet opened by tapping a new ⓘ icon next to the coupon code, so a long
+description no longer eats card space or gets clipped — except when `discountSummary` is blank, in
+which case the description still shows inline (clamped to 2 lines) since there's nothing else to
+fill that slot.
+
+**Automated coverage:** none of the three clients could get an automated regression test for this —
+haper-web has no test runner at all (checked: no vitest/jest in `package.json`, no `*.test.*` files
+anywhere in the repo); the Android composables (`OfferCard`, `CouponInfoIcon`, `CouponInfoSheet` in
+`OffersScreen.kt`) are file-`private` and the public `OffersScreen` entry point needs a real
+network-backed `OffersViewModel`/`CartViewModel` that can't be mocked from the `androidTest` source
+set (mockk is only wired as `testImplementation`, not `androidTestImplementation`); iOS's `OfferCard`
+and `CouponDescriptionSheet` in `OffersView.swift` are `private struct`s and the iOS test target has
+no view-testing library (no ViewInspector/snapshot testing) at all — every existing `haperTests` file
+tests models/view-models only, never a View's body. So this entire section is **manual QA only**.
+See the bottom of this section for what would unblock automated coverage.
+
+### ✅ F4 — Android
+
+Files: `app/src/main/java/com/bheldi/ui/screens/offers/OffersScreen.kt` (`CouponInfoIcon`,
+`CouponInfoSheet`, `OfferCard`).
+
+1. Open **Offers** (from Cart's "View offers" link or Profile's "Offers & Coupons" row) where at
+   least one visible coupon has a non-blank `description` and at least one has a blank/missing one.
+2. **Expect:** the coupon **with** a description shows a small ⓘ icon (neutral grey, `InkSecondary`
+   tint — not the green CTA color) right after the code chip, before the BEST/APPLIED badge if any.
+   The coupon **without** one shows no icon at all — the header row just has the code chip (+ badge).
+3. **Expect:** when the coupon has a non-blank `discountSummary`, the card body shows no inline
+   description text under it — only the discount-summary line, the near-miss/min-order meta line,
+   and the Apply/Copy/Remove button area. When `discountSummary` is blank (backend couldn't
+   summarize the discount type), the description text shows inline in that same slot instead,
+   clamped to 2 lines.
+4. Tap ~15pt above/left of the ⓘ glyph (not dead-center on the visible icon).
+5. **Expect:** the info sheet still opens — confirming the full 44×44 tap target works, not just
+   the visible ~14-20px glyph.
+6. Tap the ⓘ icon.
+7. **Expect:** a bottom sheet slides up (same glass-panel chrome as `CancelOrderSheet` — drag handle,
+   rounded top corners) with heading **"About this coupon"** and the coupon's **full, untruncated**
+   description text below it, scrollable if long.
+8. Swipe the sheet down (or tap the scrim outside it).
+9. **Expect:** the sheet dismisses cleanly, no crash, and the Offers list underneath is unchanged —
+   card states, the code chip, discount summary, min-order/expiry line, and the Apply/Copy/Remove
+   button all still work exactly as in §11 F.
+10. Tap Apply / Copy code / Remove on the same card (whichever action fits its state).
+11. **Expect:** identical behavior to before this change — the ⓘ icon is purely additive and never
+    blocks or changes any existing card interaction.
+
+### ✅ G2 — iOS
+
+Files: `haper/Views/OffersView.swift` (`descriptionText`, `infoButton`, `CouponDescriptionSheet`).
+
+1. Open **Offers** (Profile → Preferences → "Offers & Coupons") with the same mixed-description setup
+   as the Android case above.
+2. **Expect:** the coupon **with** a description shows an `info.circle` icon (neutral
+   `HaperColors.inkSecondary`) in the header row, right after the code; the one **without** shows no
+   icon.
+3. **Expect:** when the coupon has a non-blank `discountSummary`, no inline description text shows
+   anywhere in the card body — same layout as §11 G otherwise. When `discountSummary` is blank, the
+   description text shows inline in that same slot instead, clamped to 2 lines.
+4. Tap ~15pt above/left of the `info.circle` glyph (not dead-center on the visible icon).
+5. **Expect:** the description sheet still opens — confirming the full 44×44 tap target works, not
+   just the visible ~14-20px glyph.
+6. Tap the icon.
+7. **Expect:** a sheet presents (`.presentationDetents([.height(280), .large])`, drag indicator
+   visible) with heading **"About this coupon"** and the full description text, scrollable if it
+   overflows.
+8. Swipe the sheet down, or drag it past the small detent to dismiss.
+9. **Expect:** clean dismissal, no crash; the card underneath (code, discount summary, meta line,
+   Apply/Copy/Continue button, eligible/near-miss/empty-cart state) is unaffected.
+10. Repeat the tap-to-apply / copy / continue flow from §11 G on the same card.
+11. **Expect:** unchanged from before this change.
+
+### ✅ H2 — Web
+
+Files: `haper-web/pages/Offers.tsx` (`OfferCard`), `haper-web/components/ui/InfoDialog.tsx`.
+
+1. Open **Offers** (`/offers`, via Checkout's "View offers" link or Profile's "Offers & Coupons" row)
+   with the same mixed-description setup.
+2. **Expect:** the coupon **with** a description shows a small ⓘ button (`aria-label="More info about
+   this coupon"`) right after the code, before the Eligible/near-miss badge. The one **without** a
+   description shows no icon.
+3. **Expect:** when the coupon has a non-blank `discountSummary`, no inline description paragraph
+   shows anywhere in the card — same card body as §11 H otherwise (discount summary,
+   min-order/expiry meta line, Apply/Copy/Continue-shopping section). When `discountSummary` is
+   blank, the description text shows inline in that same slot instead, clamped to 2 lines.
+4. Click ~15pt above/left of the ⓘ glyph (not dead-center on the visible icon) — inside the
+   button's padded hit area but off the drawn icon itself.
+5. **Expect:** the info dialog still opens — confirming the full 44×44 tap target works, not just
+   the visible ~14-20px glyph.
+6. Click the ⓘ icon.
+7. **Expect:** a centered modal opens (dark overlay, blurred backdrop) with heading **"About this
+   coupon"**, an **×** close button, and the full description text below (scrollable if it overflows
+   the 240px body).
+8. Press **Escape**.
+9. **Expect:** the dialog closes and focus returns to the ⓘ icon that opened it (tab focus visibly on
+   the icon, not lost to `<body>`).
+10. Re-open the dialog, then click **outside** the dialog panel (on the dark overlay).
+11. **Expect:** same clean close as Escape.
+12. Re-open the dialog, click the **×** button.
+13. **Expect:** same clean close.
+14. Re-open the dialog and press **Tab** repeatedly.
+15. **Expect:** focus cycles only between the dialog's own focusable elements (title/× button/any
+    focusable content) — it never escapes to the page behind the overlay (focus-trap).
+16. With the dialog closed, click Apply / Copy code / Continue shopping on the same card.
+17. **Expect:** identical to before this change — the ⓘ icon and dialog never interfere with existing
+    card interactions.
+
+### What would unblock automated coverage (not done — reported, not fixed)
+
+- **haper-web:** genuinely no test runner exists in this repo (confirmed via `package.json` +
+  `find`) — adding one is a test-infra decision, not a drive-by addition to this feature.
+- **Android:** `OfferCard`/`CouponInfoIcon`/`CouponInfoSheet` would need to become `internal` (not
+  full `public`) for a `CancelOrderSheetTest`-style Compose UI test to construct them directly, OR
+  `androidTestImplementation(libs.mockk)` would need to be added so `OffersScreen` could be driven
+  end-to-end with a mocked `NetworkModule.getApiService()` (mirroring how `HomeViewModelTest.kt` etc.
+  mock it today, just promoted to the instrumented source set).
+- **iOS:** would need a view-testing library (e.g. ViewInspector) added to the test target, or
+  `OfferCard`/`CouponDescriptionSheet` promoted out of `private` — the test target's `@testable
+  import` does not reach `private` types declared in another file, only `internal`+.
+- Either of the last two is a call for whoever owns Android/iOS test infra, not something to change
+  unilaterally while authoring this test pass.
 
 ---
 

@@ -131,6 +131,47 @@ Both are covered by automated tests in `order-cancel-reason.test.js`.
 
 ---
 
+## How much a customer cancel refunds  (real-money bug fix, 2026-09-01)
+
+Same bug class as `test-order-status.md` §8, but on the **customer** cancel path
+(`DELETE`/`POST /user/order/:orderId/cancel`). How much to refund now comes from the order's
+`refundedAmount` field, not from searching old refund notes for a `(pay <id>)` marker.
+
+Why it mattered: an admin **Reopen** claws the refund back out of the wallet and resets
+`refundedAmount` to 0, but keeps the `refunds[]` history — so the old marker goes **stale**. The
+customer's next cancel saw that stale marker, decided "already refunded" and credited **₹0** while
+returning 200. Only reachable on **scheduled** orders, whose cancel window is slot start − 8h (a
+normal order's 60-second window has usually closed long before a reopen).
+
+Set-up for steps 2-4: a **scheduled** prepaid order 5 days out, ₹90 captured on Razorpay + ₹10 of
+wallet coins = ₹100 of the customer's money.
+
+1. **Straightforward first cancel** (control). Customer cancels it in the app:
+   ✅ ₹100 credited to the wallet, `refundedAmount: 100`, one `refunds[]` entry, one refund push.
+2. **Reopen, then cancel again** (the bug). Admin → **Reopen** that cancelled order (₹100 clawed
+   back out of the wallet, `refundedAmount` → 0, the old `refunds[]` row kept as audit), then the
+   customer cancels again from the app while the slot is still >8h away:
+   ✅ ₹100 credited again, `refundedAmount: 100`, a **second** `refunds[]` entry.
+   ❌ Must **not** return 200 with ₹0 credited — that was the live bug (the customer had paid ₹90
+   at the gateway and spent ₹10 of coins, and got nothing back).
+3. **No double refund.** Cancel an order that was genuinely already refunded (marker present **and**
+   `refundedAmount: 100`, no reopen in between):
+   ✅ 200, wallet untouched, no new `refunds[]` entry, `refundedAmount` stays 100.
+4. **Sub-₹1 residue** (e.g. ₹0.50 of coins left owing): ✅ cancel succeeds (200), no wallet credit,
+   no error — refunds are whole rupees only.
+5. **COD order with no coins** → cancel: ✅ refund ₹0, wallet untouched, no push (unchanged).
+
+Covered by automated tests in `packages/user/__tests__/scheduled-change-cancel.test.js`
+("DELETE /user/order/:orderId — refund amount owed").
+
+**Note on the `(pay <id>)` marker:** it stays in the refund note, but now means only "this refund
+settled that gateway capture". It is stamped only when there really was a capture and no earlier
+entry already claimed it. The Razorpay late-capture webhook
+(`packages/user/src/routes/razorpay/controller.js`) still reads it as a **yes/no** skip-duplicate
+guard on a single payment id — that use is correct and was left alone.
+
+---
+
 ## How to test — Android manual QA
 
 **Prerequisites:**

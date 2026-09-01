@@ -215,5 +215,1531 @@ All wired to real data — nothing is a static mock-up.
   deleted (branch is `revamp-no-delete`).
 - Dark theme unchanged — `HaperTheme` remains light-only, as before.
 
-## Deploy
-Ships with the next Android build. No PR/deploy dependency.
+---
+
+## Phase A — theme foundation (2026-08-28, `dev@d2ad773`)
+
+Purely additive. **No screen or behavior changed** — this is groundwork the later
+phases build on. Nothing below needs a visual check; it's here so a tester knows
+why the diff exists and doesn't go looking for a UI change that isn't there.
+
+### What shipped
+- `ui/theme/Shadows.kt` — 5 new Compose Modifier helpers (`cardShadow`,
+  `headerShadow`, `primaryButtonShadow`, `navShadow`, `fabShadow`) porting the
+  design's CSS box-shadows 1:1 via Compose 1.9's `dropShadow`/`innerShadow`.
+- `ui/theme/Dimens.kt` — new dp constants.
+- `ui/theme/Color.kt` — ~40 new named color tokens matching the design spec.
+- `Theme.kt`'s `HaperElevation` — 3 old shadow helpers **deprecated, not removed**
+  (still compile, still work) in favour of the new ones above.
+- Same day, `dev@3afd791`: Quicksand display weights swapped from an approximated
+  variable-font interpolation to the real static Google-served weight files
+  (500/600/700) — matching how Poppins already loaded.
+
+### Steps
+1. ✅ `./gradlew assembleDebug` passes — the new Shadows/Dimens/Color files
+   compile clean and nothing that referenced the deprecated `HaperElevation`
+   helpers broke.
+2. ✅ Launch the app and spot-check a few Quicksand headings (Home store name,
+   Login/OTP headlines, Item detail price) — glyphs should look identical to
+   before this pass, just sourced from the correct static weight file instead of
+   an interpolated one. There's no "before" build to diff against on-device;
+   this is a source-fidelity fix, not a visual redesign.
+3. ❌ Nothing else to check — no screen calls the new shadow helpers or color
+   tokens yet. If a screen looks different after this commit, that's a
+   regression, not the intended effect of Phase A.
+
+### Edge cases
+- The 3 deprecated `HaperElevation` shadow helpers are still callable
+  (deprecation warning only) — existing call sites keep working until a later
+  phase migrates them to the new `Shadows.kt` helpers one screen at a time.
+- Deprecated ≠ removed: don't expect a compile error from old call sites.
+
+---
+
+## Phase B — bottom nav reach (2026-08-28, `dev@5a77cf4`)
+
+The bottom nav pill (Home/Categories/Orders/Profile + centre cart FAB) previously
+rendered on 3 screens (home, search, aisle). It now rides along on every screen of
+the main graph by **deny-list**, not allow-list: hidden only on
+`splash`/`login`/`otp`/`maintenance`/`forceUpdate` (`NoBottomNavRoutes` in
+`MainActivity.kt`). The active tab is now derived from the current route
+(`navTabForRoute`), not just the user's last tap.
+
+### Steps
+1. ✅ `./gradlew assembleDebug` and `./gradlew testDebugUnitTest` both pass —
+   covers the new `NavTabForRouteTest.kt`.
+2. ✅ **Nav bar absent** only on: splash, login, OTP, maintenance wall,
+   force-update. ❌ If it's missing anywhere else (cart, checkout, order detail,
+   profile, wallet, settings, alerts, notifications, referrals, FAQ, about,
+   saved/add/edit address, edit profile, delete-account, support, webview), that's
+   a regression — the design wants it present on all of these now.
+3. ✅ **Home / Search / any `aisle/...` screen** — Home tab highlighted on
+   home/search, Categories tab on aisle. (Unchanged from before this phase.)
+4. ✅ **Order detail** (`orderDetail/...`) — **Orders** tab highlighted, even
+   though you got there from Home or a push notification.
+5. ✅ **Wallet, Refer & earn, Settings, Alerts, Notifications, Edit profile,
+   Delete account, Support, FAQ, About, in-app webview (Terms/Privacy)** — all
+   highlight the **Profile** tab.
+6. ✅ **Cart, Checkout, Order success** and anything else not covered above —
+   **Home** tab highlighted (the fallback in `navTabForRoute`).
+7. ✅ On the tab host itself (`main` route) tapping a tab still works exactly as
+   before — the user's own tap wins, route-based highlighting doesn't override it.
+8. ✅ **Cart FAB from Checkout** — tap it, land on the existing Cart screen (not a
+   second Cart pushed on top of Checkout). Press Back from there — you should
+   **not** loop back into Checkout's cart-adjacent state; back-stack should read
+   as if you navigated to Cart normally.
+9. ✅ **Cart FAB from Order success** (`orderSuccess/...`) — tap it, go to Cart.
+   Press Back from Cart — you should land on **Home** (`main`), never back on the
+   "order placed" success screen. This was the specific loop the fix targets:
+   success screens must stay un-re-enterable by Back.
+10. ✅ **Bottom padding cleanup** — Checkout's bottom action bar and Edit
+    profile's "Save changes" button still sit correctly above the nav bar /
+    system nav, now relying on the nav bar's own layout instead of a
+    `navigationBarsPadding()` call removed from each screen. ❌ If either button
+    is now hidden behind the system nav bar or the app's bottom nav pill, that's
+    a regression from this cleanup — flag it, don't just re-add the modifier.
+
+### Edge cases
+- **Deliberate, not a bug**: tapping the cart FAB while mid-way through filling
+  out a **new** delivery address inside Checkout discards that in-progress
+  address form. Same behavior as backing out of any half-filled form elsewhere
+  in the app. Test it explicitly so it doesn't get "fixed" later: open Checkout →
+  Add new address → type a few fields but don't save → tap the cart FAB → the
+  address form is gone, cart opens normally.
+- Routes with no design counterpart (`deleteAccount`, `support`, `faq`, `about`,
+  `webview`) follow their entry point and land on the **Profile** tab — this is
+  a judgment call baked into `ProfileGroupRoutes`, not something the design spec
+  states explicitly.
+- `NoBottomNavRoutes` lists `splash`/`login`/`otp`/`maintenance`/`forceUpdate` as
+  a **guard for future routes**, even though none of those five are actual
+  `NavHost` routes today (they render above the NavHost or live in a separate
+  auth graph). Don't be surprised the set looks unused if you grep the nav graph
+  — it's intentionally defensive.
+
+### Dropped from this pass
+A planned "scroll padding" sweep across screens was **confirmed unnecessary**
+after verification — the existing nav bar's layout already handles it correctly
+everywhere except the two `navigationBarsPadding()` removals above. No further
+padding changes were needed. Not a gap to revisit.
+
+## Phase C1 — Home screen restyle (2026-08-28, `dev@10c8a30`)
+
+Restyles four existing Home pieces (banner carousel, wallet/referral row, header,
+loading state) to the new design's glass/shadow language. **No new screens, no
+backend calls changed** — banners and wallet balance still come from the same
+data as before.
+
+### What shipped
+- **Banner carousel** — full-bleed card per page (the old 44dp side-peek is
+  gone), radius 24dp, a real drop shadow (`bannerShadow`), and a 1dp green ring
+  (`BannerWellRing`) drawn on top of the image, last, so the ring survives even
+  when the image is full-bleed. Pagination dots animate width 7dp → 20dp and
+  colour on the active dot over 250ms (`animateDpAsState` / `animateColorAsState`),
+  instead of jumping between fixed sizes.
+- **Wallet/referral row** (`WalletStrip`) — plain white `Surface` + flat shadow
+  replaced with a 150° white→mint glass fill (`glassRowShadow` + `GlassMintPale`)
+  and a 1dp white border, radius unchanged (21dp).
+- **Header** (`HomeHeroCard`) — the store-name pill, the alerts button, and the
+  search bar all moved from flat white/`shadow()` to the same glass-fill +
+  dedicated shadow-helper pattern (`storePillShadow`, `headerIconButtonShadow`,
+  `searchFieldShadow`). The alerts bell icon tint changed from `Color.White` to
+  `GreenDeep` (`#20654E`). **No ETA/time text was added** — the design mock's
+  eyebrow line is `"DELIVERING IN {storeEta}"`, but the app has no ETA field, so
+  that slot keeps the design's font size/position and shows the delivery address
+  instead (see the source comment at `HomeHeroCard`).
+- **Loading state** — the old `homeVM.isLoading` branch was a full-screen
+  40%-black scrim + centered dialog (spinner, "Finding your nearest store",
+  syncing copy) that sat **on top of** the whole screen and ate all touch input.
+  It's replaced by `HaperProductCardSkeleton` × 6 (`HAPER_SKELETON_CARD_COUNT`)
+  laid out inline in the product grid — same card radius/padding/image-well/text-row
+  geometry as a real `ProductCard`, so nothing reflows when real cards swap in.
+  New condition: `homeVM.isLoading && homeVM.featuredItems.isEmpty()` — this is
+  the fix for the address-change bug below. When no store is resolved yet, a
+  "Finding your nearest store…" caption still shows above the skeleton grid.
+
+### Steps
+1. ✅ `./gradlew assembleDebug` passes.
+2. ✅ **Cold start** — kill and relaunch the app. Before the store resolves, Home
+   shows a shimmering **skeleton grid** (6 card-shaped placeholders, "Finding
+   your nearest store…" caption above them) — **not** a spinner dialog and
+   **not** a darkened/blocked screen. You can still scroll/tap the header,
+   banners area, etc. while it loads.
+3. ✅ When real data lands, the skeletons are replaced by actual product cards
+   with **no visible layout jump** — card size/spacing should look identical
+   before and after the swap.
+4. ✅ **Regression check — change delivery address from Home** (switch store via
+   the header pill, or change the saved address so a different store resolves):
+   the skeleton grid **reappears** while the new store's data loads, then swaps
+   to the new store's real cards. ❌ **This is the specific bug that was found
+   and fixed during review** — previously, changing address cleared only
+   `featuredItems`, but the loading condition was gated on category data too, so
+   the *old* store's category tiles stayed on screen, stale and still tappable,
+   with no loading feedback at all. If you see stale content with no skeleton
+   during a store switch, this regressed.
+5. ✅ **Banner carousel** — swipe through all banners. Confirm:
+   - Full-width single-card-per-page (no sliver of the next banner peeking in).
+   - Each banner has a visible 1dp **green edge ring** on top of the image.
+   - A soft drop shadow under the card.
+   - Pagination dots: the active dot is a wider rounded-rect (~20dp), inactive
+     dots are small circles (~7dp); switching pages animates the width/colour
+     change smoothly, it doesn't snap.
+   - **Tapping a banner** does the right thing depending on how it's configured
+     in the backend: `category` type opens that category, `item` type opens
+     that item's detail screen, `url` type opens the system browser, and
+     `internal-url` type opens an in-app Custom Tab (not the system browser).
+     ❌ If a banner does nothing on tap, check its `actionType`/`actionValue` in
+     the backend banner config first — this is a data issue, not new client logic.
+6. ✅ **Header — no delivery-time text, ever.** Check all three states: before
+   any store is resolved (cold start / "Finding your nearest store…"), after a
+   store resolves normally, and when location permission is needed/denied. In
+   none of these should you see a time estimate like "10 minutes" or "10 mins"
+   anywhere in the header. This is a deliberate product rule (the app never
+   promises a delivery time it can't guarantee) — flag it as a bug, not a
+   missing feature, if a time ever appears.
+7. ✅ **Alerts bell** (top-right of header) is **dark green**, not white. ❌ If
+   it's still white, the icon tint didn't pick up `GreenDeep`.
+8. ✅ **Wallet row tap** — tapping the "Haper Wallet · ₹{balance}" row navigates
+   to the Wallet screen (unchanged behavior, just the new glass-card look).
+9. ✅ Store-name pill and search bar in the header both show the glass
+   (white→pale-mint gradient) look with a thin white border, matching the
+   wallet row and banner treatment — not a flat white fill.
+
+### Edge cases
+- **The address-change skeleton bug (caught in review, not shipped broken)**:
+  the loading condition was originally going to key off whichever data field
+  emptied first per section (categories vs. featured items), which meant an
+  address change — which only clears `featuredItems`, not `categories` — would
+  leave old category tiles on screen with no loading indicator. The fix scopes
+  the skeleton to `isLoading && featuredItems.isEmpty()` specifically so it
+  fires on every store re-resolve, cold start or mid-session. Test step 4 above
+  is the direct regression check for this; don't skip it.
+- The skeleton's TalkBack label ("Loading products") is only announced once
+  per batch — the first placeholder card carries it, the other five are
+  silent — so a screen reader doesn't say "loading" six times in a row.
+- Banner `HorizontalPager` no longer has trailing `contentPadding`, so the old
+  "next banner peeks in on the right" affordance is gone by design — the dots
+  now carry the "there's more" signal instead.
+
+---
+
+## Phase C2 — Store picker + floating cart bar (2026-08-28, `dev@5a19e9c`)
+
+Two independent presentation-only changes. **No ViewModel, data-model, API or
+navigation change** — the same store list, the same `selectStore()` call, the
+same cart totals as before.
+
+### What shipped
+- **Store picker is now a bottom sheet, not a dropdown menu.** Tapping the store
+  name in the Home header (only possible when more than one store serves you)
+  opens a "Choose a store" sheet from the bottom of the screen instead of a small
+  grey menu anchored to the header. Each store is a white card with a shop-front
+  icon tile, the store name, its address underneath, and — on the store you're
+  using right now — a small teal gradient tick on the right. Picking a store does
+  exactly what the old menu did.
+  - **Caught in review before this shipped**: the first version of the sheet
+    laid the store list out as a plain `Column`, which doesn't scroll — with 7+
+    stores the rows past the visible sheet height would have been unreachable,
+    with no indication more existed. Fixed by wrapping the list in its own
+    scrollable `Column` (`weight(1f, fill = false)` + `verticalScroll`) inside
+    the sheet, so the title/subtitle stay pinned and only the store list scrolls.
+- **Floating "View cart" bar restyled.** Same bar, new look: dark-green 120°
+  gradient (`#1E3A30 → #2F6250`), radius 22dp, soft green shadow, and the amount
+  on the right in mint (`#8FE8D9`). All colours/radii now come from theme tokens
+  — the file previously had none.
+- **Cart-bar subtitle carries no delivery time.** The design's line is
+  `{eta} · {storeName}`; the app shows the **store name only** (and
+  "Ready to check out" when no store name is known), the same override the Phase
+  C1 header used.
+- Cart bar now announces itself to TalkBack as one control
+  ("View cart, 3 items, total ₹540, <store>") instead of four separate texts.
+
+### Steps
+1. ✅ `./gradlew assembleDebug` and `./gradlew testDebugUnitTest` pass (383 tests,
+   0 failures).
+2. ✅ **Open the store sheet** — on Home, tap the store name in the green header.
+   A sheet slides up from the bottom titled "Choose a store" with the subtitle
+   "Stock and prices vary by store." ❌ If a grey dropdown appears anchored under
+   the header instead, the old menu is still in place.
+   - Note: the store name is only tappable when **two or more** stores serve your
+     address. With one store, tapping still opens the address screen (unchanged).
+     This whole section is only testable end-to-end on a test account whose
+     delivery address is served by 2+ stores — check the account's serviceable
+     stores first if the pill doesn't respond to a tap.
+3. ✅ **Current store is marked** — the store you're on has a teal circular tick
+   on the right, a green outline and a slightly deeper mint icon tile. The others
+   have a pale hairline outline and no tick.
+4. ✅ **Switching works** — tap another store. The sheet closes, the header store
+   name changes, and Home reloads that store's categories/products (the skeleton
+   grid from Phase C1 should appear while it loads).
+5. ✅ **Dismissing does nothing** — open the sheet, then swipe it down / tap the
+   dark area above it / press Back. The sheet closes and the store is unchanged.
+6. ✅ **Rotate with the sheet open** — the sheet stays open after rotation.
+6b. ✅ **Long list scrolls** (only testable with a test account serving **7+**
+   stores — this is the specific bug fixed during review, see above): open the
+   sheet, and confirm the "Choose a store" title/subtitle stay fixed at the top
+   while the store list underneath scrolls. Scroll to the very last row and
+   confirm it's fully visible and tappable, not cut off by the sheet's bottom
+   edge or the system nav bar. ❌ If the sheet doesn't scroll and stores below
+   the fold are unreachable, this is the exact regression from the pre-review
+   version.
+6c. ✅ **Kill the app with the sheet open** — enable Android Developer Options →
+   "Don't keep activities", open the store sheet, then background the app (Home
+   button) so the OS destroys the process, and reopen it from the app switcher.
+   The app should resume showing Home normally, with the sheet either **closed**
+   or, if it does restore mid-restart, showing the same store list correctly —
+   not a blank/frozen sheet.
+7. ✅ **Cart bar look** — add an item to the cart, then look at the bar floating
+   above the bottom nav on Home. Dark-green gradient left-to-right, rounded 22dp
+   corners, a count pill on the left, "View cart" in white with the **store name**
+   above it, and "₹<amount> →" on the right in **mint**, not white.
+8. ✅ **No delivery time on the cart bar** — the small line above "View cart"
+   must never read something like "10 mins · Chapra Store". Store name only.
+   Flag any time estimate as a bug, not a missing feature.
+9. ✅ **Where the cart bar shows** (unchanged from before): Home, Categories,
+   Search and an Aisle/category listing. It should **not** float on Orders,
+   Profile, Cart or Checkout. It also still appears above the add-to-cart bar on
+   the **item detail** screen — that is pre-existing behaviour, not new.
+10. ✅ **Regression — tapping the cart bar** opens the Cart screen from every
+    screen that shows it.
+
+### Edge cases
+- **No CLOSED chip was built.** The design shows a red "CLOSED" badge on stores
+  that aren't currently open. Android has **no open/closed information per
+  store** — `StoreModel` only carries id/name/address/mapUrl, and nothing else on
+  the client knows a store's hours. Rather than invent it, the chip is left out.
+  It needs a backend field on the nearest-store response first. ❌ Don't file
+  "CLOSED chip missing" as a UI bug.
+- The sheet's subtitle is deliberately "Stock and **prices** vary by store", not
+  the design's "Stock and **delivery time** vary by store" — the app never quotes
+  a delivery time anywhere, so promising one in the sheet copy would break the
+  same rule as step 8.
+- The per-store row border and icon-tint in the design mock are bound to
+  variables the prototype never defines; selection drives both here (brand green
+  + deeper mint on the active store).
+- Store cards are ~64dp tall, above the 48dp minimum touch target, and each row
+  reads as one TalkBack item.
+
+---
+
+## Phase D — Browse + discovery (2026-08-29, `dev@215c635`)
+
+Restyles the Categories, Aisle listing, Search and product-card screens to the
+new design's glass/shadow language, and fixes one real bug found along the
+way. **No ViewModel, API or navigation change** — same category/search data,
+same cart logic as before.
+
+### What shipped
+- **All Categories screen** (`AllCategoriesScreen.kt`) — restyled to the new
+  colors/shadows/spacing tokens. Stays a **single-column scrollable list** —
+  checked against the real design source and confirmed a grid is *not* the
+  intended layout here (Phase A's "Known gaps" note above, about a separate
+  all-categories screen not existing in the app's IA, is unrelated: this is
+  the existing Categories tab, restyled in place).
+- **Aisle listing screen** (`AisleListingScreen.kt`, the subcategory rail
+  inside a category) — subcategory filter chips and the "Under ₹50" filter
+  restyled with the new shadow/colour tokens. Selected state is now visually
+  distinct: **mint background, green border and green text**, versus a plain
+  white/hairline chip when unselected.
+- **Search screen** (`SearchScreen.kt`) — **a real bug was found and fixed**:
+  the search input box was clipping the placeholder text ("Search for milk,
+  atta, fruit…") vertically, cutting off the top/bottom of the letters. The
+  field was rebuilt and now renders the full placeholder correctly.
+- **Product cards** (`ProductCard.kt`, `ItemCard.kt` — shared by Home, Aisle
+  listing and Search) — visual token/shadow pass, plus a visible fix: the
+  in-cart quantity stepper ("− 1 +", shown once an item is in the cart) is now
+  a **pill/lozenge shape**, noticeably rounder than the plain "+" add button
+  shown on items not yet in the cart. The two controls are meant to look
+  different — this matches the design spec.
+
+### Steps
+1. ✅ `./gradlew assembleDebug` and `./gradlew testDebugUnitTest` both pass.
+2. ✅ **Categories tab** — open it. Confirm it's still a **single-column list**
+   (not a grid), with the new card styling (updated colours/shadows/spacing).
+   Tap into any category — it opens the aisle listing as before. ❌ If it's
+   rendered as a grid, that's a regression against the design source, not the
+   intended change.
+3. ✅ **Inside an aisle/category** — tap a subcategory filter chip: it turns
+   **mint background with a green border and green text**; unselected chips
+   stay plain. Tap "Under ₹50": same selected treatment. Tap it again to
+   clear it — it returns to the unselected look and the full list returns.
+4. ✅ **Search tab** — tap the search field. The placeholder "Search for milk,
+   atta, fruit…" must render **fully, top and bottom of every letter visible**
+   — no clipping. ❌ If the top or bottom of the text is cut off, this is the
+   exact bug this phase fixed; flag it as a regression, not a known gap.
+5. ✅ Type a query — results still return (data path unchanged). Tap a recent
+   search chip (if any are present from prior searches) — it re-runs that
+   search.
+6. ✅ **Search result rows still look old-style** — this is a **known gap**,
+   not a bug. Only the search field itself and the empty-state panel were
+   restyled this phase; the row layout (image well, name, weight, price,
+   add/stepper) still uses the pre-revamp styling. Do not report this as a
+   missed restyle — it's flagged for a later phase below.
+7. ✅ **Stepper roundness** — add an item to the cart from any product grid
+   (Home, Aisle listing, or Search results). Look at that same item's card
+   again: the "− 1 +" stepper control is now clearly **more rounded (pill
+   shape)** than the plain "+" add button shown on other, not-yet-added items
+   on the same screen. Compare the two side by side on one screen if possible
+   — the shape difference should be obvious, not subtle.
+8. ✅ **Cross-screen consistency** — repeat step 7 on Home and on Search
+   results, not just Aisle listing. All three surfaces share the same
+   `ProductCard`/`ItemCard`, so the stepper shape should look identical
+   everywhere an item is in the cart.
+
+### Known gaps (NOT done)
+- **Search result rows** — still the old, pre-revamp row styling. Only the
+  search field and empty states were restyled this phase. Flagged for a later
+  phase; don't confuse this with "search is fully done."
+
+---
+
+## Phase E1 — Product Detail + Coupons (2026-08-29, `dev@2cd1bdd`)
+
+Restyles the Item Detail and Offers (coupons) screens to the new design's
+glass/shadow language, and fixes **two real bugs** found along the way.
+**No ViewModel, API or navigation change** — same item data, same
+add-to-cart/coupon-apply logic as before. **Cart screen is explicitly out of
+scope** for this phase — it has separate, unrelated work in progress from
+another session and was deliberately left untouched; don't test Cart changes
+against this section.
+
+### What shipped
+- **Bug fix — "Total" label was stacking vertically.** The price block beside
+  the "Add to Cart" button had `weight(1f)` while the button itself was an
+  unweighted child of the same `Row`. `HaperPrimaryButton` lays its content out
+  in a `fillMaxWidth()` inner `Row`, so as an unweighted sibling it got measured
+  against the *whole* bar width and claimed all of it — leaving the weighted
+  price column 0dp wide, which wrapped "Total" and the price to one
+  character/digit per line, partly hidden behind the button. Fixed by making
+  the price column intrinsic-width and giving the CTA the weight instead, so
+  neither can starve the other.
+- **Bug fix — hero image showed an unwanted white box behind non-white
+  products.** The product photo's multiply-blend (used so the photo reads
+  correctly against the screen's tinted background) had its offscreen
+  compositing layer on the *image itself*. That meant the blend's backdrop was
+  the image's own empty layer, not the real screen surface behind it — so the
+  photo's white JPEG ground survived as a visible white rectangle instead of
+  disappearing into the background. Fixed by moving the `CompositingStrategy
+  .Offscreen` layer to the `Box` that contains the hero image, and painting the
+  real surface colour (`SurfaceApp`) inside that same layer before the image is
+  drawn, so the multiply blend has the right backdrop.
+- **Item Detail — rest of the screen restyled**: no app bar; back/cart buttons
+  now float over the hero image itself (which scrolls with the content,
+  per the design's `.dc.html:426-433`). Category/subcategory label, product
+  name in Quicksand, veg/non-veg mark (logic unchanged — still only shown when
+  the item actually carries diet-type data), stock label, price row with
+  "Save ₹N" and "% OFF" badges, unit-price line, and the quantity stepper (cap
+  at 6, per README §3.11/§4 — unchanged cap logic).
+- **Coupons/Offers screen restyled**: coupon-code entry field and "Apply"
+  button on the new glass token set, and each coupon card's decorative
+  circular **notch** cut into its left/right edges. The notch itself already
+  existed (`BlendMode.Clear` punching a hole via an offscreen compositing
+  layer) — this pass added the **1px hairline ring** around each notch
+  (`.dc.html:633`) that the original version didn't draw, plus moved the
+  notch's diameter to a shared `HaperDimens` token.
+- New `Dimens.kt`/`Shadows.kt` tokens: `itemHeroHeight`, `couponNotchDiameter`,
+  `stickyBarShadow`, `stickyStepperShadow`, `infoTileShadow`, `glassRowShadow`
+  (shared file also touched by Phase C1/C2 — additive only, no existing token
+  changed value).
+
+### Steps
+1. ✅ `./gradlew assembleDebug` and `./gradlew testDebugUnitTest` both pass.
+2. ✅ **Open any product's detail page** — near the "Add to Cart" button, the
+   "Total" label and the price render as **normal horizontal text**, fully
+   visible, not stacked into single letters/digits and not cut off behind the
+   button. ❌ If you see vertically-stacked characters or the price hidden
+   under the CTA, this is the exact bug this phase fixed — regression.
+3. ✅ **Product photo** — confirm it displays with no odd white rectangle
+   behind it, on **both** a white-background product photo and a non-white one
+   (a coloured pouch/bottle is the best test — the bug only showed on
+   non-white photos). ❌ A visible white box behind the photo edges is the
+   second bug this phase fixed — regression.
+4. ✅ **Back/cart buttons** float directly over the hero image (no app bar
+   above it), and the hero scrolls with the rest of the content.
+5. ✅ Category/subcategory label, product name, stock label, price with
+   "Save ₹N" / "% OFF" badges, and unit-price line all show the new styling.
+6. ✅ **Veg/non-veg mark** — only appears when the item actually has diet-type
+   data (unchanged logic, just restyled). ❌ Don't expect it on items with no
+   diet-type field — that's correct, not a gap.
+7. ✅ **Add to cart from this screen** — tap "Add to Cart", confirm the
+   quantity stepper appears and works (+ / −), and caps at **6** — the "+"
+   button disables past 6.
+8. ✅ **Go to Coupons/Offers** (from Cart) — the code entry field and "Apply"
+   button show the new glass styling.
+9. ✅ **Coupon card notch** — each card has a small circular notch cut into
+   both its left and right edges, each with a thin **1px ring outline**
+   (`BorderHairline`) around the cutout. ❌ A notch with no visible ring, or no
+   notch at all, is a regression against this pass.
+10. ✅ **Apply a real coupon code** — confirm it still applies correctly
+    (discount reflects, success/error messaging is the same as before). This
+    pass is visual only; functionality is unchanged.
+11. ❌ **Cart screen** — not part of this phase. If you spot something odd on
+    Cart itself, don't report it against E1 — it belongs to the separate,
+    in-progress session mentioned above.
+
+### Edge cases
+- Both bugs were pre-existing (not introduced by an earlier revamp phase) —
+  they predate this restyle pass and were caught while touching this screen,
+  not caused by it.
+- The hero's multiply-blend fix only works because the offscreen layer and the
+  `SurfaceApp` background are painted on the **same** `Box` — if the layer
+  modifier and the background colour ever get split across different
+  composables again, the white-box bug can come back silently (it won't fail a
+  build or test, only look wrong on device).
+- The coupon notch's hole-punch (`BlendMode.Clear`) still needs
+  `CompositingStrategy.Offscreen` on the card's own `Box`, same pattern as the
+  hero image fix — the ring is drawn as a second pass after the hole so it
+  isn't erased by the same clear.
+
+---
+
+## Phase F — Checkout + address (2026-08-29, `bfd4d26`)
+
+Restyles the payment screen, the delivery-slot picker, the payment-failed
+screen, the saved-address list, the add/edit-address form and the full-screen
+map picker to the new design's glass/shadow language. **Money-adjacent screens
+are presentation-only** — no ViewModel, repository, API or navigation change,
+and **not one payment-availability rule was touched**. **Cart screen remains
+out of scope** (separate in-progress session).
+
+### What shipped
+- **Payment screen (§3.16)**: new header ("Payment" + "₹N to pay") on the page
+  background with a hairline; the delivery address is now a glass summary row
+  with a "Change" link; uppercase section eyebrows ("DELIVERY SLOT", "HAPER
+  WALLET", "PAY USING"); the payment methods are the design's list rows —
+  40dp icon tile, name + one quiet line, a 1.6dp outline that turns green when
+  chosen, and a teal ✓ disc; a Razorpay reassurance line; and a "Bill summary"
+  card on the design's deepest shadow. The CTA moved to a sticky footer on the
+  app background (label left, arrow right) instead of a raised white sheet.
+- **🚨 COD availability is unchanged.** COD is still gated *only* by the
+  server's schedule `allowedPaymentMethods`. The design mock's flat "COD is
+  blocked above ₹2,000" rule is an agreed business-rule override and is
+  **deliberately not implemented**. The disabled COD row now states the reason
+  in more readable text than before, but the rule behind it is identical.
+- **Delivery-slot picker (§3.15)**: one shared slot card for the now/schedule
+  choice, the date strip and the time-slot grid — radius 17dp, 1.6dp outline,
+  14sp Quicksand title, 10.5sp subtitle, selected changes both fill and
+  outline. Availability still comes only from the server; unavailable slots
+  are greyed **with the reason in words**, never colour alone.
+- **Payment failed (§3.17)**: the summary card (Amount / Reference in
+  monospace / Reason) moved onto the design's glass panel + shadow.
+- **Saved addresses (§3.14)**: dashed "Add a new address" card, "SAVED
+  ADDRESSES" eyebrow, address cards with a 38dp icon tile, a DEFAULT chip and
+  the teal ✓ on the current address. View / Edit / Delete / "Deliver here"
+  actions are all still there.
+  - **Bug fix — button alignment + text cut-off in "Manage addresses" mode.**
+    On the Profile → Saved Addresses screen (management mode, as opposed to
+    the checkout picker), the View/Edit/Delete row was sometimes misaligned
+    against the address text above it, and long address text was clipped
+    more aggressively than intended. Both are fixed by the same card rebuild
+    that restyled this screen — the action row now aligns consistently and
+    address text truncates sensibly (ellipsis, not a hard cut mid-word).
+- **Add/edit address (§3.14/§3.15)**: the 290dp map area moved to the top of
+  the screen with a white "Move pin" chip; below it a glass card that says in
+  words whether the location is confirmed, approximate-from-PIN, or not set;
+  then the form as 50dp white fields with a 1.4dp outline and **⚠ inline
+  validation** in Danger; "Save as" pills; and the Save button moved from the
+  app bar to a sticky "Save address" footer.
+- **The save gate is unchanged**: an unconfirmed coordinate still opens the map
+  picker instead of saving, and the phone's GPS is still never grabbed on the
+  user's behalf.
+- **Map picker**: white map controls and a proper bottom sheet for the
+  coordinate + "Confirm location".
+- New additive tokens only: `panelShadow`, `billSummaryShadow`,
+  `mapControlShadow`, plus `addressCard`, `paymentMethodRow`,
+  `billSummaryCard`, `formFieldHeight`, `addressMapHeight`, `borderSelected`,
+  `borderField`. New shared `HaperSelectedCheck` component (the teal ✓ used by
+  both the payment list and the address list).
+- **Payment logic itself was reviewed and confirmed unchanged by a payments
+  specialist** as part of this pass: COD availability still comes only from
+  the schedule's `allowedPaymentMethods` (never a rupee threshold), the
+  Razorpay online-payment flow is untouched, and wallet-balance auto-apply on
+  checkout is untouched — this phase is presentation-only around all three.
+
+### Steps
+1. ✅ `./gradlew assembleDebug` and `./gradlew testDebugUnitTest` both pass.
+2. ✅ **Cart → Checkout** — header reads "Payment" with "₹N to pay" beneath it;
+   the address row, slot cards and payment rows all show the new styling.
+3. ✅ **Pay using** — tap between "Online Payment" and "Cash on Delivery": the
+   chosen row gets a green outline and the teal ✓, the other loses both.
+4. ✅ **Schedule a delivery** — tap "Schedule", pick a date and a time slot.
+   Unavailable dates/slots stay greyed **and say why** ("Unavailable", "Full",
+   "Too soon", "Closed"). ❌ A greyed card with no word on it is a regression.
+5. ✅ **COD with a scheduled order** — after picking a scheduled slot, the
+   "Cash on Delivery" row goes disabled and reads "Not available for scheduled
+   orders". ❌ If COD is disabled for any *other* reason — especially an order
+   value threshold — that is a bug: no such rule exists in this app.
+6. ✅ **COD with an immediate ("Now") order** — COD is selectable, whatever the
+   order total. Place a **₹2,000+** COD order end to end to prove it. ❌ COD
+   being blocked on a large "Now" order is the exact regression to watch for.
+7. ✅ **Place a real order both ways** — COD and online (Razorpay) — and
+   confirm both still complete and land on the order-success screen exactly as
+   before. For the online order, follow the Razorpay sheet all the way
+   through (not just to the point it opens) to confirm the end-to-end flow
+   still works.
+7b. ✅ **Wallet balance toggle** — with a test account that has wallet
+   balance, toggle "Use Haper Wallet" on the checkout screen. The applied
+   amount appears in the bill and "To pay" drops accordingly, same as before
+   the restyle — only the visuals changed.
+8. ✅ **Bill summary** — Items / coupon / Delivery / Platform fee / Wallet
+   applied / "To pay" all show the same numbers as before the restyle.
+9. ✅ **Checkout → Change address** — the address list opens with "Step 1 of 2 ·
+   then payment", the dashed "Add a new address" card, and the current address
+   carrying a DEFAULT chip and a teal ✓. Tapping a card selects it and returns.
+10. ✅ **Profile → Saved Addresses** — same screen in management mode; "Deliver
+    here", View, Edit and Delete are all present on each card and still work.
+    Check the View/Edit/Delete row on **every** saved address card, especially
+    ones with a long address line: the three actions stay evenly aligned and
+    the address text truncates with an ellipsis instead of being cut off
+    mid-word. ❌ Misaligned action buttons or awkwardly clipped text is the
+    exact bug this phase fixed — regression.
+11. ✅ **Add an address** — the map sits at the top; typing a valid 6-digit PIN
+    still jumps the pin to that area and the card says "Approximate — not yet
+    confirmed" naming the PIN. Tapping the map (or "Move pin") opens the
+    full-screen picker; "Confirm location" flips it to "Confirmed location".
+12. ✅ **Save with empty required fields** — each bad field turns pink and
+    shows a "⚠ <reason>" line beneath it.
+13. ✅ **Save with an unconfirmed location** — the map picker opens instead of
+    saving, and the address is only saved after you confirm a spot. ❌ Saving
+    straight away, or the pin silently jumping to *your own* current location,
+    is a serious regression.
+14. ✅ **Village/locality dropdown** — still opens the store's village list and
+    picking one fills the field and clears its error.
+15. ✅ Scroll every one of these screens to the very bottom — nothing is hidden
+    behind the sticky button or the bottom nav bar.
+
+### Known gaps (NOT done)
+- **"Place Order" button text for COD orders is shorter than the design.**
+  The mock's CTA reads "Place order · Pay on delivery"; the app's button
+  currently shows a shorter label with no "Pay on delivery" suffix. Cosmetic
+  only — the order still places correctly either way. Flagged for a later
+  phase; don't report it as a functional bug.
+
+### Edge cases
+- **Builds without a Google Maps key**: the map area and the "Move pin" chip
+  disappear entirely, the header strapline changes to "Capture your exact spot
+  with GPS", and a "Capture location" / "Refresh current location" button is
+  the way to set the coordinate. Verified on a deliberately keyless build.
+  ❌ A blank grey rectangle where the map should be, or no way at all to set a
+  location, means this fallback broke.
+- The payment-failed screen is only reachable after a genuinely declined or
+  cancelled gateway payment, so it was verified by code review rather than on
+  device — worth an eyeball next time a test payment is cancelled at the
+  Razorpay sheet.
+- The address card hides the contact name when the address has a nickname
+  ("Home"/"Work"), matching the design. Unlabelled addresses still show the
+  name, so no address is ever nameless.
+
+---
+
+## Phase G1 — Orders list + Order Success (2026-08-29, `dev@d28b498`)
+
+Restyles the Orders list (Active/Past tabs) and the Order Success confirmation
+screen to the new design's glass/shadow language, and fixes one real bug found
+along the way. **No ViewModel, API or navigation change** — same order data,
+same checkout/order-placement logic as before. **Order Detail (tapping into a
+specific order) and the cancel-order flow are explicitly out of scope** — a
+separate follow-up phase (G2), not built yet.
+
+### What shipped
+- **Orders list restyled** — order cards on the new shadow/colour tokens: order
+  ID, a status pill (e.g. "Cancelled", "Order Placed"), up to 3 item
+  thumbnails, price, and a "Track order ›" / "View details ›" link depending
+  on order state.
+  - **Bug fix — "+N" extra-items badge.** The badge that shows how many items
+    beyond the first 3 thumbnails an order has was counting only items that
+    *had* a product photo, so orders with 4+ items where some items lacked a
+    photo either undercounted the badge or made it disappear entirely. It now
+    counts off the order's **total item count**, not the subset with photos.
+  - **Bug fix — last card hidden behind the bottom nav.** The last order card
+    in a long list sat partially behind the floating bottom nav pill; the list
+    now has correct bottom spacing so the last card clears it.
+  - **Bug fix — empty state placement.** The "no orders yet" empty state (both
+    Active and Past tabs) wasn't clear of the bottom nav and wasn't properly
+    centred; it now sits centred in the visible area above the nav.
+- **Order Success screen** — the teal checkmark circle now uses the design's
+  exact shadow/gradient plus a subtle **pulsing glow** animation around it.
+  Still **no delivery-time estimate anywhere** on the screen — same app-wide
+  no-invented-ETA rule as every other phase.
+
+### Steps
+1. ✅ `./gradlew assembleDebug` and `./gradlew testDebugUnitTest` both pass.
+2. ✅ **Orders tab** — Active/Past toggle switches correctly. Cards show the
+   new shadow styling, order ID, status pill and thumbnails.
+3. ✅ **Order with 4+ items where some lack product photos** — the "+N" badge
+   shows the correct remaining count (total items − 3), not undercounted and
+   not missing. ❌ A missing badge or a count that ignores photo-less items is
+   the exact bug this phase fixed — regression.
+4. ✅ **Scroll to the last order in a long list** — the card is fully visible,
+   not hidden behind the bottom nav pill. ❌ A partially-obscured last card is
+   a regression.
+5. ✅ **Empty state** (reachable on a test account with no orders, on either
+   tab) — "no orders yet" is centred in the visible area, clear of the bottom
+   nav, and the screen doesn't scroll.
+6. ✅ **Place a real order** — Order Success shows the teal checkmark with a
+   soft pulsing glow, "Order placed", the order ID, and **no delivery-time
+   text anywhere** on the screen.
+7. ❌ **Order Detail (tap into a specific order) and cancel-order** — not part
+   of this phase. Don't report Order Detail's old layout or the cancel flow
+   against G1 — that's phase G2.
+
+### Known gaps (NOT done)
+- **"Browse the store" button on the empty orders screen** — present in the
+  design mock, not wired up this phase. Needs a small additional bit of
+  navigation wiring. Tracked as a follow-up, not a regression.
+- **Order Detail screen and the cancel-order flow** — deliberately excluded
+  from this phase; both still use the old, pre-revamp layout/behaviour. That's
+  phase G2.
+
+---
+
+## Phase G2 — Order detail + cancel window (2026-08-29, `dev@f3a1fb6`)
+
+The second half of Orders: the **order detail screen** you land on when you tap
+an order, and the **cancel-order reason sheet**. This is the phase the plan
+flagged as the riskiest of the whole revamp, because the same screen carries the
+cancel window, the invoice download, and it's where a delivery push notification
+opens.
+
+**The one rule of this phase: nothing about *whether* you can cancel changed.**
+Only how the cancel window *looks*. There are two separate things that were
+easy to confuse and were kept strictly apart:
+- a **normal order** gets a 60-second free-cancellation countdown after you
+  place it, and
+- a **scheduled-delivery order** gets its own, much longer window that the
+  server decides.
+
+Neither rule was touched — only their paint.
+
+### What shipped
+- **Status hero** at the top: a tinted well with a round status disc, the
+  status name in its own colour, and when it was ordered. A delivered order
+  gets the teal gradient disc from the design; a cancelled one stays red, a
+  refunded one stays purple — the colour follows the real status instead of
+  being fixed.
+- **Live status stepper** — replaces the old flat 5-segment progress bar with
+  a vertical timeline: a teal ✓ on every stage already passed, a **green
+  pulsing dot** on the stage the order is on right now, grey for what's still
+  ahead, joined by a hairline rail. The five stage names are the app's own
+  existing status names (Order Placed / Assigned / Processing / Out for
+  Delivery / Delivered) — **no new wording was invented**.
+- **Cancel window card** — the countdown is now its own card: "Free
+  cancellation window" with a large green `0:26` clock, a green progress bar
+  that drains as the seconds tick, the remaining-seconds line, and an outlined
+  red "Cancel order" button. Same 60 seconds as before, same disappearing act
+  when it runs out.
+- **Items, Bill, address, rider, refunds, short-pick changes** — all moved onto
+  the revamp's glass cards with section headings (ITEMS / BILL / DELIVERY
+  ADDRESS / …). Items get the design's 46dp product tile, "300 g · Qty 1" line
+  and struck-through MRP with a "% OFF" tag. The bill's last line is now
+  "**Paid**" in bold.
+- **Cancel reason sheet** — restyled to match the app's other bottom sheets
+  (rounded top, glass panel, drag handle) with the design's own rounded reason
+  rows and green radio buttons. **Wording is unchanged**: still "Cancel
+  Order?", "Yes, Cancel" and "No".
+  - **Bug fix — unselected reason rows were see-through.** The rows weren't
+    fully opaque, so the order detail screen behind the sheet bled through
+    them slightly. Now solid white, as the design intends.
+- **Accessibility fix — the "No" (dismiss) button.** It was implemented as a
+  selectable option, so TalkBack announced it as a toggle you "select" rather
+  than a button you tap, and its hit area was under the standard minimum tap
+  target. It's now a proper button: announced correctly by screen readers and
+  meets the minimum tap-target size.
+- **Bug fix — content hidden behind the bottom nav.** The bottom of the order
+  detail screen (the invoice button / cancel card) sat under the floating nav
+  pill. It now has the correct clearance.
+
+### Steps
+1. ✅ `./gradlew assembleDebug` and `./gradlew testDebugUnitTest` both pass.
+2. ✅ **Open any order from the Orders tab** — status hero, stepper, address,
+   ITEMS and BILL cards all render on the new styling. Scroll to the very
+   bottom: nothing is hidden behind the bottom nav pill. ❌ Anything cut off at
+   the bottom is a regression.
+3. ✅ **The stepper's live dot pulses** (a soft green glow that breathes) and
+   the rail visibly connects each dot to the next. Stages already passed show a
+   teal ✓.
+4. ✅ **Place a fresh Cash-on-Delivery order, then open it within 60 seconds** —
+   the "Free cancellation window" card is there, the clock counts *down*, and
+   the green bar shrinks in step with it.
+5. ✅ **Wait for the clock to hit 0:00 without touching anything** — the whole
+   cancel card disappears and the rest of the screen is unaffected. ❌ A stuck
+   clock, a card that lingers past zero, or a card that never appears at all is
+   a regression of the cancel window itself, not the styling.
+6. ✅ **Tap "Cancel order" inside the window** — the reason sheet opens on the
+   new styling: 7 reasons, each a rounded row with a green radio. Rows are
+   **solid white**, not see-through. ❌ Being able to read the order screen
+   through the reason rows is the exact bug fixed during this phase.
+7. ✅ **Pick "Other"** — a "What went wrong?" note box and a `0/180` counter
+   appear, and **both "Yes, Cancel" and "No" stay reachable at the bottom**,
+   even with the keyboard open. ❌ Buttons pushed off-screen is an old bug (F1)
+   that must not come back.
+8. ✅ **Tap "No"** — the sheet closes and **the order is still active**, not
+   cancelled. With TalkBack on, "No" is announced as a button, not a selection
+   toggle, and its tap target meets the standard minimum size.
+9. ✅ **A delivered order** — shows the teal disc, all 5 stages ✓/passed, the
+   star rating card, and a full-width "Download invoice" button that actually
+   downloads. ❌ The invoice button appearing on a *non-delivered* order is a
+   regression — it is delivered-only, unchanged.
+10. ✅ **A scheduled-delivery order** — its own "Scheduled delivery" card with
+    the booked slot, the change/cancel deadlines, and "Change slot" / "Cancel
+    order" buttons appearing exactly as often as they did before. ❌ A button
+    appearing or disappearing versus the old build is a regression — the rule
+    behind it was deliberately not touched.
+11. ✅ **Tap an order push notification** — it still opens straight to that
+    order's detail screen.
+
+### Edge cases
+- **The 60-second cancel-window logic itself was not touched** — verified
+  byte-identical by an independent code review. Only its visual appearance
+  (colours, timer display, progress bar) was restyled this phase. If the
+  countdown's actual timing/behaviour looks wrong, that's a pre-existing issue,
+  not something this phase introduced.
+- **Note for testers**: dev now carries 2 extra orders left over from this
+  phase's verification — `HP45199080` and `HP47489081`. Both are still active
+  (not cancelled). Safe to ignore, or clean up if they get in the way of
+  another test pass.
+
+### Known gaps (NOT done)
+- **"Reorder" button.** The design's footer pairs "Download invoice" with a
+  "Reorder" button. The app has no reorder feature, so the invoice button takes
+  the full width instead. Reorder is a real feature, not styling — separate
+  work.
+- **Map / rider-on-a-map panel.** The design's tracking screen shows a live map
+  with rider and store pins. There is no live rider location available, so this
+  was not built rather than faked.
+- **"₹20 restocking fee" line.** The design's cancel card warns about a ₹20 fee
+  after the timer ends. Haper has no such fee, so that sentence was left out.
+- **Per-stage timestamps** under each stepper stage ("6 of 3 items picked…").
+  No per-stage time data exists on the order, so the stages show names only.
+
+---
+
+## Phase E2 — Cart (2026-08-29, `dev@a461bc0`)
+
+The last piece of Phase E. Cart was bundled with Product Detail and Coupons in
+the plan; those two shipped as E1, the cart screen waited because a separate
+session was fixing money rounding on the same file (`b6123b4`). That fix is on
+`dev` now, so this phase restyles on top of it.
+
+**Nothing about money or the quantity cap changed.** The rounding helper the
+other session added (`formatRupeesRounded`) is untouched — every price on the
+screen is produced by the exact same call as before, and its 6 unit tests still
+pass. The 6-per-item cap is still enforced by the same code; only the way the
+"+" button *looks* when you hit the cap was restyled.
+
+### What shipped
+- **Header** — the design's back chip + "Your cart" with a quiet "4 items" line
+  under it, over a hairline. (The mock's second line also says "… · 12 min from
+  Haper Mart"; the ETA half is deliberately left out — the app never invents a
+  delivery time.)
+- **One card for the whole list.** Every cart line now sits inside a single
+  glass card, separated by hairlines, instead of four separate floating cards.
+  Each line: 56dp product tile, name, pack size, struck MRP + green price, and
+  the teal quantity stepper on the right.
+- **"+ Add more items"** row closes the card and takes you back to shopping —
+  straight from the mock.
+- **Coupons not showing up was investigated this session and is not an app
+  bug.** Coupons default to hidden until an admin explicitly makes them
+  visible in admin/backend config — confirmed by live-testing that the app
+  correctly fetches and renders coupons once one is made visible. If a coupon
+  "isn't showing" again, check its visibility flag in admin first.
+- **Free-delivery strip** moved above the list (it used to sit under it) and is
+  now the design's mint strip with a delivery-truck icon. The "you still need
+  ₹X more" version keeps its amber colours.
+- **Coupon row** — instead of a code box sitting in the cart, there's now a
+  single "Apply a coupon ›" row that opens the Coupons & offers screen, which
+  already has the code box (shipped in Phase E1) and the list of coupons. When a
+  coupon *is* applied, the cart shows a dashed-teal card with the code, "You
+  saved ₹X on this order" and Remove — plus any warning the server sends.
+- **Bill details** — heading + the design's deepest "money" card: Item total,
+  Coupon discount / Discount, Delivery fee (FREE in teal), Platform fee, a
+  divider, then **To pay** in bold, and a mint "You save ₹260 on this order"
+  chip at the bottom. The old duplicate summary card at the very top of the cart
+  (item count + subtotal + savings) is gone — every number on it is now in the
+  header or in this card.
+- **Sticky footer** — "Proceed to pay   ₹1366 →" on the design's 54dp gradient
+  button, over a hairline with the soft upward shadow.
+- **Empty cart** — unchanged layout, button now reads "Start shopping" (the
+  mock's wording) instead of "Continue shopping".
+- **Loading** — three shimmering placeholder lines in the real card shape,
+  instead of a spinner.
+
+### Steps
+1. ✅ `./gradlew assembleDebug` and `./gradlew testDebugUnitTest` both pass —
+   389 tests, 0 failures, including the 6 `CartScreenFormatRupeesTest` rounding
+   tests. ❌ Any of those 6 failing means the money fix was disturbed.
+2. ✅ **Open the cart with items in it** — one card holds all the lines with
+   hairlines between them, "+ Add more items" at the bottom, coupon row below
+   it, then Bill details, then the sticky "Proceed to pay" bar.
+3. ✅ **Check the numbers against a calculator.** Line prices, Item total,
+   Platform fee, To pay and the "You save ₹N" chip must all agree with what the
+   old build showed for the same cart (example verified: 9 + 69 + 38 + 1249 =
+   ₹1365 item total, + ₹1 platform fee = **₹1366 To pay**, savings ₹260).
+   ❌ Any price off by ₹1 versus the previous build is a regression.
+4. ✅ **Tap "+" on one line until it reads 6** — the "+" glyph visibly fades out
+   and stops responding; "−" stays fully white and still works. The header count
+   and the bill update on every tap. ❌ Being able to reach 7 is a business-rule
+   regression, not a styling one.
+5. ✅ **Tap "−" back down** — the line returns to 1 and the bill follows.
+   Removing the last one of a line drops the line from the card.
+6. ✅ **Tap "Apply a coupon"** — opens Coupons & offers, which has the code box
+   at the top. Applying a code there and coming back shows the dashed-teal
+   "CODE applied / You saved ₹X" card in the cart, with a working Remove.
+   ❌ There is deliberately **no code box in the cart any more** — that is the
+   change, not a bug. The only place to type a code is the Coupons screen.
+6b. ✅ **A coupon that is visible on dev** — from Offers, apply it. It shows on
+   the Offers list once an admin has marked it visible (see Known gaps below
+   if a coupon you expect isn't listed — check its visibility flag in admin,
+   not the app). Confirm it applies correctly and shows on Cart per step 6.
+7. ✅ **Empty the cart** — 96dp bag icon, "Your cart is empty", "Milk, atta,
+   fresh vegetables — the usuals are two taps away." and a "Start shopping"
+   button. The sticky pay bar and the "4 items" subtitle both disappear.
+8. ✅ **Pull down to refresh** — still works, green spinner.
+9. ✅ **Scroll to the bottom** — nothing hides behind the sticky bar or the
+   bottom nav pill.
+10. ✅ **A cart with a free gift** — the gift line appears as the last line
+    *inside* the same card (FREE GIFT tag, "FREE", a fixed quantity of 1 with no
+    stepper), and the gift nudge banner still shows above the coupon row.
+
+### Edge cases
+- **Rounding is untouched.** Every ₹ on this screen goes through the same
+  `formatRupeesRounded` call as before this phase; a row can still legitimately
+  read ₹1 off the sum of its parts, which is the documented, accepted behaviour
+  from the earlier fix. A reviewer byte-compared every price calculation on
+  this screen before/after the restyle diff specifically to confirm the
+  visual pass didn't disturb `b6123b4`'s rounding fix — verified untouched.
+- **The list is no longer virtualised** (all lines are one card, as the design
+  draws it). A cart is short and capped at 6 per item, so this is fine — but a
+  ridiculous cart (50+ distinct lines) is worth a scroll-smoothness check.
+- **Stepper tap targets** are the design's 28×34dp, matching the product-card
+  stepper shipped in Phase D — slightly smaller than the old 32×38dp.
+
+### Known gaps (NOT done)
+- **"Deliver to <address>" row above the pay button.** The mock puts the
+  delivery address in the sticky footer. The cart screen has no address data of
+  its own, and wiring it in would mean touching a ViewModel — out of scope for a
+  styling phase. The address stays where it is, on checkout.
+- **"Delivery instructions" card** ("Ring the bell once · leave at the door").
+  No such field exists in the app; not faked.
+- **"1 item went out of stock" banner.** The cart has no out-of-stock signal to
+  drive it.
+- **"4 codes available for you"** under the coupon row — the count isn't
+  available on this screen, so the line reads "Browse the codes you can use on
+  this order" instead of a made-up number.
+- **Applied-coupon card** — verified live this session once a coupon was made
+  visible in admin (see "What shipped" above); if dev has no visible/eligible
+  coupon at test time, fall back to code review for this specific card.
+
+---
+
+## Phase H1 — Profile + Edit/Delete/Restore Account (2026-08-29, `dev@a4658c9`)
+
+Restyles the Profile, Edit Profile, Delete Account and Restore Account screens
+to the new design's glass/shadow language, and fixes one real navigation bug
+and two small OTP-robustness issues found along the way. **No ViewModel, API
+or navigation-graph change** — same profile data, same delete/restore logic
+as before.
+
+### What shipped
+- **Profile screen** (`ProfileScreen.kt`) restyled — avatar, name, phone,
+  wallet-balance card, referral-code card, the menu rows (Offers, Addresses,
+  Notifications, Refer & Earn, Settings, Support), and Log out.
+  - **Bug fix — "Edit" only worked if you hit the button exactly.** The
+    identity row's edit action lived on a small "Edit" chip only; the mock
+    (`Haper Green App.dc.html:1124-1127`) puts the tap target on the **whole
+    name/photo row**. The row now carries `clickable(onClickLabel = "Edit
+    profile", onClick = onEditProfile)`; the "Edit" chip is now a static,
+    non-clickable visual label — tapping anywhere on the avatar/name area
+    opens Edit Profile.
+  - **Bug fix — phone + email were squeezed onto one line and getting cut
+    off.** The contact line under the name showed phone and email together.
+    It now shows **phone only** (`+91 <number>`) — email already has its own
+    read-only row on the Edit Profile screen, so nothing is lost.
+  - Debug-only environment switcher (`BuildConfig.DEBUG` block, dev-team use
+    only, never shown in a release build) restyled to be the **plainest,
+    quietest row on the screen** — still functional, just visually
+    de-emphasized so it doesn't compete with real menu items.
+- **Edit Profile screen** (`EditProfileScreen.kt`) restyled — name field,
+  locked email/phone rows, referral-code entry, delete-account link.
+- **Delete Account screen** (`DeleteAccountScreen.kt`) restyled — warning
+  copy (permanent deletion, wallet forfeiture, pending orders block deletion)
+  and the OTP confirmation step.
+  - **Fix — OTP field now locks while a request is in flight.** The 6-digit
+    OTP input is `enabled = !deleteVM.isLoading`; previously it stayed
+    editable during the network call.
+  - **Fix — OTP field auto-focuses when the step appears.** Stage 2 (reason +
+    OTP) renders in place, no navigation — a new `LaunchedEffect
+    (deleteVM.otpStageReached)` calls `FocusRequester.requestFocus()` the
+    moment that stage flips in, so the keyboard is already up and the first
+    box is ready to type into.
+- **Restore Account screen** (`RestoreAccountScreen.kt`) restyled — for
+  accounts inside their 30-day grace period after deletion.
+- Shared `HaperButton` component updated (loading/enabled split, matching the
+  pattern used by the other CTAs across the revamp).
+
+### Steps
+1. ✅ `./gradlew assembleDebug` and `./gradlew testDebugUnitTest` both pass.
+2. ✅ **Profile screen — tap anywhere on the name/photo area** (not just the
+   "Edit" chip — try the avatar, the name text, the empty space around them)
+   — Edit Profile opens every time. ❌ If only the small "Edit" chip responds,
+   this is the exact bug this phase fixed — regression.
+3. ✅ **Contact line under the name** shows the phone number only
+   (`+91 XXXXXXXXXX`), fully visible, not cut off, and **no email** on this
+   line. ❌ Phone+email squeezed together or clipped is the second bug this
+   phase fixed — regression.
+4. ✅ **Edit Profile** — name field is editable, email and phone rows are
+   read-only (matching what's under the account) and display the same
+   values as before the restyle, referral code entry works, and "Delete my
+   account" link is present.
+5. ✅ **Delete Account with a test account that has pending orders** — the
+   pending-orders warning shows with the real count and blocks progress past
+   that step. This is **existing, unchanged behaviour** being re-confirmed
+   under the new styling, not new risk — flag it only if it stops blocking.
+6. ⚠️ **Needs testing on a clean account (no pending orders) — Delete
+   Account OTP step.** Could not be exercised end-to-end this session; every
+   test account available had pending orders blocking the flow before OTP is
+   reached. Verified by code review only:
+   - OTP field should be **disabled/locked** the moment you tap the send-OTP
+     CTA (while `deleteVM.isLoading` is true) and re-enable if the request
+     fails.
+   - The OTP field should **auto-focus and bring up the keyboard** the
+     instant the OTP step appears, no extra tap needed.
+   Run this on a real device with a genuinely clean test account before
+   trusting it fully.
+7. ✅ **Restore Account** (reachable within 30 days of deleting a test
+   account) — restyled copy and CTA, "Restore my account" still restores the
+   account and returns you to a normal signed-in state.
+8. ✅ **Developer debug switcher** (Profile screen, **debug builds only** —
+   confirm it's absent entirely on a release build) — still lets you switch
+   environments, but now renders as a subdued, de-emphasized row rather than
+   standing out among the real menu items.
+
+### Edge cases
+- The "Edit" chip is now purely decorative — don't expect a ripple/press
+  state on the chip itself; the ripple should be on the whole row.
+- The pending-orders block is unrelated to this phase's OTP fixes — it was
+  already correct before this restyle and is only re-listed here because
+  it's the reason the OTP step above couldn't be verified live.
+- Stage 2 of Delete Account (reason + OTP) renders **in place** on the same
+  screen, not as a separate navigation destination — the auto-focus fix
+  relies on that (`LaunchedEffect` keyed off a state flip, not `onCreate`).
+
+### Known gaps (NOT done)
+- **Delete Account OTP step has no live end-to-end pass** — see step 6 above.
+  This is a test-coverage gap, not a known bug; don't confuse the two.
+
+---
+
+## Phase H2 — Wallet + Refer & Earn (2026-08-29, `dev@a7f5ff5`)
+
+Restyles the Wallet and Refer & Earn screens to the new design's glass/shadow
+language, and fixes **two real bugs** on Wallet found along the way. **No
+ViewModel, API or navigation change** — same balance/transaction data, same
+`refCode` from `GET /user/profile` as before.
+
+### What shipped
+- **Wallet screen** restyled — dark green balance card at the top, transaction
+  history grouped into a list below it. **No "Add money" feature** — by design
+  the wallet is credit/refund-only, there is no top-up flow anywhere in the
+  app, and none was added this phase.
+- **Bug fix — infinite spinner on a failed history load.** Loading more
+  transaction history (scrolling to the bottom of a long list) used to spin
+  forever with no way out if that request ever failed (e.g. a dropped
+  connection). It now shows a "Tap to retry" row instead of a stuck spinner.
+- **Bug fix — rare crash risk in the transaction list.** A new transaction
+  arriving while the list was mid-scroll could, in rare cases, crash the
+  screen. This was a rendering/list-diffing fix under the hood, not a visual
+  change — there is nothing new to look at, only nothing to see wrong.
+- **Refer & Earn screen** restyled — referral code in a dashed-border card,
+  a copy-to-clipboard button, a share button. **No referral-history/list
+  feature** — same as the Phase A/Known-gaps note above, there is still no
+  backend support for a list of who used your code, so none was built.
+
+### Steps
+1. ✅ `./gradlew assembleDebug` and `./gradlew testDebugUnitTest` both pass.
+2. ✅ **Wallet screen** — dark green balance card at the top shows the real
+   balance; the transaction history below it is grouped into a list with the
+   new styling. ❌ An "Add money" / top-up button anywhere on this screen is a
+   regression — none exists by design, don't expect one.
+3. ✅ **Scroll the transaction list to the bottom** to trigger "load more"
+   (only testable on a test account with **10+** transactions). Confirm more
+   history loads in without a stuck/endless spinner.
+4. ⚠️ **Retry on a failed load — needs a real network drop to trigger.** Could
+   not be exercised end-to-end this session (would need to kill connectivity
+   mid-scroll on a 10+-transaction account). Verified by code review only: a
+   failed "load more" should show a "Tap to retry" row instead of a spinner
+   that never resolves. ❌ A spinner that just spins forever with no retry
+   option is the exact bug this phase fixed — if you can reproduce a dropped
+   connection, this is the regression to watch for.
+5. ✅ **Scroll quickly through a long transaction list** — no crash, list
+   renders smoothly. (This step exists to cover the list-diffing fix in step
+   above; there's no visual difference to check, only stability.)
+6. ✅ **Refer & Earn** (Profile → Refer & Earn) — your real referral code
+   shows in a dashed-border card. Tap "Copy" — code is copied to the
+   clipboard and a confirmation (toast/snackbar) appears. Tap "Share" — the
+   Android share sheet opens with an invite message.
+7. ❌ **No referral history/list on this screen** — not a gap introduced this
+   phase, see Phase A's "Known gaps" above; don't report it here either.
+
+### Known gaps (NOT done)
+- **Orders screen has the same "infinite spinner on a failed load" issue**
+  the Wallet fix addressed — **not fixed in this phase**, flagged as a
+  separate follow-up. Do not report it against H2; it's a pre-existing,
+  known issue on a different screen.
+- **Retry-on-failure (step 4 above) was not verified live** — code review
+  only, no test account/connectivity setup available to force a failed
+  "load more" this session.
+
+---
+
+## Phase H3 — Settings, Alerts, Notifications, About, FAQ, Support (2026-08-29, `dev@c59a147`)
+
+The last piece of Phase H. Restyles Settings, Alerts and Notification
+preferences, plus About, FAQ and Customer Support, to the new design's
+glass/shadow language. **This closes out Phase H (Account area) entirely** —
+H1 (Profile/Edit/Delete/Restore, `a4658c9`) + H2 (Wallet/Refer, `a7f5ff5`) +
+H3 below cover every Account-area screen. **No ViewModel, API or navigation
+change** — same toggle state, same support contact data as before.
+
+### What shipped
+- **Settings, Alerts, Notification preferences** restyled — grouped cards
+  with the revamp's shadow/colour tokens; toggle logic untouched.
+- **About, FAQ, Support were rebuilt mid-session, not just restyled.** The
+  first pass treated these three as having no design mock and gave them a
+  plain token pass. Partway through, real mocks were found for all three, so
+  they were rebuilt to match:
+  - **FAQ** (`FAQScreen.kt`) — was one flat list of questions; now grouped
+    under 3 uppercase category headings — **Orders and delivery**,
+    **Payments and refunds**, **Returns and issues** — each question its own
+    expandable card (`FAQGroup`/`faqGroups`).
+  - **About** (`AboutScreen.kt`) — centered logo, version info, a
+    **"Company"** card (Operated by: Hapverse Private Limited / Website:
+    haper.in / Contact: support email — each row tappable where it makes
+    sense), and a separate **"Legal"** card with Terms of service / Privacy
+    policy rows that open the in-app webview.
+  - **Support** (`CustomerSupportScreen.kt`) — contact channels now a
+    **2-column grid** of glass cards (Call support / Email us), each with a
+    tinted icon well, instead of a single stacked list.
+- **Content accuracy — two mock copy lines were removed, not shipped.**
+  Neither could be verified as factual, so they're simply absent rather than
+  guessed at:
+  - A **"Registered: Chapra, Bihar, India"** company-registration line on
+    About. **Needs your review** — the "Company" card currently has no
+    registered-address row at all.
+  - A **"Someone answers between 7 AM and 11 PM"** support-hours line on
+    Support. **Needs your review** — the Support screen currently makes no
+    claim about hours.
+  If either line is actually correct, it can be added back with confirmed
+  wording; check the "Company"/"Legal" card and the Support header for the
+  absence of both before signing off.
+- **Known gaps (design shows these, not built)** — a "Still stuck? Contact
+  support" link at the bottom of FAQ, and a "Read the FAQs" link on Support.
+  Both need new navigation wiring. Not bugs: both destinations are already
+  reachable today, just via Settings rather than cross-linked from each
+  other.
+- **Fix — Notification Settings loading state spacing.** The loading branch's
+  content had no clearance above the floating bottom nav bar; it now uses
+  the same `HaperSpacing.scrollBottomPadding` the loaded state already had.
+- New `Shadows.kt` tokens (29 lines added) backing the About/FAQ/Support
+  card and grid shadows.
+
+### Steps
+1. ✅ `./gradlew assembleDebug` and `./gradlew testDebugUnitTest` both pass.
+2. ✅ **Settings** (Profile → Settings) — grouped cards on the new styling;
+   every row still navigates to the same destination as before.
+3. ✅ **Alerts** and **Notification preferences** — restyled, and every
+   toggle still reads/writes the same setting as before (flip one, leave the
+   screen, come back — the state persisted).
+4. ✅ **Notification preferences — loading state.** Trigger it (fresh
+   navigation to the screen, or throttle the network) — the loading content
+   has clear space above the bottom nav bar, not flush against it. ❌ Content
+   touching/behind the nav bar is the exact spacing bug this phase fixed.
+5. ✅ **FAQ** — 3 category headings in order: "Orders and delivery",
+   "Payments and refunds", "Returns and issues". Each question is its own
+   card, not one long list. Tap a card — it expands to show the answer; tap
+   again — it collapses. ❌ One flat undivided list is the pre-H3 layout —
+   regression.
+6. ❌ **FAQ — no "Still stuck? Contact support" link at the bottom.** Known
+   gap, not a bug — see above.
+7. ✅ **About** (Profile → Settings → About, or wherever it's linked from) —
+   centered logo at the top, version info beneath it, then a **"Company"**
+   card (Operated by / Website / Contact rows) and a separate **"Legal"**
+   card (Terms of service, Privacy policy). ❌ **No "Registered: …" row
+   anywhere on this screen** — flag it to Priyanka/business if you believe
+   that line should exist; do not treat its absence as a bug to fix
+   yourself.
+8. ✅ **About — Website and Contact rows are tappable** (Website opens the
+   in-app webview at haper.in, Contact opens the support email flow as
+   appropriate). Terms of service / Privacy policy rows in the Legal card
+   open `https://haper.in/terms` / `https://haper.in/privacy` in the in-app
+   webview (not an external browser).
+9. ✅ **Support** — Call support and Email us show as a **2-column grid**
+   of cards, each with an icon. Tap "Call support" — the phone dialer opens
+   with the support number pre-filled. Tap "Email us" — the device's email
+   app opens a new message addressed to the support email. ❌ A single
+   stacked list instead of a 2-column grid, or either tap doing nothing, is
+   a regression.
+10. ✅ **Support — "keep your order ID ready" note** still shows below the
+    channel grid, unchanged copy.
+11. ❌ **Support — no "Someone answers between 7 AM and 11 PM" line
+    anywhere.** Same as About's registration line — flag it if you believe
+    it's correct and should be restored; don't add it back without confirmed
+    wording.
+12. ❌ **Support — no "Read the FAQs" link.** Known gap, not a bug.
+
+### ⚠️ Needs business confirmation before shipping copy
+Two lines from the design mock are **currently absent from the app**, not
+wrong — they were deliberately not shipped because nobody on this pass could
+verify them:
+- About screen: **"Registered: Chapra, Bihar, India"**
+- Support screen: **"Someone answers between 7 AM and 11 PM"**
+If either is accurate, confirm exact wording with the business owner and a
+follow-up commit can add it back. Until then, treat their absence on About
+and Support as correct, not a gap to silently "fix" by re-adding the mock's
+unverified text.
+
+### Edge cases
+- The About/FAQ/Support rebuild happened **mid-session** after the initial
+  no-mock assumption was found to be wrong — if you're diffing against an
+  early build from the same day, the first-pass token-only version of these
+  three screens is not what shipped; only `c59a147`'s final state matters.
+- FAQ card expand/collapse state is **local to the screen** (not persisted)
+  — leaving and returning to FAQ starts every card collapsed again. That's
+  existing behaviour, not new.
+
+### Known gaps (NOT done)
+- **FAQ → "Still stuck? Contact support" link** — not wired; needs new
+  navigation. Reachable today via Settings → Support.
+- **Support → "Read the FAQs" link** — not wired; needs new navigation.
+  Reachable today via Settings → FAQ.
+- **Two copy lines withheld pending business confirmation** — see the
+  callout above. Not a build gap, a content-accuracy hold.
+
+---
+
+## Phase I — Entry + blocking states + the new Store Closed screen (2026-08-29, `dev@775d766`)
+
+The last screen-content phase. Covers Splash, Login, OTP, Maintenance, Force
+Update, No connection, and builds the one designed screen the app never had:
+**Store closed** (`errstore`, screenshot 29).
+
+**No ViewModel, repository, API or navigation change. Login and OTP were not
+edited at all** — they were verified as already matching the design and left
+byte-identical, which is deliberate: they are authentication screens.
+
+### What shipped
+- **Store Closed screen — NEW.** `StoreClosedScreen` added to
+  `ui/screens/components/ErrorScreens.kt` (same file as its two siblings,
+  following that file's existing convention). 92dp `DangerSurface` well
+  (radius 30dp), Quicksand 600 heading, body copy, then the recovery actions.
+  `title`/`icon` are parameters — the screen **defaults to** a storefront
+  glyph and "This store is closed" (a genuinely closed store), but a caller
+  can override both, which is exactly what Maintenance does (below).
+- **Recovery action reuses the existing store switcher** (`StorePickerSheet`
+  from Phase C2) — no new sheet was built. The mock's "Notify me when it
+  opens" is deliberately **not** built (no backend), and the mock's "opens at
+  7:00 AM · Chapra Main, 3.4 km away" line is not synthesised (the client has
+  no opening-hours or store-distance field).
+- **Maintenance vs Store Closed stay two distinct messages, on purpose.**
+  `MaintenanceScreen`'s store-scoped branch (`maintenanceScope == "store"`)
+  now renders `StoreClosedScreen`'s *layout*, but always **overrides** its
+  title/icon to `"This store is briefly down"` + a wrench (`Icons.Default
+  .Build`) — never the default "closed" copy. A deploy-window maintenance
+  wall must never read as "this store has shut down". The bare "This store
+  is closed" + storefront copy is reserved for a store that's actually
+  closed, not one that's temporarily down. Global (non-store) maintenance is
+  untouched: still "We'll be back soon!".
+- **Countdown card restyled** — the mock's eyebrow + Quicksand clock over a
+  white card with a hairline, replacing the old `surfaceVariant` chip. Used by
+  the store-scoped maintenance branch only (global maintenance has its own,
+  separately-restyled countdown card in the same file).
+- **Global maintenance heading/body centring fixed** — the heading rendered
+  left-aligned because `textAlign = Center` had no width to centre within.
+  Before: heading hugged the left padding edge. After: centred.
+- **Force Update, No connection restyled** — Force Update's heading moved
+  from a plain 22sp Poppins-weight bold to Quicksand 23sp/600, body to
+  13.5sp/Medium/21.6sp line height, matching the error-screen family. No
+  Internet's heading is now explicitly Quicksand 600 (was defaulting to 700),
+  a deliberately calmer weight than the red server-error state.
+- **Instrumented test comment fixed, no stale assertions found.**
+  `MaintenanceScreenTest.kt`'s doc comment referenced old line numbers in
+  `MaintenanceScreen.kt` that moved once the store-scoped branch was
+  refactored to call `StoreClosedScreen`; the comment was corrected to
+  describe the new `onChangeAddress` → `StoreClosedScreen` secondary-action
+  path instead of a line number. The actual `onNodeWithText(...)` assertions
+  already read `"This store is briefly down"` and `"We'll be back soon!"`
+  going in — nothing there needed changing. (These are `androidTest`
+  instrumented tests — they need a device/emulator and were **not run** this
+  session, only confirmed to compile.)
+
+### How to test
+1. ✅ **Splash** — cold start the app. Green gradient, two translucent
+   circles, cream logo tile, tagline, ring spinner, "HAPVERSE PRIVATE
+   LIMITED" at the bottom. ❌ any Material spinner or white background.
+2. ✅ **Login** — log out (or fresh install). 250dp gradient header with the
+   faint duotone watermark, 80dp logo tile, "SIGN IN" eyebrow, 54dp phone
+   field with `+91` prefix, teal ✓ at 10 digits, gradient "Send OTP", OR
+   divider, "Continue with Google", legal footer with working links. This is
+   a **no-regression check only** — nothing changed here this phase.
+3. ✅ **OTP** — request a code. Back chevron, "Verify your number", masked
+   number + green "Change", six cells (first one teal-bordered when empty),
+   30s resend countdown then "Resend", CTA disabled until 6 digits. Enter a
+   wrong code — cells turn Danger + the error card appears. Also a
+   no-regression check only.
+4. ✅ **Force Update** — Quicksand 23sp/600 "Time to update" heading (not the
+   old plain-bold look), body text sits closer to the heading and reads at
+   13.5sp. ❌ Poppins/system-sans heading here is a regression.
+5. ✅ **No connection** — turn off Wi-Fi and mobile data. Neutral (not red)
+   92dp well, "You're offline" in Quicksand at the calmer 600 weight (not
+   bold-700), "Reconnecting…" footnote.
+6. ⚠️ **Maintenance — store-scoped, temporary.** Needs a store-scoped
+   maintenance window on dev (`maintenanceScope: "store"` in app config) — if
+   you can't trigger one, treat this as a code-review-only check (see the
+   citations under "What shipped" above). If reachable: red 92dp well with a
+   **wrench icon**, heading reads **"This store is briefly down"**
+   (never "closed"), server message, the restyled countdown card, and "Try a
+   different delivery address" when logged in. ❌ If the heading says "This
+   store is closed" or shows the storefront icon during a maintenance
+   window, that's the exact mix-up this phase is designed to prevent —
+   regression.
+7. ⚠️ **Store Closed — genuinely closed store.** Same caveat: not reachable
+   through any live app-config value today (see Known gaps) — verify by
+   code review of `StoreClosedScreen`'s defaults (`ErrorScreens.kt`). Default
+   heading is **"This store is closed"** with a **storefront icon**, distinct
+   from maintenance's wrench/"briefly down" wording above. ❌ Do not report
+   "can't find the Store Closed screen on dev" as a bug — flag it as the
+   known wiring gap below instead.
+8. ✅ **Maintenance — global.** Heading "We'll be back soon!" is now
+   **centred**, not hugging the left edge. ❌ Left-aligned heading is the
+   exact bug this phase fixed — regression.
+
+### Known gaps (NOT done)
+- **The Store Closed screen's own default copy has no live trigger yet.**
+  `StoreClosedScreen` is only ever invoked from `MaintenanceScreen`'s
+  store-scoped branch, and that branch **always overrides** the title/icon
+  to the "briefly down" wrench copy — so the default "This store is closed"
+  storefront copy cannot currently be seen by changing any app-config value
+  on dev. Wiring a real "closed" (not "under maintenance") state to this
+  screen is a separate piece of work, not done here.
+- **"Choose another store" is not wired to real store data yet.**
+  `MaintenanceScreen` gained `stores` / `selectedStoreId` / `onSelectStore`
+  parameters, all defaulted to "no switcher", so the CTA does not render
+  today. Activating it needs a **one-line change in `MainActivity.kt`** at
+  the `MaintenanceScreen(...)` call site (passing `homeVM.availableStores`,
+  `homeVM.selectedStoreId`, `homeVM::selectStore`) — deliberately left out
+  because `MainActivity.kt` was out of scope for this phase. This is a
+  flagged follow-up, **not a regression**.
+- **Moot on dev today either way** — dev has only one store, so even once
+  wired the CTA would stay hidden by design (`stores.size > 1` gate);
+  switching to the same closed store isn't a recovery action.
+- **No-connection has no "Try again" button** unlike the mock — the app
+  auto-retries on reconnect. Adding a real retry needs a callback from
+  `MainActivity.kt`.
+- **The Android system splash (before Compose starts) is white**, not the
+  brand gradient — that lives in `themes.xml`, not in this phase's files.
+- **Splash/Login taglines differ from both design HTML copies** ("…store,
+  delivered" vs "…in your pocket" / "Groceries in ten minutes"). Treated as a
+  product copy decision, not drift, and left alone.
+
+---
+
+## Phase J — Derived screens: WebView, Location Needed (2026-08-29, `dev@ad56c4d`)
+
+Restyles the three screens that had **no design mock** anywhere (confirmed
+against both design source files, closing out the last item Phase A's/G1's
+"Known gaps" kept pointing at). Landed on `dev` as `ad56c4d` ("android:
+restyle webview, location-needed card and sheet screens").
+
+**This closes out all derived/no-mock screens** — every screen without a
+design counterpart (Store Closed in Phase I, and now WebView + both Location
+Needed surfaces here) has been accounted for. Nothing derived remains
+unrestyled.
+
+### What shipped
+- **In-app WebView** (Terms of Service, Privacy Policy and other legal/policy
+  pages, reached from About's "Legal" card and Login's footer links) —
+  header, back button and loading bar restyled to match the app's design
+  system. **The policy content itself is unchanged** — it's fetched from
+  `haper.in`, not rendered from app code, so there's nothing to check inside
+  the page beyond "does it load".
+- **"Location needed" card** (shown inline on Home when the app can't resolve
+  a delivery location — permission denied, no saved address, or a network
+  error while resolving one) — restyled to the glass/shadow language, with a
+  **distinct message per reason** (permission needed / no address / network
+  error) and a retry button.
+- **"Location needed" bottom sheet** — a fuller-screen version of the same
+  flow, shown in certain flows — restyled to match the app's other bottom
+  sheets (same glass-panel look as the Phase C2 store picker).
+- **Bug fix — sheet was see-through.** The location sheet's background let
+  content behind it show through faintly; it's now fully opaque, matching
+  every other sheet in the app.
+- **Bug fix — retry button looked dead while checking.** The retry button
+  visually greyed out the instant it was tapped (while the location check
+  was in flight), reading as disabled/broken even though it was still doing
+  work. It now stays visually active for the whole check.
+- **Closes out the last "no design mock" screens.** WebView and both Location
+  Needed surfaces were confirmed to have no counterpart in either design
+  source file — same verification standard as Phase I's Store Closed screen.
+
+### Steps
+1. ✅ **Profile → About → Terms of Service** (Legal card) — the in-app
+   WebView opens with the restyled header (title + back button matching the
+   app's other headers) and a loading bar in the app's brand colour while the
+   page loads. ❌ A generic system-styled header/back button, or a default
+   Android/Chrome-style loading bar, is a regression.
+2. ✅ **Profile → About → Privacy Policy** — same check as step 1.
+3. ✅ **Login footer → Terms of Service / Privacy Policy** — same WebView,
+   same restyled chrome, opened from the other entry point. ❌ It must not
+   leave the app to an external browser (same rule as Phase I's Login
+   no-regression check).
+4. ✅ **Location Needed card — permission denied.** Deny location permission
+   (or revoke it in system settings, then reopen the app) and land on Home.
+   The card shows the **permission-needed message** and a retry button.
+5. ✅ **Location Needed card — no saved address.** On a fresh account with no
+   saved address and location permission denied/unavailable, Home shows the
+   **no-address message** — distinct wording from step 4, not the same
+   generic copy.
+6. ✅ **Location Needed card — network error.** If reachable (e.g. by
+   dropping connectivity while the app tries to resolve location), the card
+   shows the **network-error message** — a third, distinct wording. ⚠️ Needs a
+   real network drop to trigger; if you can't force this state, treat it as
+   code-review-only for this run and flag it for a follow-up pass with
+   connectivity control.
+7. ✅ **Retry button** on the card — tap it while it's checking. The button
+   stays **visually active** (not greyed/dimmed) for the whole check, then
+   either resolves a location (card disappears, Home loads normally) or
+   re-shows the same message if it still can't resolve. ❌ A button that
+   looks disabled/greyed out during the check is the exact bug this phase
+   fixed — regression.
+8. ✅ **Location Needed bottom sheet** (reachable from whichever flow
+   surfaces it — check with whoever wired the entry point if it isn't
+   obvious). Confirm it's **fully opaque** — nothing behind it should be
+   visible through the sheet. ❌ Any see-through/translucent content behind
+   the sheet is the exact bug this phase fixed — regression.
+9. ✅ **Sheet styling matches the rest of the app** — same glass-panel look,
+   corner radius and shadow as the Phase C2 store-picker sheet and other
+   sheets elsewhere in the app, not a plain white sheet.
+
+### Known gaps (NOT done)
+- **Network-error state (step 6) needs a forced connectivity drop** to
+  exercise live — same caveat Phase H2 flagged for its own retry-on-failure
+  check.
+
+---
+
+## Phase K — Final sweep + lock (2026-08-29, `dev@5b2ab5d`)
+
+Closes out the whole 11-phase Haper Green revamp (Phases A–K). Pure code
+hygiene: nothing on screen changed except the two input fields called out
+below. **No ViewModel, API, navigation or business-logic change** — this
+phase's own regression sweep re-confirmed cancellation rules, cart quantity
+caps, veg/non-veg labeling, coupon codes and invoice download are all
+byte-identical to before this pass.
+
+### What shipped
+- **Inline-style sweep across the whole app** — 24 hardcoded colours and 12
+  ad-hoc shadow modifiers, scattered across screens untouched by Phases A–J,
+  replaced with the shared `Color.kt` tokens and `Shadows.kt` helpers. Mostly
+  invisible: these spots already looked correct on screen, they just weren't
+  reading from the design system, so a future palette change would have
+  missed them. `HaperBottomNav.kt`, `HaperButton.kt`, `HaperItemRow.kt`,
+  `HaperSkeleton.kt`, `ProductCard.kt`, `LoginScreen.kt`,
+  `ItemDetailScreen.kt`, `CancelOrderSheet.kt`, `OrderDetailScreen.kt`,
+  `OrderSuccessScreen.kt`, `ProfileScreen.kt` and `SplashScreen.kt` were the
+  files touched.
+- **Duplicate product-card component removed.** The app had carried two
+  separate "product card" implementations since different points in the
+  revamp — `ItemCard.kt` and `ProductCard.kt`. `ItemCard.kt` is deleted;
+  every call site now uses `ProductCard.kt`, the one all of Phases C1–D
+  already restyled.
+- **Two remaining old-style text fields fixed** — the cancel-order "What went
+  wrong?" note box (`CancelOrderSheet.kt`) and an order-review comment box
+  now use the same 1.4dp-outline field style as the rest of the app (Phase F's
+  address form, Phase E's coupon-code field), instead of the pre-revamp
+  Material outline look.
+- **`ui/theme/Motion.kt` — new animation tokens** (`Theme.kt`, `Color.kt`
+  also touched to wire durations/easing in). Shimmer and pulsing-dot tokens
+  are wired into `HaperSkeleton.kt` and the order-detail stepper's live dot
+  (Phase G2). **Three tokens are defined but not yet wired into any screen**:
+  add-to-cart bounce, list-item entrance animation, and the map-pin float on
+  the address map (Phase F). Not a bug — timing/easing values exist in
+  `Motion.kt`, ready for a future pass to attach to those three interactions.
+- Dead code and stale comments left over from Phases A–J removed.
+
+### Steps
+1. ✅ `./gradlew assembleDebug` passes.
+2. ✅ `./gradlew testDebugUnitTest` passes — full suite green, no new
+   failures introduced by the token/dedup sweep.
+3. ✅ **Spot-check 2–3 screens from the file list above** (e.g. Login,
+   Splash, Order detail) — nothing should look different from before this
+   phase; this is an internal refactor, not a restyle.
+4. ✅ **Cancel-order "What went wrong?" box** (Cart → an eligible order →
+   Cancel order → Other) — text field now has the same rounded 1.4dp-outline
+   look as the checkout/address form fields. ❌ Still the plain Material
+   outline box is a regression.
+5. ✅ **Order-review comment box** (wherever the app's post-delivery review
+   flow lives) — same outline-field styling fix as step 4.
+6. ✅ **Regression sweep, spot-checked**: order cancellation (60s window +
+   scheduled-order window, Phase G2), cart 6-per-item cap (Phase E2),
+   veg/non-veg FSSAI mark (unchanged logic, Phase D/E1), coupon apply (Phase
+   E1/E2), invoice download on a delivered order (Phase G2) — all still
+   behave exactly as documented in their own phase sections above. Nothing
+   in this phase touched any of that logic; this step just re-confirms it.
+
+### Known gaps (NOT done)
+- **Three motion tokens defined but not wired in**: add-to-cart bounce,
+  list-item entrance animation, map-pin float. Follow-up wiring work, not a
+  bug — see "What shipped" above.
+
+### Note on how fidelity was checked (whole project, all 11 phases)
+Every phase A–K was verified by an engineer manually installing the app and
+comparing on-device screenshots against the design mocks — dozens of real
+checks across the project. **No automated visual-regression (pixel-diff)
+tooling and no Compose screenshot tests were added at any point** — this was
+flagged as optional throughout and stayed optional. Practically: a future
+unrelated change that visually shifts a screen will only be caught by a
+human doing the same kind of manual check again, not by CI. If that
+automated safety net is wanted later, it's new work, not something this
+project quietly skipped.
+
+## Deploy — PROJECT COMPLETE (all 11 phases, A–K)
+
+Phases A, B, C1, C2, D, E1, F, G1, G2, E2, H1, H2, H3, I, J and K are **all
+on `dev`** — direct commits under the current git workflow, no PR/deploy
+step. Ships with the next Android build.
+
+**Phase K is the last phase.** With `5b2ab5d` on `dev`, the pixel-perfect
+Haper Green re-skin is closed out end to end: every screen in the plan is
+restyled, both derived (no-mock) screens are accounted for, and this final
+sweep removes the last inline-style debt and duplicate component so the
+design system is now the *only* source of colour/shadow/typography in the
+app.
+
+**Full commit list**
+
+haper-android (`dev`):
+| Phase | Commit(s) |
+|---|---|
+| A | `d2ad773`, `3afd791` |
+| B | `5a77cf4` |
+| C1 | `10c8a30` |
+| C2 | `5a19e9c` |
+| D | `215c635` |
+| E1 | `2cd1bdd` |
+| F | `bfd4d26` |
+| G1 | `d28b498` |
+| G2 | `f3a1fb6` |
+| E2 | `a461bc0` |
+| H1 | `a4658c9` |
+| H2 | `a7f5ff5` |
+| H3 | `c59a147` |
+| I | `775d766`, `1569f2e` |
+| J | `ad56c4d` |
+| K | `5b2ab5d` |
+
+(`b6123b4` "added code" also landed on `dev` around the same time, just before
+Phase G2 — that's a cart-formatting fix from a separate, concurrent session,
+unrelated to this revamp; Phase E2 above restyles on top of it. Not counted
+as a revamp-phase commit.)
+
+haper-misc: this file (`test-android-green-revamp.md`) is the test-guide
+record for all 11 phases — no other haper-misc file tracks this project.
