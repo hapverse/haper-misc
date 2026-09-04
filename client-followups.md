@@ -497,6 +497,32 @@ barcode, the picker can only "confirm without scan" until a super admin / wareho
 
 ---
 
+---
+
+## Coordinate-confirmation flag on addresses — retroactive map-re-prompt for legacy addresses
+**Backend:** ✅ on `dev` — new nullable `isCoordinateConfirmed` field (Boolean, default `null`) on address model (`packages/shared/models/addresses.schema.js`), accepted on create + update (`packages/user/src/routes/address/validator.js`), never defaulted (null is preserved).
+**Android:** ✅ on `dev` — `AddressModel` + `AddressUpsertRequest` now carry nullable `isCoordinateConfirmed: Boolean?`. When loading an existing address for edit, the app checks the backend's flag via `isBackendCoordinateConfirmed(backendFlag: Boolean?): Boolean = backendFlag == true`.
+**iOS:** ✅ on `dev` (uncommitted) — `AddressModel.isCoordinateConfirmed: Bool?` decodes the same field; `AddressCoordinatePolicy.Source.savedAddress(confirmed:)` + `AddressCoordinatePolicy.isBackendCoordinateConfirmed(_:)` mirror the Android resolver (only explicit `true` counts). The `AddEditAddressView` load path now calls a new testable seam, `AddressCoordinatePolicy.initialSource(for: AddressModel?)`, instead of assuming a saved coordinate is confirmed. Covered by a regression test decoding a legacy payload (key absent) and asserting it is NOT treated as confirmed.
+**Plain summary:** legacy addresses with fake "pincode centroid" coordinates now re-prompt for map confirmation on edit (via `isCoordinateConfirmed: null` → NOT confirmed → map picker required). New/confirmed addresses (`true`) skip re-prompt. Fixes a bug where the app assumed "has coordinates = confirmed" and silently re-saved fake centroids on every edit. Both Android and iOS are fixed on `dev`.
+
+| Client | What to do | Status |
+|---|---|---|
+| **backend** | New `isCoordinateConfirmed` nullable Boolean field on address model; optional on create + update routes; never defaulted. Tests verify null is persisted for legacy addresses, true/false for new edits. | ✅ done (dev) |
+| **android** | `AddressModel`/`AddressUpsertRequest` carry nullable `isCoordinateConfirmed`. When loading an address, call `isBackendCoordinateConfirmed(backendFlag: Boolean?)` — only `true` skips map re-confirmation; `null` + `false` require it (same as a new address). The app persists the flag as `true` once a customer confirms via map or GPS. | ✅ done (dev) |
+| **ios** | `AddressModel.isCoordinateConfirmed: Bool?` + `AddressCoordinatePolicy.Source.savedAddress(confirmed:)` mirror the Android logic. `AddEditAddressView`'s onAppear load path calls `AddressCoordinatePolicy.initialSource(for:)` — only a backend `true` skips map re-confirmation; `null` (legacy) + `false` require it, same as a new address. The app persists the flag as `true` once a customer confirms via map or GPS (existing save-path behavior, unchanged). | ✅ done (dev) |
+| **web** | No address-edit screen (customer site has delivery address from checkout only). | — |
+| **delivery** | Not affected (rider app does not edit customer addresses). | — |
+| **picker** | Not affected (picker does not edit customer addresses). | — |
+
+**Backend endpoints:** (no new routes; field rides on existing `POST /user/address` + `PATCH /user/address/:id`)
+- `POST /user/address` — body now accepts optional `isCoordinateConfirmed: boolean` (or omitted → stays null).
+- `PATCH /user/address/:id` — same optional field.
+- Field is always returned on `GET /user/address` + `/user/address/:id`.
+
+**Test guide:** `haper-misc/test-address-precise-coordinate.md` "FIX · Retroactive map-confirmation on legacy addresses (2026-09-03)".
+
+---
+
 ## Future changes
 **This file is COMPLETE for inventory-v2** — CH-1…6 cover every shipped backend change (Phases 0–4) with a
 per-client checklist + exact endpoints, and CH-7 covers the one optional P9 item (with its backend prerequisite).
