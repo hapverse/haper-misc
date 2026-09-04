@@ -11,7 +11,7 @@ For each eligible row, the script looks up the corresponding `warehouse-batches`
 - **Does not touch MRP:** `warehouse-batches` records have no MRP field at all (cost, expiry, qty, status, supplier only). There is no reliable historical source for old receipt MRPs, so rows missing MRP are left exactly as they are. A wrong MRP in an append-only ledger is worse than missing data.
 - **Does not touch quantities or invoices:** `quantityDelta`, `refLabel`, and all other fields remain untouched.
 - **Does not rewrite already-fixed rows:** If a row already has a `costPrice` value, the script ignores it. This makes the script idempotent and safe to re-run.
-- **Does not touch corrected or unsafe batches:** The script skips any batch that was topped up more than once (blended cost, unsafe to assume it matches the original invoice), or any batch that was manually corrected at some point (cost may have been re-anchored). These rows must be reviewed against the paper invoice if recovery is needed.
+- **Does not touch corrected or unsafe batches:** The script skips any batch that was topped up more than once (blended cost, unsafe to assume it matches the original invoice), or any batch that was manually corrected at some point (cost may have been re-anchored). These rows must be reviewed against the paper invoice if recovery is needed. *(If you want a best-effort estimate in these rows instead, see the opt-in `--include-approximate` flag below — it is off by default.)*
 
 ## Run steps
 
@@ -50,6 +50,53 @@ After the script completes, it prints a verification check: `Verification: all <
 
 This confirms that every intended row was written correctly. If you see an error message instead, the script reports details on which rows failed and why.
 
+## Optional: `--include-approximate` (opt-in, best-effort — NOT the safe default)
+
+By default the script refuses two groups of rows because the recovered number is not
+guaranteed to match the original invoice:
+
+- **blended / multi-receipt** — the batch was topped up more than once, so its cost is a weighted average;
+- **corrected** — someone edited the batch later through the admin UI, so its cost may have been re-anchored.
+
+If you would rather have an *estimate* in those rows than nothing at all, pass the flag:
+
+```bash
+node scripts/migrations/backfill-stock-movement-cost-mrp.js --include-approximate           # dry run
+node scripts/migrations/backfill-stock-movement-cost-mrp.js --include-approximate --apply   # writes
+```
+
+**Real example.** Batch `AUTO-EXP-20270201` for SKU `8901058017687` was received twice.
+The warehouse batch today says `costPrice = 13.46`, which is the average of the two
+deliveries. The first delivery's real invoice price might have been 13.10 and the second
+13.82 — we cannot tell. With the flag on, both ledger rows get 13.46. It is close, and it
+is useful for a rough COGS number, but it is **not** the number on the paper bill.
+
+What the flag does and does not change:
+
+- It **only** rescues the blended and corrected rows. Rows with no batch number, or whose
+  batch record no longer exists, are still left completely untouched — there is genuinely
+  nothing to copy from.
+- **MRP is still never written.** The flag has no effect on MRP at all.
+- Dry-run-first, `--apply`-to-write, and the typed `yes` confirmation all still apply.
+- The confirmation prompt spells out the split, e.g.
+  `Write costPrice to 0 EXACT + 16 APPROXIMATE row(s) in "<db>" on <host>? (type "yes"):`
+  so you cannot miss that estimated values are about to be written.
+- **`--yes` is ignored when this flag is on.** Approximate values are non-provable money
+  data, so a human must type `yes` no matter how the script was launched.
+
+### How to tell an estimate apart afterwards
+
+Every approximately-filled row gets a marker appended to its `note` field. Rows filled in
+under the strict rule are never tagged. So: tagged = estimate, untagged = exact.
+
+```js
+db.getCollection("stock-movements").find({ note: /costPrice backfilled APPROX/ })
+```
+
+The dry run also prints every approximate row in full (never sampled) under a separate
+**"APPROXIMATE backfill"** heading, split by reason. Keep that run log — together with the
+note tag it is the audit trail for these rows.
+
 ## Important: Do NOT pass `--yes` for the production run
 
 The `--yes` flag exists for automation and testing only. For any real production run against a live database:
@@ -63,19 +110,45 @@ The script is safe to re-run at any time. A second run touches only rows that st
 
 ## Expected results (current dataset)
 
-Based on the last dry-run test against the current production data:
+Measured by replaying the local production dump (`prod-dump/haper-prod`) into an in-memory
+MongoDB. Of 902 `PURCHASE_IN` rows, **86** are missing `costPrice` and 378 are missing MRP.
 
-- **296 rows** will have their `costPrice` filled in automatically (single-receipt batches, safe to copy from warehouse-batches).
-- **12 rows** are skipped because the batch was restocked more than once (blended cost, unsafe).
-- **10 rows** are skipped because the batch was manually corrected at some point (cost may have been re-anchored).
-- **64 rows** have no batch record to copy from at all (very old, pre-batch-tracking receipts).
+**Default (strict) run — 86 missing rows:**
 
-The 12 + 10 + 64 = 86 skipped rows are unaffected by this script and would need the paper invoice checked by hand if you want them filled in too.
+| Outcome | Rows |
+| --- | --- |
+| filled in automatically (single-receipt batch, provably the invoiced cost) | **0** |
+| skipped — batch restocked more than once (blended cost) | **12** |
+| skipped — batch manually corrected at some point | **10** |
+| skipped — no batch record to copy from at all | **64** (56 with no batch number + 8 with no batch record) |
+
+> **Note on an earlier figure.** A previous version of this runbook said 296 rows would be
+> filled in. That number could not be reproduced and is inconsistent with its own totals
+> (296 filled + 86 skipped implies 382 missing rows; the dump has 86). Treat the table
+> above as the current measurement, and re-run the dry run against the real target database
+> before the actual run — the dry run always prints the true counts for that database.
+
+**With `--include-approximate` — same 86 rows, re-split:**
+
+| Outcome | Rows |
+| --- | --- |
+| filled in — EXACT | **0** |
+| filled in — APPROXIMATE | **16** (12 blended + 4 corrected) |
+| still untouched — nothing to copy from | **70** (56 no batch number + 14 no batch record) |
+
+The flag rescues 16 of the 22 previously-skipped unsafe rows. The other 6 are corrected
+rows whose batch was **renamed** by the correction (they still point at the old name
+`AUTO-RCV-20260801`, and no batch record exists under that name any more), so there is no
+cost to copy and they stay untouched — which is the intended behaviour.
+
+In both modes the 378 rows missing MRP are left exactly as they are.
+
+Any row still left over needs the paper invoice checked by hand.
 
 ## After the run
 
 Once the script completes successfully:
-1. The warehouse goods-receipt ledger now has cost tracking for 296 additional historical rows.
+1. The warehouse goods-receipt ledger now has cost tracking for the rows the dry run listed.
 2. Reports and analytics that depend on cost-per-unit (e.g. profit-and-loss, COGS tracking) will include these receipts in their calculations.
 3. The skipped rows remain unchanged; they can be addressed in a follow-up manual process if needed.
 
