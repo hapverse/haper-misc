@@ -172,10 +172,11 @@ permanently short.
    ✅ Stock goes **back up** — "Aashirvaad Atta 5kg" now shows **23**.
    ✅ Admin → order → **Order Activity** shows a new row: status change → Undelivered, actor
    role **rider**, source `delivery_app`, with the rider's reason.
-   ❌ **No** refund / wallet credit, even for a prepaid (Razorpay) order — the customer's wallet
-   balance, `refundedAmount` and the refunds list must all be unchanged. Money only comes back
-   when an admin later moves the order to **Admin Cancelled** (§1–§8). This is deliberate:
-   Undelivered is recoverable — dispatch can reassign a rider and retry the same day.
+   ✅ **Refund credited** (since 2026-09) — for a prepaid order the captured Razorpay amount plus
+   any wallet coins spent goes back to the wallet, one `refunds[]` entry, one "Order not
+   delivered — refund credited 💰" push. A COD order with no coins refunds ₹0 (unchanged).
+   The amount is the same `max(0, capturedAmount + walletUsed − refundedAmount)` formula as the
+   admin cancel (§8), so a later **Admin Cancelled** on the same order refunds ₹0 — no double-pay.
 3. **No double restock.** Try to mark the same order Undelivered again from the app.
    ✅ Rejected (invalid transition / state changed) and the stock stays at 23 — not 26.
    ✅ Same if an admin afterwards sets **Admin Cancelled** on that Undelivered order: the admin
@@ -183,6 +184,37 @@ permanently short.
 4. **Scheduled orders**: an order booked into a delivery slot gives its seat back when the rider
    marks it Undelivered (Admin → Scheduled slots shows one more seat free). A normal
    (non-scheduled) order is unaffected and must not error.
+
+## 10. A refunded order can't be delivered again  (money-duplication holes)
+Once §9 started giving the money back at **Undelivered**, every route back into delivery became a
+way for the customer to keep both the refund *and* the goods. Three routes were open; all are now
+blocked on the same condition — **money already refunded AND stock already returned**.
+
+1. **Assign rider.** Take an Undelivered order that got a refund (wallet balance went up).
+   Admin → order → **Assign rider**.
+   ✅ Rejected with "This order was already refunded and its stock returned. Reopen it to OPEN
+   first…". Same for the **Reassign** button.
+   ✅ Still rejected even if the order has since been moved to some other status — the block is
+   on the refund, not on the status.
+2. **Partial refunds must stay deliverable** (the important regression). A **live** order where
+   the picker marked a line out-of-stock, or an admin removed an item — it has `refundedAmount > 0`
+   but was never restocked.
+   ✅ Assign / Reassign still work normally. This must not be blocked.
+   ✅ An Undelivered **COD** order with no refund also still assigns, exactly as before.
+3. **Reject-assignment laundering.** Assign a refunded order to a rider, have the rider reject it
+   (which sends it back to OPEN).
+   ✅ It can never reach Assigned again — the step-1 block catches it at OPEN too.
+4. **Reopen is the one way back.** Admin → **Reopen** the refunded order to OPEN.
+   ✅ Wallet credit is clawed back, `refundedAmount` resets to 0, stock is re-deducted — and only
+   *then* does Assign rider work again.
+5. **Late Razorpay webhook.** An Undelivered order whose `payment.captured` webhook arrives late
+   (Razorpay retries for hours), or arrives twice.
+   ✅ The order stays **Undelivered** — it must NOT flip back to Open or re-enter picking.
+   ✅ If the rider's refund already covered that payment (the `refunds[]` note carries
+   `(pay <payment_id>)`), nothing further is paid out.
+   ✅ If the capture landed *after* the rider refunded — so only the wallet coins came back at
+   the time — the captured amount is now credited too, exactly once. A duplicate webhook adds
+   nothing.
 
 ---
 
@@ -219,6 +251,22 @@ permanently short.
   paymentId-in-note marker is now used for ONE thing only: deciding whether this refund should
   stamp `(pay <id>)`, which additionally requires `capturedAmount > 0` (§8.9).
   Refund tests live in `packages/admin/__tests__/order-refund.test.js`.
+- §10's blocking condition is ONE shared predicate, `refundUtils.hasUnclawedRefund(order)` =
+  `refundedAmount > 0 && stockRestored === true` (`packages/shared/utils/refund.utils.js`), with a
+  Mongo-filter twin `notUnclawedRefundFilter()` spread into the atomic update predicate of
+  `assignOrder` / `reassignDeliveryBoy` so it can't be lost to a read-then-write race. Both halves
+  are load-bearing: dropping `stockRestored` would block the everyday partial-OOS order (§10.2),
+  and keying on `status === UN_DELIVERED` instead would let any other path launder the order out
+  of the block (§10.3). Reopen is the only thing that resets both fields.
+- §10.5: `UN_DELIVERED` is in `CANCELLED_STATES` in `packages/user/src/routes/razorpay/controller.js`,
+  which routes a late capture into the refund-to-wallet branch instead of the reopen branch. That
+  branch's de-dupe is the `(pay <id>)` marker, so it interlocks with the rider/admin refunds.
+- The rider refund computes off `item` (the document returned by the atomic claim, read from the
+  primary), never off `currentOrder` — that read is `secondaryPreferred` and pre-claim, so a
+  refund landing moments earlier could be missing from it and the customer would be over-refunded.
+  The non-money compensations (restock lines, audit, push) deliberately still use `currentOrder`.
+  Covered by `packages/delivery/__tests__/order-undelivered-refund.test.js` and
+  `packages/admin/__tests__/order-undelivered-refund-handoff.test.js`.
 - §6 (page-tiles bug) logic lives in `haper-admin/src/utils/orders.ts`
   (`REVENUE_COUNTED_STATUSES`, `FAILED_ORDER_STATUSES`, `computeOrdersPageSummary`) — extracted
   out of `OrdersList.tsx`'s `useMemo` so it's unit-testable without rendering the page. Covered
