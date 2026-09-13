@@ -333,6 +333,41 @@ Source (for reference):
 
 ---
 
+## Customer lookup must key on phone ALONE (2026-09-12)
+
+**Real example.** Rohan first signed in to the app with **Google**, and later added his phone
+number `88800044444`. His account is stored with `sType: GOOGLE`. He walks into the store, the
+cashier types his phone, and the POS looks him up as `{ sType: PHONE, phone }` — a filter his
+account does **not** match. So POS thought he was new and created a **second** account.
+
+That was already wrong (his counter purchase never showed up in his app). It became
+**sale-blocking** the moment `phone` got a real unique index (see
+`test-referral-self-referral-fix.md`): the create now fails with a duplicate-key error, the
+recovery re-lookup used the same too-narrow filter and found nothing either, and the whole walk-in
+sale returned **500**. **19 real accounts** in the production dump are `sType: GOOGLE` with a phone
+set.
+
+**Fix.** Both POS customer lookups now filter on `{ phone }` only — the same key the app's OTP
+login uses, and the same key the unique index uses. `sType` is still written when POS *creates* a
+brand-new customer; it is just never used to *find* one.
+
+- `packages/admin/src/routes/pos/controller.js` → `resolveCustomer()` (the sale).
+- `packages/admin/src/routes/pos/coupon.js` → `resolveCustomerContext()` (the coupon preview).
+  Found alongside the first: with the narrow filter the preview reported "no such customer", so a
+  **first-order-only coupon was offered** to a returning Google customer and the sale then claimed
+  it against their real account. Preview and sale must resolve the same person.
+
+**✅ Manual test (dev)**
+1. Find a dev user with `sType: GOOGLE` and a phone set (or create one via Google sign-in, then
+   add a phone in the app).
+2. POS → enter that phone → complete a cash sale. **Expect 201**, not 500.
+3. Check the user list for that phone: still exactly **one** account, and it is the original one.
+4. Open the app as that user → the counter purchase appears in their order history. ✅
+5. With a `firstOrderOnly` coupon active, enter the same phone in POS → the coupon is **refused**
+   (`NOT_FIRST_ORDER`), because that customer has ordered before. ✅
+
+---
+
 ## Automated coverage (in-memory Mongo only)
 
 Backend tests run against **in-memory Mongo — never the real DB**. Run from the package dir
@@ -358,6 +393,11 @@ cd packages/admin && NODE_ENV=test npx jest pos-invoice-sequence pos-sale
   - **Missing phone → 400**, no order created (replaces the old "shared walk-in customer"
     success case, which is no longer reachable).
   - **Malformed phone → 400** (e.g. `"12345"`, `"0123456789"`), no order created.
+  - **Existing GOOGLE-sType account with the same phone** resolves to that account (added
+    2026-09-12, see below) — no duplicate row, and the account keeps its own `sType`.
+- **`packages/admin/__tests__/pos-coupon.test.js`** → `NOT_FIRST_ORDER when the returning
+  customer's account is GOOGLE-sType` (added 2026-09-12): the coupon preview must resolve the
+  same customer the sale does.
 - **`packages/admin/__tests__/order.test.js`** → describe `GET /admin/order/order-list —
   channel filter` (added 2026-08-17). Seeds three orders in a dedicated store: one
   `channel: "pos"`, one `channel: "app"`, and one **legacy** order inserted with a raw
