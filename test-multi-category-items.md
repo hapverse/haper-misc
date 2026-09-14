@@ -259,3 +259,206 @@ what it was, so an admin client that has not been updated keeps working.
   `discount.utils.js`, `sub-category.repository.js` and the admin FE are Phase 3 / a separate
   FE task.
 - The admin multi-select UI (chip list, first chip = primary) is NOT part of this change.
+
+---
+
+# Test: multi-category items — Phase 3 (customer reads switch to `taxonomy`)
+
+Branch: `dev` (backend only). Plan: `haper-backend/docs/plans/multi-category-items.md` §3–§4.
+Scope of THIS slice = plan build tasks 3.2–3.5. Discount targeting (task 3.6,
+`discount.utils.js` + the admin discount-rule preview) is a **separate change by another
+engineer** and is not covered here.
+
+## Why
+Phases 1–2 wrote `taxonomy` and let admins tag several (category, sub-category) pairs, but
+nothing read it — so tagging a chocolate box as *Gifting → Gift Packs* as well as
+*Snacks → Chocolates* still did nothing on the app. Phase 3 points the customer browse paths
+at the pair array, so the item is findable under both.
+
+## What changed
+- **New index** `idx_items_store_status_taxonomy` on `items`
+  (`{storeId, status, taxonomy.categoryId, taxonomy.subCategoryId, quantity, sellingPrice}`).
+  The old `idx_items_store_status_cat_subcat_cover` is **kept** — admin catalog filters and
+  warehouse rollups still read the singular fields.
+- **Drill-down** (`GET /user/home/items/:cat/:sub/:page`) filters on
+  `taxonomy: { $elemMatch: { categoryId, subCategoryId } }`, so the pair stays AND-ed.
+- **Home category list** membership + `itemsCount` / `cheapestPrice` / `subCategoriesCount`
+  read the pair array; counts are **distinct items** (two sub-categories under one category
+  is still one item).
+- **Sub-category tiles** (`GET /user/home/sub-category/:categoryId`) resolve the reachable
+  sub-categories from the item taxonomy, re-filtered on the browsed category after unwind.
+- **`taxonomy` is stripped from customer responses at the RESPONSE BOUNDARY** (user
+  item/home controllers + `stripCartCostPrice`), never in the repository projection — the
+  discount engine must still see the full pair array. Customer wire format is byte-identical
+  to before Phase 3; admin responses still carry `taxonomy`.
+
+## Deploy step (must run BEFORE the code deploy)
+```
+cd haper-backend
+node scripts/migrations/build-taxonomy-index.js            # dry run — lists indexes
+node scripts/migrations/build-taxonomy-index.js --apply    # background build
+```
+Idempotent (safe to re-run). Confirm the output shows both `idx_items_store_status_taxonomy`
+and `idx_items_store_status_cat_subcat_cover`.
+
+## Steps (backend jest, in-memory only)
+```
+cd packages/user && NODE_ENV=test npx jest multi-category-items category-subcategory-listing-gap home
+```
+✅ expect 52 passed / 3 suites.
+
+- ✅ `multi-category-items.test.js` A — an item tagged `Snacks→Chocolates` + `Gifting→Gift
+  Packs` gives `itemsCount: 1` on **both** tiles; `Snacks→Chips` + `Snacks→Namkeen` gives
+  Snacks `itemsCount: 1`, `subCategoriesCount: 2`; `cheapestPrice` is per-category; a category
+  reachable only via a **secondary** tag still appears; out-of-stock is excluded under every
+  tag; tiles never leak the item's other tag.
+- ✅ `multi-category-items.test.js` B — item tagged `Snacks→Namkeen` + `Gifting→Chocolates`:
+  browsing **`Snacks→Chocolates` is EMPTY**, `Snacks→Namkeen` returns it, `Gifting→Chocolates`
+  returns it. Item never returned twice. Customer item objects carry **no** `taxonomy` key.
+- ✅ `multi-category-browse-discount.test.js` (run with
+  `NODE_ENV=test npx jest multi-category-items home item discount` → 232 passed / 19 suites) —
+  a rule on the item's SECONDARY category discounts the price on home, drill-down, item list,
+  item detail and search, and no response body contains a `taxonomy` key.
+- ✅ `category-subcategory-listing-gap.test.js` and `home.test.js` pass unchanged — single-tag
+  data behaves exactly as before (Phase 3 is a no-op for today's data).
+
+❌ Failure modes these guard (each verified by deliberately breaking the code):
+- Replacing `$elemMatch` with two top-level `taxonomy.*` conditions → the cross-pair test fails.
+- Dropping the post-`$unwind` re-match in the tile query → a tile from the item's other tag leaks.
+- Collapsing the counts pipeline to a single `$group` → `itemsCount` double-counts.
+
+## Manual check (dev app, after the index build + deploy)
+1. Tag one item with two pairs in different categories (Phase-2 API). Both category tiles show
+   it, and the item opens from either drill-down.
+2. Tile numbers match the list behind them (`subCategoriesCount` === tiles returned).
+3. Disable one of the two categories for the store → that tile disappears, the item is still
+   browsable under the other category.
+4. Customer item JSON has **no** `taxonomy` key; `category` / `subCategory` are unchanged.
+
+## Notes / deliberate limits
+- **Explain/perf pass still owed.** The new index cannot COVER (multikey never does), so the
+  home counts aggregation now pays a FETCH. Run `explain("executionStats")` on
+  `getStoreCategoryMeta` against a dev store with production-like item counts and confirm the
+  winning plan uses `idx_items_store_status_taxonomy` with **no COLLSCAN**. This cannot be
+  proved on the in-memory jest fixtures (too few docs — the planner picks a scan regardless).
+- No `$or` fallback to the singular fields anywhere: the §3.0 GO gate (0 rows with a category
+  and no taxonomy, verified on dev) is what makes that safe. Re-run
+  `scripts/migrations/verify-taxonomy-go-gate.js` before the deploy.
+- **Latent risk:** the counts/membership pipelines `$unwind: "$taxonomy"` **without**
+  `preserveNullAndEmptyArrays`, so an item with an empty/missing `taxonomy` is silently dropped
+  from every count and tile — safe today (GO gate + the Phase-2 normaliser always writes at
+  least one pair), but any FUTURE write path that bypasses `taxonomy.utils` would make such
+  items invisible rather than obviously broken.
+- **Membership is a PRE-PASS, not a `$lookup`** (`CategoryRepository.getAll`): a `$in` on the
+  `taxonomy.categoryId` array inside `$expr` cannot use the index, and that sub-pipeline ran
+  once per global category. Measured on a 3000-item / 50-category in-memory fixture:
+  3000 docs examined per NON-matching category (~147k per home request) → 0 per category plus
+  one 3000-doc index-bound pre-pass (~3k per request). Keep any future membership test in this
+  plain, index-bound shape.
+- `taxonomy` is also stripped from every **order** response (`sanitizeOrderForCustomer`), which
+  populates the master item with a negative select — the one place the strip was missing.
+- Warehouse / ops stock reports and the admin catalog **summary** stay primary-only on purpose
+  (plan §3.5) — grouping on an unwound taxonomy would count the same physical stock twice.
+- Admin catalog list filters and the product list (plan task 3.7) are **not** in this slice.
+- Rollback is a plain revert: `taxonomy` stays on the documents, reads fall back to primary.
+  The index can be left in place.
+
+---
+
+# Test: multi-category items — Phase 3, task 3.6 (DISCOUNT targeting)
+
+Branch: `dev` (backend only). Plan: `haper-backend/docs/plans/multi-category-items.md` §3.3.
+Scope of THIS slice = `packages/shared/utils/discount.utils.js` +
+`packages/admin/src/routes/discount-rule/controller.js`. The browse/listing slice (tasks
+3.2–3.5) is the section above.
+
+## Why
+A discount rule targeting *Snacks* used to look only at the item's PRIMARY category. A
+chocolate box tagged *Snacks + Gifting* whose primary happens to be Gifting missed the Snacks
+promo. Decision (user, locked): **a category rule matches if the item is tagged with that
+category through ANY `taxonomy[]` pair** — "practically, it's still Snacks".
+
+## What changed
+- `matchSpecificity` matches on the UNION of `taxonomy[].categoryId` and the singular
+  `category._id`. The rank is `CATEGORY` either way — a secondary-tag match is **not**
+  "less specific". Stacking, exclusivity, priority, caps and the margin guard are untouched.
+- `buildMatchViews` (the checkout-side batch projection) now fetches and carries `taxonomy`,
+  and treats a line missing **either** `category` **or** `taxonomy` as needing the DB fill.
+- Admin preview (`buildTargetItemFilter`) filters on `taxonomy.categoryId`, so
+  "affects N items" / sample prices / below-cost + zero-price warnings see the real blast radius.
+
+## Steps (backend jest, in-memory only)
+```
+cd packages/user  && NODE_ENV=test npx jest discount coupon order cart --coverage=false
+cd packages/admin && NODE_ENV=test npx jest discount coupon pos order --coverage=false
+```
+✅ expect user 640 passed / 38 suites, admin 428 passed / 32 suites.
+
+- ✅ `discount.utils.test.js` — a rule on the item's SECONDARY tag returns `SPECIFICITY.CATEGORY`
+  (same rank as a primary match); a category the item carries in neither place returns `NONE`;
+  the union still matches a partial projection carrying only the primary, and a lean view
+  carrying only taxonomy; a malformed `taxonomy` never throws.
+- ✅ `discount-multi-category-targeting.test.js` — **the cart/checkout agreement suite**:
+  a rule on the SECONDARY tag discounts the cart line, and the placed order's `salePrice`
+  equals *the number the cart previewed* (compared against each other, not two hard-coded
+  values), with `appliedDiscounts` populated on both the response and the persisted order.
+- ✅ same file — the cart preview body and **all four order responses** (place, detail, list,
+  history) are asserted to contain no `"taxonomy"` key anywhere in the serialized body; deleting
+  either strip (`stripCartCostPrice` / `sanitizeOrderForCustomer`) fails this suite.
+- ✅ same file — `buildMatchViews` fills `category` + `taxonomy` for a line carrying neither,
+  **and for a line that already carries `category`** (the asymmetry that would have shipped a
+  cart-discounted / checkout-full-price order); a line carrying both does zero DB reads.
+- ✅ `discount-rule-multi-category-preview.test.js` (admin) — preview counts an item matched
+  only via a secondary tag, its below-cost warning fires, and the create gate blocks the save.
+- ✅ CONTROL tests in both files — a single-tag item behaves exactly as before. Phase 3 is a
+  **no-op for today's data** (every item has exactly one pair after the Phase-1 backfill).
+
+❌ Failure modes these guard (verified by deliberately breaking the code):
+- Updating `matchSpecificity` but not `buildMatchViews` → the cart-vs-checkout test fails
+  (cart ₹80, charged ₹100).
+- Leaving the fill test as `!v.category` → the "line already carries category" test fails.
+- Leaving the admin preview on `category._id` → the below-cost warning goes silent for a
+  secondary-tag item and a below-cost rule saves cleanly.
+
+## 📢 Release note — SOME PRICES GO UP (expected, not a bug)
+Under **exclusive** (non-stackable) rules the winner is highest `priority` first; a bigger
+discount is only a tie-break. An item that now matches a SECOND category can therefore win a
+higher-priority rule that discounts **less** than the one it used to get — a visible price
+**increase** for that item the moment this ships. Example: item tagged Snacks + Gifting,
+"Snacks 30% off" at priority 1 and "Gifting 5% off" at priority 9 → the item goes from ₹70 to
+₹95. This is correct given the configured priorities (asserted explicitly in
+`discount.utils.test.js` → "§3.3.4"). **Merch must sanity-check live rule priorities before
+the deploy.**
+
+## ✅ Cross-slice gap — FIXED (2026-09-14)
+The listing slice used to strip `taxonomy` in the customer item **projections**
+(`getPaginated4User` / `getDetail4User` / the drill-down / `$search` / the regex fallback), so
+browse and item-detail prices were decorated from already-stripped docs and matched
+**primary-only**, while the cart (exclusion-based populate, keeps `taxonomy`) and checkout
+matched on all tags — browse card ₹100 / item detail ₹100 / **cart ₹80** for an item whose
+only matching rule targets a secondary tag.
+
+The strip now happens at the **response boundary** instead: customer reads fetch `taxonomy`
+normally, discount decoration sees the full pair array, and
+`taxonomyUtils.stripTaxonomy` / `stripTaxonomyFromList` drop it in the controller right before
+`res.json`. Same for the cart lines (inside `stripCartCostPrice`). No extra reads; the customer
+wire format is still taxonomy-free. Covered by
+`packages/user/__tests__/multi-category-browse-discount.test.js` (7 tests: home suggested,
+drill-down, item list, item detail, search, plus a "no matching rule is still null" guard —
+each asserting the discounted price AND that `"taxonomy"` appears nowhere in the response body).
+❌ Re-adding `taxonomy: 0` to any customer projection fails 2+ of those tests (verified by
+deliberately putting it back).
+
+## Manual check (dev, after deploy)
+1. Tag an item with two categories; put a live rule on the SECONDARY one. Cart price and the
+   placed order's line price must be the same number.
+2. Admin → discount rule preview for that category: the item appears in the affected count and,
+   if the rule breaches its cost, in the below-cost list.
+3. Single-tag items: prices identical to before the deploy.
+
+## Notes / deliberate limits
+- Real checkout order lines carry neither `category` nor `taxonomy`, so the widened fill test
+  adds **no** extra query at checkout — it is the same single batched read as before.
+- Coupons do not target categories at all, so nothing in the coupon engine changes.
+- Rollback is a plain revert of `discount.utils.js` + the admin controller; rules fall back to
+  primary-only matching and nothing needs a data change.
