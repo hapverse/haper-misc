@@ -132,3 +132,130 @@ npm run backfill-item-taxonomy -- --apply  # write
   merged-away category id can't survive inside a pair.
 - The product master collection was already out of that migration's scope and still is —
   unchanged, not a regression introduced here.
+
+---
+
+# Test: multi-category items — Phase 2 (admin API can tag MULTIPLE pairs)
+
+**Area:** Backend only — admin API validation + controller wiring.
+`packages/admin/src/middleware/taxonomy-input.js` (new),
+`packages/admin/src/routes/items/validator.js` (`addItem`, `updateItem`),
+`packages/admin/src/routes/items/controller.js` (`add`, `updateItem`),
+`packages/admin/src/routes/product/validator.js` (`create`, `update`),
+`packages/admin/src/routes/product/controller.js` (`create`, `update`),
+`packages/admin/__tests__/taxonomy-admin-api.test.js` (new),
+`packages/admin/src/middleware/error.js` + `packages/shared/utils/error.utils.js` (structured
+`errorType`/`reason`/`details` on the wire — review fix round).
+**PR/deploy:** backend-only → `dev` (`dapi.haper.in`). No customer-app change, no read path
+touched. The haper-admin multi-select UI is a SEPARATE task built against this API.
+Plan: `haper-backend/docs/plans/multi-category-items.md` §2 (Phase 2).
+
+## What changed (request shape)
+Both item and product-master create/update now accept an OPTIONAL `taxonomy` array. Client
+sends **ids only**; names are resolved server-side, exactly like the existing `categoryId`.
+
+```jsonc
+// POST /admin/item (multipart — send `taxonomy` as a JSON STRING, like `meta`)
+// PUT  /admin/item/:itemId
+// POST /admin/product , PATCH /admin/product/:productId  (JSON)
+{
+  "taxonomy": [
+    { "categoryId": "<24-hex>", "subCategoryId": "<24-hex|null>" },   // pair 0 = PRIMARY
+    { "categoryId": "<24-hex>", "subCategoryId": "<24-hex>" }
+  ]
+}
+```
+
+Response: the item/product doc gains the resolved array (names filled in), and the existing
+`category` / `subCategory` objects keep their shape as the derived primary = `taxonomy[0]`.
+
+```jsonc
+"taxonomy": [{ "categoryId": "…", "categoryName": "Snacks",
+               "subCategoryId": "…", "subCategoryName": "Chocolates" }],
+"category":    { "_id": "…", "name": "Snacks" },
+"subCategory": { "_id": "…", "name": "Chocolates" }
+```
+
+Rules (all return **400** with a readable message **plus structured fields** the form can use
+to put the error under the exact dropdown that failed):
+
+```jsonc
+{ "code": 400, "message": "Sub-category \"Sweets\" does not belong to category \"Snacks\".",
+  "errorType": "TAXONOMY_INVALID",
+  "reason": "TAXONOMY_SUBCATEGORY_NOT_IN_CATEGORY",   // also: TAXONOMY_PARSE_ERROR,
+  //  TAXONOMY_SHAPE_INVALID, TAXONOMY_DUPLICATE_PAIR, TAXONOMY_TOO_MANY_PAIRS,
+  //  TAXONOMY_EMPTY, TAXONOMY_CATEGORY_INACTIVE, TAXONOMY_SUBCATEGORY_INACTIVE
+  "details": { "index": 0, "categoryId": "…", "subCategoryId": "…" } }
+```
+
+`details.index` is the 0-based ROW of the `taxonomy` array that failed — **`0` is a real value**
+(the primary row), never "no index".
+
+- at most **5** pairs (`MAX_TAXONOMY_PAIRS`, reused from the Phase-1 normaliser) — duplicates
+  are reported FIRST, so six copies of one pair is a "duplicate" error, not "at most 5";
+- `categoryId` must be a real **ACTIVE** category;
+- `subCategoryId` must be a real ACTIVE sub-category whose OWN `category[]` contains that
+  `categoryId` (only checked for pairs this edit actually CHANGES — see below);
+- no duplicate (categoryId, subCategoryId) pairs in one request;
+- `taxonomy: []` is refused unless the same request also carries a legacy category — an item
+  must always end up in at least one category.
+
+`taxonomy` **present ⇒ authoritative** (it beats `categoryId`/`subCategoryId` in the same
+request). `taxonomy` **absent ⇒ nothing changes** — the single-category flow is byte-for-byte
+what it was, so an admin client that has not been updated keeps working.
+
+## Steps (backend jest, in-memory only)
+`cd packages/admin && NODE_ENV=test npx jest taxonomy`
+
+- ✅ Create an item with two pairs → 200, both pairs stored with names resolved, and
+  `category`/`subCategory` = pair 0.
+- ✅ Send `taxonomy` AND `categoryId` together → the array wins (primary = pair 0).
+- ✅ Six DISTINCT pairs → 400 "at most 5 category pairs"; six copies of the SAME pair → 400
+  "duplicate" (`reason: TAXONOMY_DUPLICATE_PAIR`, `details.index: 1`).
+- ✅ Pair with an INACTIVE category → 400 "does not exist or is not active".
+- ✅ Pair whose sub-category isn't a child of that category (the "Haldiram's Soanpapdi"
+  shape from the Phase-1 review) → 400 "does not belong to category"; the same sub-category
+  paired with its REAL parent still saves.
+- ✅ The same pair twice in one request → 400 "duplicate".
+- ✅ Create/update with NO `taxonomy` key → legacy behaviour unchanged (one derived pair).
+- ✅ Edit that sends only `categoryId` on an item that already has 2 stored pairs → primary
+  re-pointed, the SECOND pair survives (Phase-1 contract, re-proved at the API layer).
+- ✅ `details.index` attribution: the FIRST of two pairs being the bad one returns
+  `details.index: 0` (the falsy-zero case), the second returns `1`.
+- ✅ A stored orphan pair is EXEMPT even when the form re-submits it verbatim: price edit that
+  re-sends the stored orphan pair → 200; re-sending it alongside a genuinely new valid pair →
+  200; but editing THAT row into a different orphan pair → 400 with `details.index: 0`.
+- ✅ `taxonomy: []` with no category in the request → 400.
+- ✅ Item that HAS a product master: a taxonomy edit routes to the master (super-admin only,
+  same rule as a category edit) and fans back onto the store item.
+- ✅ Audit: `item.taxonomy.change` / `product.taxonomy.change` rows carry before+after pair
+  lists; an unrelated edit (price, brand) writes NO row — the audit baseline is read
+  UNCONDITIONALLY, so a brand-only master PATCH no longer logs a phantom `[] → stored pairs`
+  change (was 1 row, now 0).
+- ✅ Regression: `items`, `product-master-crud`, `taxonomy-utils`, `taxonomy-write-paths`
+  suites stay green.
+
+## Manual check (dev, via API client until the admin UI lands)
+1. `POST /admin/product` with two pairs → the master shows `taxonomy` with both, primary =
+   pair 0; the auto-provisioned store items carry the same pairs.
+2. `PATCH /admin/product/:id` reordering the pairs → `category` flips to the new pair 0 and
+   the change fans out to every store item.
+3. `PUT /admin/item/:id` with `categoryId` only (what today's admin form sends) → nothing
+   about the extra pairs is lost.
+4. Customer app: **still unchanged** — nothing reads `taxonomy` until Phase 3.
+
+## Notes / deliberate limits
+- **Only the pairs the edit CHANGES are validated.** An incoming pair that is identical
+  (same categoryId + same subCategoryId) to one already stored is passed through with its
+  stored names and never re-checked. This matters because the admin multi-select re-submits
+  the item's whole taxonomy on every save: legacy rows carry orphan pairs (74 items / 37
+  products on the prod dump) and validating "everything in the request" would make those rows
+  permanently un-saveable the day the FE ships. This is the fallback the plan calls out in
+  §3.0 "Gate check 2" — the data cleanup is still a separate, product-owner decision.
+- **Taxonomy is master-owned**, like `category`: on an item whose product master exists, a
+  taxonomy edit is routed to the master (403 for non-super-admins) and fanned out. Otherwise
+  the next master fan-out / nightly reconcile would silently revert a per-store tagging.
+- **No read path touched** — `category.repository.js`, the item drill-down,
+  `discount.utils.js`, `sub-category.repository.js` and the admin FE are Phase 3 / a separate
+  FE task.
+- The admin multi-select UI (chip list, first chip = primary) is NOT part of this change.
