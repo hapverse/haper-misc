@@ -7,7 +7,7 @@
 `packages/shared/repositories/product.repository.js` (`masterFieldsFromItem`, `projectionFieldsFromProduct`, `create`, `updateByIId`),
 `packages/admin/src/routes/product/controller.js` (`update`),
 `scripts/migrations/migrate-categories-global.js`,
-`haper-misc/haper-sync/backfill-item-taxonomy.js` (new).
+`haper-backend/scripts/migrations/backfill-item-taxonomy.js` (new).
 **PR/deploy:** backend-only → `dev` (`dapi.haper.in`). No client change, no API-shape change.
 Plan: `haper-backend/docs/plans/multi-category-items.md` (§1, §2 = this phase).
 
@@ -86,13 +86,13 @@ path had to be covered, plus a one-off backfill for rows written before this shi
   no response shape or category behaviour changed.
 
 ## Backfill (one-off, dev — run by the user)
-`haper-misc/haper-sync/backfill-item-taxonomy.js` fills `taxonomy` on rows written BEFORE
-this shipped. It calls the same `normaliseTaxonomy` the app uses (no reimplementation).
+`haper-backend/scripts/migrations/backfill-item-taxonomy.js` fills `taxonomy` on rows written
+BEFORE this shipped. It calls the same `normaliseTaxonomy` the app uses (no reimplementation).
 
 ```bash
-cd haper-sync
-npm run backfill-item-taxonomy             # DRY RUN — report only (default)
-npm run backfill-item-taxonomy -- --apply  # write
+cd haper-backend
+node scripts/migrations/backfill-item-taxonomy.js            # DRY RUN — report only (default)
+node scripts/migrations/backfill-item-taxonomy.js --apply    # write
 ```
 
 - Reads `NEW_DB_URI` from `.env`; **aborts** if the db name/host looks like production.
