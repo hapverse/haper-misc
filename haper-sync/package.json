@@ -17,6 +17,7 @@
   "scripts": {
     "ensure-indexes": "node ensure-indexes.js",
     "migrate-item-indexes": "node migrate-item-indexes.js",
+    "backfill-item-taxonomy": "node backfill-item-taxonomy.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
