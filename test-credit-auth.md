@@ -3,8 +3,10 @@
 **Area:** haper-credit Android + iOS + web (login screen, and every authenticated screen).
 **Backend:** `haper-credit/apps/backend/src/auth`.
 **Apps:** Android, iOS, Web.
-**Needs:** `dev` backend. **DLT registration is NOT yet done**, so dev builds show the OTP on
-screen instead of sending an SMS — see "Known limitations".
+**Needs:** `dev` backend with the SMS gateway configured. **DLT is done** — haper-credit reuses
+the Haper fleet's existing registration (sender `iHaper`, same entity and OTP template), so a real
+SMS is sent. If the gateway is not configured on that environment, the OTP appears on screen
+instead; that fallback never runs in production.
 
 ## What this covers
 
@@ -20,7 +22,12 @@ login for a number **creates that shopkeeper's book**; every later login opens t
 1. Open the app. Enter a number that has never been used, in the form `+919876543210`.
 2. Tap **Send OTP**.
    - **Expect:** the screen moves to the code step.
-   - **Expect (dev only):** a "dev code: 123456" line appears. Use it.
+   - **Expect:** a real SMS arrives from sender **iHaper** within a few seconds.
+   - **Expect:** the text reads "Your OTP for logging into your **HAPER** account is …". It says
+     HAPER, not Haper Credit, because it reuses the fleet's registered DLT template — see
+     "Known limitations".
+   - **If the gateway is unconfigured on this environment:** a "dev code: …" line appears on
+     screen instead. Use that.
 3. Enter the 6-digit code → **Verify**.
    - **Expect:** you land on the home screen.
    - **Expect:** the book is empty — *You will get* ₹0.00, no customers.
@@ -97,11 +104,24 @@ login for a number **creates that shopkeeper's book**; every later login opens t
 
 ## Edge cases
 
-### ✅ Request several OTPs in a row
+### ✅ Request several OTPs in a row — the throttle
 
-1. Tap **Send OTP** three times for the same number.
-   - **Expect:** the most recent code works.
-   - **Expect:** no crash, no lockout of the number itself.
+Every SMS is billed, so the request endpoint is throttled. Limits match the rest of the fleet.
+
+1. Request an OTP, then immediately tap **Send OTP** again.
+   - **Expect:** refused, with a message asking you to wait (about 2 minutes).
+   - **Expect:** no second SMS arrives.
+2. Wait 2 minutes and request again.
+   - **Expect:** a new SMS arrives and the newest code works.
+3. Request a third time within the same 15 minutes.
+   - **Expect:** refused until the window passes.
+4. On a **different** number, request an OTP immediately.
+   - **Expect:** it works. The throttle is per number, never global — one shopkeeper must not
+     be able to lock out another.
+
+**Known UX cost:** a shopkeeper signing in on a second device within 2 minutes of the first is
+asked to wait. That is deliberate (each SMS costs money) but it is a real tradeoff, and worth
+raising if testers find it painful in practice.
 
 ### ✅ Let the code expire
 
@@ -124,14 +144,21 @@ login for a number **creates that shopkeeper's book**; every later login opens t
 
 ## Known limitations (not bugs)
 
-- **No SMS is actually sent.** DLT (India's mandatory sender/template registration) is not
-  complete, so dev builds display the code on screen. Until DLT clears, a real shopkeeper could
-  not log in — this is the single biggest launch blocker and it is paperwork, not code.
+- **The SMS says "HAPER account", not "Haper Credit".** DLT only delivers a message whose text
+  matches the registered template exactly, and haper-credit reuses the fleet's existing OTP
+  template rather than waiting days for its own. Rewording it needs a **new template
+  registration**, not a code change. Raise it if the wording confuses shopkeepers.
 - **No "change my number"** flow yet.
 - **No staff / multi-user per shop** — one phone number is one shop, and anyone logging in with
   that number has full access.
 
 ## What this needs to ship
 
-`dev` backend deploy. **Production launch is blocked on DLT registration**, which also requires
-the public statement domain to be chosen and whitelisted (see `test-credit-statement-payments.md`).
+`dev` backend deploy with the SMS gateway env set (same API key as haper-backend; sender, entity
+and template ids are in `.env.example`). **No new DLT registration needed** — the fleet's existing
+one is reused.
+
+Note the statement link does **not** need DLT clearance in v1: reminders are sent by the
+shopkeeper from their own phone via WhatsApp or their SMS app, which is person-to-person, not
+bulk A2P messaging. A domain whitelist and a new template are only needed if server-sent
+reminders ship in v1.1.
