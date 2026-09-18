@@ -202,6 +202,19 @@ Tap the entry's bubble to open **Edit entry**. It shows "Was ₹X on <date>" and
 
 ---
 
+### ✅ A new customer and their first entry, added offline together
+
+The server refuses an entry for a customer it has not seen yet, and the app simply retries — so
+the two must still arrive safely even when the network is flaky.
+
+1. In airplane mode, add a **new** customer "Kavita" and an entry `200` **You gave** for her.
+2. Turn the network on and off a few times, then leave it on.
+   - **Expect:** within a minute both sync; the other device shows Kavita with ₹200.
+   - **Expect:** nothing stays stuck on "waiting to sync".
+
+(Developer note: an entry naming another shop's customer is refused with `FACT_TARGET_MISSING`
+and kept in the outbox; it is never filed into this shop's book.)
+
 ## Known limitations (not bugs)
 
 - **Attachments/photos on an entry** are not built — v1.1.
