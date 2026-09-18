@@ -64,6 +64,20 @@ never wrong, and never lost.
    - **Expect:** within a few seconds the pending count drops to zero and the banner says *All saved*.
    - **Expect:** the balance does **not** change during the sync. It was already correct.
 
+### ✅ Queued entries leave on their own — no extra tap (regression, Android)
+
+Earlier Android builds only sent queued entries when the shopkeeper added **another** entry. If
+they reconnected and just looked at the screen, entries sat on the phone forever and the other
+device never saw them.
+
+1. In airplane mode, add `100` **You gave** for any customer. Note the pending count ("1 waiting").
+2. Turn airplane mode off and **do not touch the app**.
+   - **Expect:** the pending count reaches zero within a few seconds, with no tap.
+   - **Expect:** the entry appears on the second device.
+3. Repeat, but turn the network back on while the app is in the **background**, then open it.
+   - **Expect:** the entry syncs within **~30 seconds** at the latest (the app also checks on
+     a timer, in case it missed the "network is back" signal).
+
 ### ✅ Two devices, both offline, then both reconnect
 
 1. Log in on **two** devices with the **same phone number** (e.g. Android + web).
@@ -179,5 +193,6 @@ never wrong, and never lost.
 
 ## What this needs to ship
 
-Backend deploy of haper-credit to `dev` + an updated debug APK / web build. **No** DLT, Meta or
+Backend deploy of haper-credit to `dev` + an updated debug APK / web build. The "leave on their
+own" check needs an APK built from `c0ec757` or later. **No** DLT, Meta or
 PSP dependency for anything in this guide.

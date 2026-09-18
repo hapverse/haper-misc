@@ -8,6 +8,24 @@ the Haper fleet's existing registration (sender `iHaper`, same entity and OTP te
 SMS is sent. If the gateway is not configured on that environment, the OTP appears on screen
 instead; that fallback never runs in production.
 
+## Running against a local backend (no dev deploy needed)
+
+For testing on a laptop with the Android emulator:
+
+1. `cd haper-credit/apps/backend && pnpm dev:local` — starts the API on port **4010** with a
+   throwaway in-memory database. Everything is wiped when you stop it.
+2. Install a **debug** build on the emulator. It talks to your laptop at `http://10.0.2.2:4010`
+   automatically (`10.0.2.2` is how the emulator says "the laptop I'm running on").
+   - On a **real phone**, a debug build cannot reach that address. Build with
+     `./gradlew assembleDebug -PlocalApi=https://dapi.haper.in` to use the dev server instead.
+3. Sanity check: open `http://localhost:4010/api/v1/health`.
+   - **Expect:** `"database": { "name": "haper-credit-dev", "readOnly": false, ... }`.
+   - If `readOnly` is `true`, `readOnlyReason` says why (`forced` = someone set `DB_READONLY`,
+     `foreign-database` = pointed at another service's database). Logins will fail in that state.
+
+Unless your local `.env` sets the SMS gateway key, no SMS is sent and the code appears on screen
+as "dev code" instead.
+
 ## What this covers
 
 Signing in with nothing but a mobile number. No forms, no documents, no password. The first
@@ -92,6 +110,28 @@ login for a number **creates that shopkeeper's book**; every later login opens t
    - **Expect:** the entries are **not** deleted.
 3. Sign back in with the same number.
    - **Expect:** the queued entries sync up and appear on the other device.
+
+### ✅ Android: login actually completes (regression)
+
+Earlier Android builds rejected **every** login with a "validation failed" error, because one
+field the server needs (which platform the phone is) was silently left out of the request.
+
+1. On Android, request an OTP and enter the correct code.
+   - **Expect:** you land on the home screen. No "validation failed" or generic error.
+2. On a local backend, check that the **dev code** line appears on screen right after
+   **Send OTP** — earlier builds received it but never showed it.
+
+### ✅ Android: a failed OTP request stays on the number step (regression)
+
+1. On Android, go offline (or stop the local backend) and tap **Send OTP**.
+   - **Expect:** an error message, and you **stay on the phone-number step**.
+   - **Expect:** you are **not** moved to the code step. Earlier builds moved you there anyway,
+     leaving you typing a code that could never work.
+
+### ✅ Android: screen fits below the status bar
+
+1. Open the login, home and customer screens.
+   - **Expect:** titles sit below the clock/battery bar, never underneath or overlapping it.
 
 ### ✅ Phone number format
 
