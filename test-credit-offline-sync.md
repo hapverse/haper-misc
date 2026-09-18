@@ -105,7 +105,23 @@ device never saw them.
    - **Expect:** device B shows the ₹60 entry **within ~30 seconds** (it arrives on the next fetch).
    - **Expect:** it is never lost, and the balance is right when it appears.
 
+### ✅ New customer screen (Mint Fresh)
+
+1. Open a customer with a few entries.
+   - **Expect:** entries look like a chat. **You gave** bubbles sit on the **right** in light red;
+     **You got** bubbles on the **left** in light green. Each shows amount, note, time and the
+     balance after it ("Bal ₹2,300"). Dates appear as small separators.
+   - **Expect:** an entry saved offline shows a small "waiting to sync" mark until it syncs.
+2. Tap **You gave** at the bottom.
+   - **Expect:** the entry form opens with **You gave** already selected (switchable to You got).
+   - Type `650`. **Expect:** "New balance: …" updates as you type, before saving.
+   - Tap **Yesterday**, then **Pick date** and choose a date. **Expect:** future dates cannot be
+     picked, and the entry appears under the chosen date after saving.
+
 ### ✅ Correct an entry (edit)
+
+Tap the entry's bubble to open **Edit entry**. It shows "Was ₹X on <date>" and a **History** list
+(the original amount plus every change) — corrections are never silent.
 
 1. Ramesh has an entry of `500`. Edit it to `450`.
    - **Expect:** balance drops by ₹50.
@@ -113,7 +129,8 @@ device never saw them.
 
 ### ✅ Delete an entry
 
-1. Delete a `500` entry.
+1. Tap a `500` entry → **Delete entry**.
+   - **Expect:** the app asks you to confirm first.
    - **Expect:** it disappears from the list and the balance drops by ₹500.
    - **Expect:** the other device agrees after syncing.
 

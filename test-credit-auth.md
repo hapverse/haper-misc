@@ -38,7 +38,7 @@ login for a number **creates that shopkeeper's book**; every later login opens t
 ### ✅ First login creates the book
 
 1. Open the app. Enter a number that has never been used, in the form `+919876543210`.
-2. Tap **Send OTP**.
+2. Tap **Continue**.
    - **Expect:** the screen moves to the code step.
    - **Expect:** a real SMS arrives from sender **iHaper** within a few seconds.
    - **Expect:** the text reads "Your OTP for logging into your **HAPER** account is …". It says
@@ -102,6 +102,48 @@ login for a number **creates that shopkeeper's book**; every later login opens t
 2. On device A, log in again.
    - **Expect:** the book and balances are intact.
 
+### ✅ Logging out wipes this device — and warns first if anything is unsent
+
+Logging out removes this shop's data **from this device only** (it stays safe on the server), so
+the next person to log in on the same phone or browser never sees it.
+
+1. Online, with everything synced ("All saved"): Profile → **Log out**.
+   - **Expect:** a plain "are you sure" question, then the login screen.
+   - Log back in with the **same** number. **Expect:** all customers and balances come back.
+2. Go offline, add an entry, then Profile → **Log out**.
+   - **Expect:** "1 entries are not synced yet and will be lost", with **Sync now** and
+     **Log out anyway**.
+   - Tap **Sync now** while still offline. **Expect:** you stay logged in; the entry is kept.
+   - Go online, **Sync now** again. **Expect:** it syncs, then logs out normally.
+3. Web with **two tabs** open: log out in one.
+   - **Expect:** the other tab also goes to the login screen within a moment.
+
+### ✅ A different shop logs in on the same device
+
+1. On phone 1 logged in as shop A, go offline and add an entry. From phone 2 (also shop A),
+   Profile → Devices → remove phone 1. Bring phone 1 online — it shows the login screen, with
+   shop A's data still on it. Now log in on phone 1 with **shop B's** number.
+   - **Expect:** "1 unsynced entries from the previous shop will be deleted" before anything
+     is shown. **Cancel** leaves shop A's data untouched and you are not logged in.
+   - **Continue** → you see **only shop B's** customers. **Never** shop A's.
+2. **This is a money-safety check.** If shop B ever sees shop A's customers, or shop A's
+   entry appears in shop B's book on another device, stop and report it immediately.
+
+### ✅ "Please sign in again. Your entries are safe."
+
+If the server stops accepting this device (e.g. it was removed from **Devices** on another
+phone), the app must not lose anything.
+
+1. On phone 1, go offline and add an entry. On phone 2 (same shop), Profile → Devices → remove
+   phone 1.
+2. Bring phone 1 online.
+   - **Expect:** the login screen with "Please sign in again. Your entries are safe."
+   - **Expect:** nothing was deleted.
+3. Log in on phone 1 with the **same** number.
+   - **Expect:** the entry from step 1 syncs and appears on phone 2.
+4. Turning Wi-Fi off and on, or a slow network, must **never** cause this message — only a
+   real rejection from the server does.
+
 ### ✅ Local entries survive a signed-out state
 
 1. On a logged-in device, go offline and add two entries.
@@ -119,11 +161,11 @@ field the server needs (which platform the phone is) was silently left out of th
 1. On Android, request an OTP and enter the correct code.
    - **Expect:** you land on the home screen. No "validation failed" or generic error.
 2. On a local backend, check that the **dev code** line appears on screen right after
-   **Send OTP** — earlier builds received it but never showed it.
+   **Continue** — earlier builds received it but never showed it.
 
 ### ✅ Android: a failed OTP request stays on the number step (regression)
 
-1. On Android, go offline (or stop the local backend) and tap **Send OTP**.
+1. On Android, go offline (or stop the local backend) and tap **Continue**.
    - **Expect:** an error message, and you **stay on the phone-number step**.
    - **Expect:** you are **not** moved to the code step. Earlier builds moved you there anyway,
      leaving you typing a code that could never work.
@@ -132,6 +174,29 @@ field the server needs (which platform the phone is) was silently left out of th
 
 1. Open the login, home and customer screens.
    - **Expect:** titles sit below the clock/battery bar, never underneath or overlapping it.
+
+### ✅ New login look (Mint Fresh)
+
+1. Open the app signed out.
+   - **Expect:** a green panel at the top with three short benefits (works without internet,
+     share bills, data stays private), and the mobile-number field below it with **Continue**.
+2. Tap **Continue** with a valid number.
+   - **Expect:** the code screen says "Reading the code for you…".
+   - **Expect (Android / iPhone):** when the SMS arrives the keyboard offers the code — tap it
+     and all six boxes fill. On web in Chrome/Safari the browser may offer it the same way.
+   - **Expect:** a resend timer, and **Use a different number** goes back to the first screen.
+
+### ✅ Profile shows your number, devices and language
+
+1. Open **Profile** (bottom bar).
+   - **Expect:** a green card with your shop name and **your login number**.
+   - **Expect:** on a second phone logged in to the same shop, the same number shows (it comes
+     from the server, not from what that phone remembers).
+2. Profile → **Devices**.
+   - **Expect:** every logged-in phone/browser with a "last seen" like "2 min ago".
+   - Remove one. **Expect:** that device is logged out the next time it syncs; this one is not.
+3. Profile → **Language** → हिन्दी.
+   - **Expect:** the app switches to Hindi, including the home list lines ("₹650 दिए · आज").
 
 ### ✅ Phone number format
 
@@ -148,7 +213,7 @@ field the server needs (which platform the phone is) was silently left out of th
 
 Every SMS is billed, so the request endpoint is throttled. Limits match the rest of the fleet.
 
-1. Request an OTP, then immediately tap **Send OTP** again.
+1. Request an OTP, then immediately tap **Continue** again.
    - **Expect:** refused, with a message asking you to wait (about 2 minutes).
    - **Expect:** no second SMS arrives.
 2. Wait 2 minutes and request again.
@@ -170,7 +235,7 @@ raising if testers find it painful in practice.
 
 ### ✅ Airplane mode at the login screen
 
-1. Go offline and tap **Send OTP**.
+1. Go offline and tap **Continue**.
    - **Expect:** a clear "no internet" message, not a spinner that hangs forever.
    - **Expect:** no crash.
 

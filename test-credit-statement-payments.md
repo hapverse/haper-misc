@@ -47,8 +47,10 @@ records "You got ₹X" themselves.
    - **Expect:** the page loads with the customer's name, the shop name, and **₹350.00**.
    - **Expect:** the amount **matches the shopkeeper's app exactly**. If the two ever differ,
      stop and report it — this feature exists to prevent that argument.
-   - **Expect:** a list of entries with a running balance.
-   - **Expect:** an "As on <date/time>" line.
+   - **Expect:** the **amount due is the first big thing** on the page, in red, with an
+     "As on <date/time>" line under it, then the **Pay now · ₹350.00** button and the QR.
+   - **Expect:** the entries are folded under **See all entries (N)**. Tap it — the list opens
+     with a running balance. This works with no JavaScript (it is a plain HTML fold).
 3. Check it works on a **cheap/old phone or a slow connection** (throttle to 2G in dev tools).
    - **Expect:** it loads. The page is deliberately plain HTML with no app inside it, because
      Opera Mini / UC Browser in data-saver mode cannot run one.
@@ -73,6 +75,34 @@ records "You got ₹X" themselves.
    - **Do not complete the payment on dev unless using a test VPA.**
 3. Scan the QR with any UPI app.
    - **Expect:** the same shop id and amount.
+
+### ✅ Payment setup — owner's QR image (app)
+
+The shopkeeper can add the QR from their own UPI app (a screenshot from PhonePe, GPay, Paytm or
+their bank app). It is printed on the **balance card** they share. The web statement page keeps
+its own QR, made from the UPI id with the amount already filled in.
+
+1. Profile → **Payment setup** → choose a QR screenshot from the gallery.
+   - **Expect:** a preview of the image, and the note "Test it: scan this QR from another phone".
+   - **Expect:** a large photo is shrunk automatically and still uploads.
+2. Scan the preview from another phone.
+   - **Expect:** it opens *your* UPI account. **We cannot check this for you** — a wrong
+     screenshot sends customers' money to someone else. That is why the screen tells you to test.
+3. On a second device logged in to the same shop, open Payment setup.
+   - **Expect:** the same QR image appears there too.
+4. Remove the image (or never add one) and open a customer's **Share balance card**.
+   - **Expect:** the card has no QR and says "Add your QR in Payment setup" — never a broken image.
+5. Type the UPI id and a different spelling in **Type it again**.
+   - **Expect:** "Does not match — check the spelling", and Save stays disabled.
+
+### ✅ Share a balance card
+
+1. Customer screen → the **QR** button (or Remind → **Share balance card**).
+   - **Expect:** a card with the shop name, "<name> ji, your balance is", the amount, the "as on"
+     time and your QR image.
+   - **Expect:** Share opens the phone's share sheet with the card as a **picture**.
+2. Send it to yourself on WhatsApp and scan the QR from another phone.
+   - **Expect:** your UPI app opens to your own account.
 
 ### ✅ The shopkeeper records the payment by hand
 
@@ -156,6 +186,8 @@ records "You got ₹X" themselves.
 
 ## What this needs to ship
 
-`dev` backend deploy with `PUBLIC_BASE_URL` set. For production the statement **domain must be
+`dev` backend deploy with `PUBLIC_BASE_URL` set (this deploy also carries the QR image upload and
+the owner name/address fields), plus the Mint Fresh app builds for the Payment setup and balance
+card checks. For production the statement **domain must be
 chosen and DLT-whitelisted before** it can appear inside an SMS, so that decision gates the
 DLT paperwork in `test-credit-auth.md`.
