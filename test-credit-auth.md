@@ -212,6 +212,10 @@ field the server needs (which platform the phone is) was silently left out of th
    - **Expect:** rejected with a clear message; no OTP is sent.
 2. Try `+919876543210`.
    - **Expect:** accepted.
+3. Try a non-Indian number such as `+14155550123` (web, or any tool that can send it — the
+   Android app always adds +91 itself).
+   - **Expect:** rejected with "phone must start with +91"; no OTP is sent. Our SMS registration
+     only reaches Indian numbers, so there is no point spending a request on anything else.
 
 ---
 
@@ -231,6 +235,35 @@ Every SMS is billed, so the request endpoint is throttled. Limits match the rest
 4. On a **different** number, request an OTP immediately.
    - **Expect:** it works. The throttle is per number, never global — one shopkeeper must not
      be able to lock out another.
+
+5. Tap **Continue** twice as fast as you can (or send the request from two browser tabs at once).
+   - **Expect:** exactly one SMS arrives. The second tap is refused with the "wait" message.
+     (Before this fix, two taps landing at the same instant could both send an SMS.)
+
+### ✅ Many requests from one network — the per-IP limit
+
+Stops one person or script from hammering login from one internet connection. Out of the box:
+**10 code requests and 30 code checks per minute from one IP address**. The limit is generous
+because many phones on Jio/Airtel share one public IP.
+
+Easiest on a laptop: start `pnpm dev:local` with `OTP_IP_REQUEST_LIMIT=3` in front, then request
+codes for 4 **different** numbers within a minute.
+- **Expect:** the first 3 work; the 4th is refused ("too many requests") even though that
+  number never asked before. After a minute it works again.
+- **Expect:** other screens (sync, statement links) are never affected by this limit.
+
+### ✅ Daily SMS ceiling
+
+A hard stop on how many OTP SMS the whole service sends per day (default **500**, counted in UTC —
+resets at 5:30 AM India time). Protects the SMS bill if someone walks through many numbers.
+
+On a laptop: start `pnpm dev:local` with `OTP_DAILY_SEND_LIMIT=2` in front, then request codes
+for 3 different numbers.
+- **Expect:** the first 2 work; the 3rd is refused ("sign-in codes are temporarily
+  unavailable"). The backend log shows one warning that the daily cap was reached.
+- **Expect:** restarting the backend does **not** reset it on a real database (it is stored in
+  the database, not in memory). With `pnpm dev:local` the whole database is thrown away on
+  restart, so there it does reset.
 
 **Known UX cost:** a shopkeeper signing in on a second device within 2 minutes of the first is
 asked to wait. That is deliberate (each SMS costs money) but it is a real tradeoff, and worth
@@ -262,6 +295,9 @@ raising if testers find it painful in practice.
   template rather than waiting days for its own. Rewording it needs a **new template
   registration**, not a code change. Raise it if the wording confuses shopkeepers.
 - **No "change my number"** flow yet.
+- **Rate-limit messages on Android and iOS are vague.** When a request is refused for being too
+  fast, web says "Too many attempts. Please wait a bit." but Android shows the "no internet"
+  message and iOS shows a generic error. The refusal itself works; only the wording is wrong.
 - **No staff / multi-user per shop** — one phone number is one shop, and anyone logging in with
   that number has full access.
 
@@ -270,6 +306,13 @@ raising if testers find it painful in practice.
 `dev` backend deploy with the SMS gateway env set (same API key as haper-backend; sender, entity
 and template ids are in `.env.example`). **No new DLT registration needed** — the fleet's existing
 one is reused.
+
+**Before deploying the abuse limits:** if the backend sits behind a load balancer or reverse
+proxy, set `TRUST_PROXY=true` (or the number of proxy hops). Without it every visitor looks like
+the proxy's single IP, so the per-IP limit (10 requests/minute) would apply to **everyone
+together** and block logins. The other new settings (`OTP_DAILY_SEND_LIMIT`,
+`OTP_IP_REQUEST_LIMIT`, `OTP_IP_VERIFY_LIMIT`, `OTP_IP_WINDOW_SECONDS`, `OTP_ALLOWED_PREFIX`) have
+safe defaults and are documented in `.env.example`.
 
 Note the statement link does **not** need DLT clearance in v1: reminders are sent by the
 shopkeeper from their own phone via WhatsApp or their SMS app, which is person-to-person, not
