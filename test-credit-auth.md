@@ -80,6 +80,12 @@ login for a number **creates that shopkeeper's book**; every later login opens t
    - **Expect:** it is **rejected** — "Too many tries. Ask for a new code."
    - **Expect:** requesting a fresh OTP works normally.
 
+### ✅ Fast repeated guesses also lock the code
+
+1. Request an OTP. Enter 5 wrong codes as quickly as you can, one after another without waiting (or tap **Verify** on the code screen from two browser tabs at the same time).
+   - **Expect:** after 5 attempts, the code locks — "Too many tries. Ask for a new code."
+   - **Expect:** it is not possible to slip in a 6th guess by going very fast.
+
 ### ✅ A code can only be used once
 
 1. Request an OTP and log in successfully on device A.
