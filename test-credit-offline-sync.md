@@ -215,6 +215,22 @@ the two must still arrive safely even when the network is flaky.
 (Developer note: an entry naming another shop's customer is refused with `FACT_TARGET_MISSING`
 and kept in the outbox; it is never filed into this shop's book.)
 
+### ✅ A big offline batch across several new customers syncs in one go
+
+1. In airplane mode, add **three new** customers ("Suresh", "Geeta", "Imran") and 2–3 entries for
+   each (about 8 entries in total).
+2. Turn the network on.
+   - **Expect:** within a few seconds the pending count reaches zero and the banner says
+     *All saved*.
+   - **Expect:** the second device shows all three customers with the right balances.
+   - **Expect:** nothing stays on "waiting to sync".
+
+(Developer note: if the server refuses particular entries, it names them in `error.factIds`.
+The app sets those aside, marking a malformed entry as rejected or retrying an entry that is
+waiting for its customer, and sends the rest in the same run, so one bad entry can no longer
+hold up the others. A tester can't trigger this from the screens; the automated tests
+`PushSplitTest` (Android), `PushSplitTests` (iOS) and `engine-push-split.spec.ts` (web) cover it.)
+
 ## Known limitations (not bugs)
 
 - **Attachments/photos on an entry** are not built — v1.1.
