@@ -5,8 +5,9 @@
 **Apps:** Android, iOS, Web.
 **Needs:** `dev` backend with the SMS gateway configured. **DLT is done** — haper-credit reuses
 the Haper fleet's existing registration (sender `iHaper`, same entity and OTP template), so a real
-SMS is sent. If the gateway is not configured on that environment, the OTP appears on screen
-instead; that fallback never runs in production.
+SMS is sent. If the gateway is not configured on that environment **and** the server has the "show OTP"
+switch (`OTP_ECHO=true`) turned on, the OTP appears on screen instead. That switch is off unless
+someone deliberately turns it on, and is never on in production.
 
 ## Running against a local backend (no dev deploy needed)
 
@@ -24,7 +25,7 @@ For testing on a laptop with the Android emulator:
      `foreign-database` = pointed at another service's database). Logins will fail in that state.
 
 Unless your local `.env` sets the SMS gateway key, no SMS is sent and the code appears on screen
-as "dev code" instead.
+as "dev code" instead (`pnpm dev:local` turns the `OTP_ECHO` switch on for you).
 
 ## What this covers
 
@@ -45,7 +46,8 @@ login for a number **creates that shopkeeper's book**; every later login opens t
      HAPER, not Haper Credit, because it reuses the fleet's registered DLT template — see
      "Known limitations".
    - **If the gateway is unconfigured on this environment:** a "dev code: …" line appears on
-     screen instead. Use that.
+     screen instead (only if `OTP_ECHO=true` on that server). Use that. No SMS and no dev code
+     means the switch is off — ask for it to be turned on.
 3. Enter the 6-digit code → **Verify**.
    - **Expect:** you land on the home screen.
    - **Expect:** the book is empty — *You will get* ₹0.00, no customers.
