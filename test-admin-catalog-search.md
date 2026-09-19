@@ -402,3 +402,33 @@ Verify with a direct API call (Postman/curl, logged-in session) against `dapi.ha
    column — Replenishment should get one too.
 2. `GET /admin/warehouse` is still unscoped — a warehouse staff member can list every warehouse's name
    and details (no stock numbers). Flagged for the security audit, not fixed here.
+
+---
+
+## Feature (2026-09-19): "Missing Shelf" filter on `GET /admin/item/catalog`
+
+**What:** new optional query param `missingShelf=true` lists items with **no shelf assigned**, so ops can
+work through them. Sibling of `missingBarcode` / `missingSellingPrice`; it ANDs with `q`, `storeId`,
+`status`, `categoryId` and the other chips. `catalog-summary` ignores it (same as the sibling chips).
+**Needs a backend deploy** (admin chip is built separately against this param).
+
+**"No shelf" means the item's `location` is:** missing, `null`, empty `""`, whitespace-only, or the
+placeholder `DefaultShelf1` (any letter case). Constant: `ItemConstants.defaultShelf`.
+
+### Steps — backend jest (in-memory)
+`cd packages/admin && NODE_ENV=test npx jest __tests__/items-missing-shelf.test.js` → 6 tests green.
+
+### Steps — manual (API, dev `dapi.haper.in`, admin token)
+- ✅ `GET /admin/item/catalog?page=1&limit=100&missingShelf=true` → every row has `location` of `""` /
+  `DefaultShelf1` / blank; `total` matches. (Example: item on shelf `L3` is NOT listed.)
+- ✅ `...&missingShelf=true&q=<part of a name>` → only shelf-less items whose name matches.
+- ✅ `...&missingShelf=true&status=ACTIVE&missingBarcode=true` → intersection of all three.
+- ✅ Give a listed item a real shelf (e.g. `A3`) on the Items page → it drops out of the list.
+- ✅ Set a listed item's shelf back to blank / `DefaultShelf1` → it comes back.
+- ❌ `missingShelf=abc` → 4xx validation error (boolean only).
+- ✅ No `missingShelf` param, or `missingShelf=false` → list unchanged from before.
+
+### Edge cases
+- ❌ A lookalike such as `L3-DefaultShelf1` or `DefaultShelf12` is a real value → must NOT be listed.
+- `q=DefaultShelf1` (search by shelf) + `missingShelf=true` still works — the two `$or`s are AND-composed.
+- Counts in `catalog-summary` do not change when the param is sent.

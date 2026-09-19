@@ -530,3 +530,38 @@ they behave like Store Controls and Free Gift already did.
 > it has to be checked by eye at the widths and themes above. Existing Config unit
 > tests (`src/pages/Config/configTime.test.ts`) are unaffected.
 
+
+---
+
+## Issue 13 — "Missing Shelf" quick-filter chip on the Items list
+
+**Where:** Items (`/items`) → header chip row (next to Expiring Items / Low Stock /
+Missing Cost Price / Missing Barcode / Unpriced). Visible to every role.
+**Why:** finds items with no shelf yet, so they can be shelved (click-to-edit, Issue 11).
+"No shelf" = `location` empty / missing / only spaces, **or** the placeholder
+`DefaultShelf1`. Example: an item with Shelf blank and one showing `DefaultShelf1`
+both appear; one on `FRIDGE6` does not.
+
+**What deploy this needs**
+- **Backend first:** `GET /admin/item/catalog?missingShelf=true` must be deployed
+  (haper-backend). Before that, the chip is harmless but does nothing (param ignored,
+  full list shows).
+- Then a `haper-admin` build to `damin.haper.in` (user-manual). No migration.
+
+**Steps**
+1. Open `/items`, click **Missing Shelf**.
+   ✅ The chip turns amber and its label becomes "View All Items". The table shows only
+   items whose Shelf is blank or `DefaultShelf1`. Page resets to 1.
+   ❌ Any item with a real shelf (e.g. `FRIDGE6`) is listed.
+2. With the chip on, type a product name in the search box.
+   ✅ Results are shelf-less items matching that name (filters combine; status
+   default ACTIVE still applies). Also try a category / stock filter — still combines.
+3. Click the chip again ("View All Items").
+   ✅ `missingShelf` is dropped and the full list returns.
+4. Turn on **Missing Shelf**, then click **Expiring Items** or **Low Stock**.
+   ✅ All filters combine (e.g., both `missingShelf=true` and `expiringDays=30` in the query; no console errors).
+5. Shelve one listed item via the Shelf cell (Issue 11) and re-toggle the chip.
+   ✅ That item is gone from the filtered list.
+
+> **Automated coverage:** `src/pages/Items/ItemsList.missingShelf.test.tsx` (chip sets
+> / removes `missingShelf=true`, composes with `status=ACTIVE`).
