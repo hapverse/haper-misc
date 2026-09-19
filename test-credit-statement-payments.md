@@ -172,6 +172,20 @@ its own QR, made from the UPI id with the amount already filled in.
    - **Expect:** the new entry and the new balance appear.
    - **Expect:** the "As on" time updates.
 
+### ✅ Edited and deleted entries match the app exactly
+
+The statement now reads only this customer's entries (plus their edits and deletes) instead of
+the whole shop's book, so a busy shop's link stays fast. The numbers must not change because of it.
+
+1. For customer A: add `1000` **You gave**, edit it to `1100`, edit it again to `1200`, then
+   delete it. Add `2000` **You gave** and edit it twice (to `2100`, then `2200`). Add `50`.
+2. Add a few entries for customer B too, including one edit and one delete.
+3. Share A's statement, download the PDF, and send A a reminder.
+   - **Expect:** A's balance is ₹2,250 everywhere — app, page, PDF and reminder text. The
+     deleted entry is absent; the twice-edited one shows only its latest amount (₹2,200).
+   - **Expect:** nothing of customer B's appears on A's statement, and B's own statement
+     matches B's balance in the app.
+
 ---
 
 ## Known limitations (not bugs)
