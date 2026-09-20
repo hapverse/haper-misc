@@ -39,6 +39,25 @@ records "You got ₹X" themselves.
    - **Why this is strict:** a typo here sends a customer's money to a stranger and nothing
      downstream would catch it.
 
+### ✅ Changing the UPI id stays instant, and is recorded
+
+Changing the shop's payment id asks for **no OTP and no password**. That is deliberate — the
+shopkeeper changes it rarely and should not be locked out of their own money. The safety net is
+that they get told it happened.
+
+1. Change the UPI id to another valid one.
+   - **Expect:** it saves straight away — **no OTP screen, no extra confirmation**.
+   - Behind the scenes the server also stores *when* it changed and *which device* did it, so a
+     surprise change can be explained afterwards. Nothing shows this in the app yet.
+2. Save the **same** UPI id again, or change only the shop name.
+   - **Expect:** saves normally, and no alert is triggered (nothing changed).
+
+**Alert SMS — not live yet.** An SMS telling the shopkeeper "your UPI id was changed" is built
+but **switched off**, because India's DLT rules need the exact message text registered with the
+telecom operators first, and that registration does not exist yet. Until it does, no SMS is sent
+and there is nothing to test here. Once registered it is an environment change only
+(`UPI_CHANGE_ALERT_ENABLED=true` plus the two template values) — no app update.
+
 ### ✅ Share a statement — the customer sees it with no app
 
 1. Open a customer who owes money (e.g. Ramesh, ₹350). Tap **Share statement**.

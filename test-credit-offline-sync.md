@@ -92,6 +92,44 @@ Note for whoever deploys a new web build: a browser that already has the old cop
 one on the **next** reload after the one that fetched it — so reload twice before reporting "the
 fix isn't there".
 
+### ✅ Offline, the web app shows the real shop name and QR — not a placeholder
+
+Until now the shop name and the payment QR were only ever fetched from the internet, so opening
+the web app with no signal showed "HaperCredit" and an empty QR box for a shop that had been set
+up for weeks.
+
+1. Online, in the web app, go to **Profile → Payment setup** and upload your UPI QR screenshot.
+   Make sure **Profile → Edit** shows your real shop name.
+2. Go back to the home screen and wait a few seconds.
+3. Turn on **airplane mode** and **reload the page**.
+   - **Expect:** the top of the home screen shows your real shop name, not "HaperCredit".
+   - **Expect:** open any customer who owes you → the QR icon → the balance card shows **your QR
+     picture**, with a small line saying the app could not check for a newer one.
+   - **Expect:** it does *not* say "Add your QR in Payment setup" — that line is only for a shop
+     that has genuinely never uploaded one.
+4. Turn the internet back on and reload.
+   - **Expect:** same shop name and same QR, and that small "couldn't check" line is gone.
+
+### ✅ An entry the server refused is called out, never counted silently
+
+Very rarely the server permanently refuses an entry (for example it was already deleted
+elsewhere). That entry stays in this device's total, so this device would otherwise show a
+different amount from the shopkeeper's other phone with nothing on screen saying why.
+
+This one needs a developer to force a refusal — ask them to make one queued entry come back
+rejected. Then, in the web app:
+
+1. Look at the **home screen**.
+   - **Expect:** an orange strip near the top: "1 entry couldn't be sent. It is counted in the
+     totals below, but your other devices don't have it."
+   - **Expect:** the customer's row ends with "couldn't be sent" instead of "waiting to sync".
+2. Open that customer.
+   - **Expect:** the same strip above their balance, and the refused entry's bubble is marked
+     "couldn't be sent" in red.
+3. Open the same shop on a second device.
+   - **Expect:** that device's total is different — and step 1's strip is what explains the gap.
+     A total that differs with **nothing** on screen explaining it is the bug.
+
 ### ✅ Queued entries leave on their own — no extra tap (regression, Android)
 
 Earlier Android builds only sent queued entries when the shopkeeper added **another** entry. If
