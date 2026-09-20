@@ -103,6 +103,13 @@ its own QR, made from the UPI id with the amount already filled in.
    - **Expect:** Share opens the phone's share sheet with the card as a **picture**.
 2. Send it to yourself on WhatsApp and scan the QR from another phone.
    - **Expect:** your UPI app opens to your own account.
+3. Turn on Airplane Mode before ever syncing (fresh install/login), then open **Share balance
+   card**.
+   - **Expect:** the "as on" time is shown with "· not synced yet" — never a time that quietly
+     implies the balance is confirmed.
+4. Record an entry for this party while still offline, then open **Share balance card** again.
+   - **Expect:** "as on" now shows the last successful sync time with "· includes entries not yet
+     synced".
 
 ### ✅ The shopkeeper records the payment by hand
 
