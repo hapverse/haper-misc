@@ -216,6 +216,66 @@ blocked on the same condition — **money already refunded AND stock already ret
    the time — the captured amount is now credited too, exactly once. A duplicate webhook adds
    nothing.
 
+## 11. Removing an item from an order the customer never paid for  (real-money bug fix)
+Reported live on **HP581915100** (₹2,124, Razorpay): the customer abandoned the payment sheet, the
+cron marked it *"Payment abandoned by User. Cancelled by Cron."*, an admin **reopened** it to
+deliver as cash-on-delivery — and then removing items from it **credited the customer's wallet**
+for the removed lines. The order is "prepaid" by *payment method*, but ₹0 was ever collected.
+
+The edit refund is now capped at money actually collected and not yet given back —
+`captured + walletUsed − refundedAmount`, the same `computeRefundOwed` formula as the admin cancel
+(§8) and the rider Undelivered refund (§9). Applies to **both** the admin item-edit and the picker
+out-of-stock flow (they share one code path).
+
+1. **Unpaid Razorpay order, admin removes an item.** Find/make an order whose payment was
+   abandoned (`meta.payment` has only the cron note, no `status: "captured"`), reopened to OPEN.
+   Admin → order → **Edit items** → remove a line → Save.
+   ✅ 200, response `refundAmount: 0`.
+   ✅ Wallet balance **unchanged**, no new row in the customer's wallet history.
+   ✅ Order has no `refunds[]` entry, `refundedAmount` stays 0, `hasPartialRefund` stays false.
+   ✅ The bill still recomputes — `actualOrderValue` / `price` drop by the removed line, stock is
+   returned.
+   ❌ Must **not** credit the removed line's value (that was the bug).
+2. **Gateway attempt that FAILED.** Same as 1 but `meta.payment` carries a real `id` with
+   `status: "failed"`.
+   ✅ Still ₹0 credited — a payment id is not a capture.
+3. **Unpaid order that spent coins at checkout.** Gross ₹300 = ₹40 wallet coins + ₹260 never
+   captured. Remove ₹200 of items.
+   ✅ Only **₹40** comes back (the coins really did leave the wallet). Not ₹200.
+4. **Fully paid Razorpay order — unchanged.** Captured order, remove a ₹60 line.
+   ✅ **₹60** credited, one `refunds[]` entry, `hasPartialRefund: true`, refund push sent —
+   exactly as before this fix.
+5. **Wallet + card split.** ₹30 coins + ₹170 captured, remove a ₹150 line.
+   ✅ **₹150** credited (covered by the ₹200 actually paid).
+6. **Pure wallet order** (payment method Wallet, `price` 0, whole gross in `meta.walletUsed`).
+   Remove a ₹120 line.
+   ✅ **₹120** credited. ❌ Must not refund ₹0 — a wallet order has no gateway capture by design,
+   the money is in `walletUsed`.
+7. **Store-pickup prepaid, captured.** Remove a ₹90 line. ✅ ₹90 credited (unchanged).
+8. **COD.** Remove a line.
+   ✅ ₹0, no `refunds[]` entry, no `hasPartialRefund` — but the bill recomputes and the
+   customer-facing **change log** (`adjustments[]`, "an item was changed and why") is still
+   written on the picker path. Unchanged from before.
+9. **Sequential removals past the paid total.** Order shows 3 × ₹50 but only ₹100 was captured.
+   Remove one line at a time.
+   ✅ ₹50, then ₹50, then **₹0** — total credited ₹100, never more than was collected.
+10. **Picker out-of-stock on an unpaid order.** Picker marks a line OOS on an abandoned-payment
+    Razorpay order.
+    ✅ Line removed, `refundAmount: 0`, wallet untouched, and the customer still sees the
+    adjustment in order details.
+    ✅ Short pick (picked 3 of 5) on the same order: line reduced, ₹0 credited.
+    ✅ OOS on the **last** line cancels the order: status Cancelled, bill zeroed, and the leftover
+    delivery/platform fees are **not** credited either (nothing was paid).
+    ✅ On a genuinely paid order this same last-line cancel still refunds the leftover fees.
+    ✅ **Fractional wallet amounts.** Pure-wallet order, e.g. ₹40 line + ₹0.5 fee paid as
+    `walletUsed` 40.5; picker marks the only line OOS → 200, order Cancelled, task completed,
+    wallet credited **₹40 once** (whole rupees; the ₹0.5 residue is skipped).
+    ❌ Must **not** return 400 "Refund amount must be a positive number" (that bricked the task on
+    every retry).
+11. **Payment lands late, after an unpaid edit.** Edit an unpaid order (₹0 credited), then let the
+    `payment.captured` webhook arrive for the original amount.
+    ✅ A further removal now refunds real money — capped at what was captured.
+
 ---
 
 ### Notes for devs
@@ -267,6 +327,24 @@ blocked on the same condition — **money already refunded AND stock already ret
   The non-money compensations (restock lines, audit, push) deliberately still use `currentOrder`.
   Covered by `packages/delivery/__tests__/order-undelivered-refund.test.js` and
   `packages/admin/__tests__/order-undelivered-refund-handoff.test.js`.
+- §11 lives in `applyItemEdit` (`packages/shared/utils/order-edit.utils.js`) — the ONE code path
+  behind both the admin item edit and the picker OOS/short-pick, so they can't drift. `isPrepaid`
+  (payment METHOD) still decides *whether a refund is attempted*; the new `refundCeiling =
+  refundUtils.computeRefundOwed(order).amount` decides *how much*, via one
+  `Math.min(refundAmount, refundCeiling)` after the 2dp rounding. The ceiling is read from the
+  **pre-edit** order doc, so sequential removals each see the running `refundedAmount` and can
+  never sum past what was collected. `cancelEmptiedOrder` in
+  `packages/picking/src/routes/task/controller.js` applies the same cap to the leftover-fees
+  refund. Do **not** replace the method gate with the amount gate outright — `prepaid` also
+  controls the admin-side "reduce only / refund reason required" validation, which must keep
+  applying to a reopened-but-unpaid prepaid order.
+- Known ≤₹1 edge (accepted): `computeRefundOwed` floors the captured paise→rupees, so on an order
+  with a fractional `meta.walletUsed` the ceiling can sit up to ₹1 under the true paid total. The
+  cap only ever reduces a refund, and `refundToWallet` floors to whole rupees anyway.
+- Covered by `packages/admin/__tests__/order-edit-unpaid-refund.test.js` (11 cases) and
+  `packages/picking/__tests__/oos-unpaid-order.test.js` (3 cases). `packages/picking/__tests__/testUtils.js`
+  `seedOpenOrder` now seeds a `captured` `meta.payment` for prepaid-method fixtures unless the
+  caller passes its own `meta` — previously every prepaid picking fixture was implicitly "unpaid".
 - §6 (page-tiles bug) logic lives in `haper-admin/src/utils/orders.ts`
   (`REVENUE_COUNTED_STATUSES`, `FAILED_ORDER_STATUSES`, `computeOrdersPageSummary`) — extracted
   out of `OrdersList.tsx`'s `useMemo` so it's unit-testable without rendering the page. Covered
