@@ -64,6 +64,34 @@ never wrong, and never lost.
    - **Expect:** within a few seconds the pending count drops to zero and the banner says *All saved*.
    - **Expect:** the balance does **not** change during the sync. It was already correct.
 
+### ✅ The web app **opens** with no internet (web only)
+
+On a phone the app is installed, so it obviously opens offline. In a browser it used to need the
+internet just to load the page itself — so with no signal the tester got the browser's "no
+internet" page and never even reached their khata. It should now open from the browser's own
+saved copy.
+
+1. Open the web app in the browser **once, while online**, and log in. Add a customer and one
+   entry so there is something to see.
+2. Wait about 5 seconds (the browser is saving its copy of the app), then **reload once** so the
+   saved copy is the one in use.
+3. Turn on **airplane mode** (on a desktop: browser developer tools → Network tab → tick
+   *Offline*).
+4. **Reload the page.**
+   - **Expect:** the app opens normally — the customer and the entry are there, with the right
+     balance.
+   - **Expect:** *not* a browser error page ("No internet", "This site can't be reached").
+   - **Expect:** the text looks the same as when online, in English **and** in Hindi (the app now
+     carries its own fonts instead of fetching them from Google).
+   - **Expect:** the offline banner appears and entries can still be added, exactly as in the
+     airplane-mode test above.
+5. Turn the internet back on and reload.
+   - **Expect:** everything syncs as normal; nothing was lost.
+
+Note for whoever deploys a new web build: a browser that already has the old copy picks up the new
+one on the **next** reload after the one that fetched it — so reload twice before reporting "the
+fix isn't there".
+
 ### ✅ Queued entries leave on their own — no extra tap (regression, Android)
 
 Earlier Android builds only sent queued entries when the shopkeeper added **another** entry. If
