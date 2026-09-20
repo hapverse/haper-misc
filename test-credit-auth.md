@@ -226,7 +226,8 @@ field the server needs (which platform the phone is) was silently left out of th
 Every SMS is billed, so the request endpoint is throttled. Limits match the rest of the fleet.
 
 1. Request an OTP, then immediately tap **Continue** again.
-   - **Expect:** refused, with a message asking you to wait (about 2 minutes).
+   - **Expect:** refused, with "Too many attempts. Please wait a bit and try again." (same
+     wording as web/iOS) — not "no internet".
    - **Expect:** no second SMS arrives.
 2. Wait 2 minutes and request again.
    - **Expect:** a new SMS arrives and the newest code works.
@@ -248,8 +249,8 @@ because many phones on Jio/Airtel share one public IP.
 
 Easiest on a laptop: start `pnpm dev:local` with `OTP_IP_REQUEST_LIMIT=3` in front, then request
 codes for 4 **different** numbers within a minute.
-- **Expect:** the first 3 work; the 4th is refused ("too many requests") even though that
-  number never asked before. After a minute it works again.
+- **Expect:** the first 3 work; the 4th is refused ("Too many attempts. Please wait a bit and
+  try again.") even though that number never asked before. After a minute it works again.
 - **Expect:** other screens (sync, statement links) are never affected by this limit.
 
 ### ✅ Daily SMS ceiling
@@ -295,9 +296,6 @@ raising if testers find it painful in practice.
   template rather than waiting days for its own. Rewording it needs a **new template
   registration**, not a code change. Raise it if the wording confuses shopkeepers.
 - **No "change my number"** flow yet.
-- **Rate-limit messages on Android and iOS are vague.** When a request is refused for being too
-  fast, web says "Too many attempts. Please wait a bit." but Android shows the "no internet"
-  message and iOS shows a generic error. The refusal itself works; only the wording is wrong.
 - **No staff / multi-user per shop** — one phone number is one shop, and anyone logging in with
   that number has full access.
 
