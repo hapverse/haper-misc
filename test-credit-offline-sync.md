@@ -133,6 +133,19 @@ device never saw them.
    - **Expect:** device B shows the ₹60 entry **within ~30 seconds** (it arrives on the next fetch).
    - **Expect:** it is never lost, and the balance is right when it appears.
 
+### ✅ Web: a tab left open all afternoon still gets live updates
+
+1. On the web app, open a customer and leave the tab open, untouched, for **20+ minutes**
+   (sign-ins go stale after about 15 minutes, so this is the case that used to break).
+2. On another device, add `40` **You gave** for that same customer.
+   - **Expect:** it still arrives on the web tab within a second or two — the app quietly signs
+     itself back in and reconnects in the background. You should never have to reload the page.
+3. Now turn the computer's Wi-Fi off for a moment, then back on, and add `40` on the other device.
+   - **Expect:** the web tab shows the status honestly while it is cut off, and the entry still
+     arrives **within ~30 seconds** once the connection is back — instant delivery is a bonus,
+     the regular fetch is what guarantees it.
+   - **Expect:** saving entries on the web tab keeps working throughout.
+
 ### ✅ New customer screen (Mint Fresh)
 
 1. Open a customer with a few entries.
