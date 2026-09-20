@@ -106,6 +106,17 @@ device never saw them.
    - **Expect:** the entry syncs within **~30 seconds** at the latest (the app also checks on
      a timer, in case it missed the "network is back" signal).
 
+### ✅ Web: an entry made online leaves at once, not on the next timer tick
+
+1. With the web app **online** and a second device open on the same customer, add `150`
+   **You gave** on web.
+   - **Expect:** it shows on the second device within a couple of seconds — not up to
+     30 seconds later. (Web used to wait for its timer; Android and iOS always sent
+     straight away.)
+2. Put the web tab in airplane mode, add another entry, then turn the network back on
+   without touching the tab.
+   - **Expect:** the pending count drops to zero within a few seconds.
+
 ### ✅ Two devices, both offline, then both reconnect
 
 1. Log in on **two** devices with the **same phone number** (e.g. Android + web).
@@ -271,6 +282,14 @@ The app sets those aside, marking a malformed entry as rejected or retrying an e
 waiting for its customer, and sends the rest in the same run, so one bad entry can no longer
 hold up the others. A tester can't trigger this from the screens; the automated tests
 `PushSplitTest` (Android), `PushSplitTests` (iOS) and `engine-push-split.spec.ts` (web) cover it.)
+
+(Developer note, the other direction: the web app now checks every entry it *downloads* before
+saving it. An entry that arrives damaged — e.g. with no amount — is refused instead of stored, so
+it can never show up inside a balance; the rest of the batch saves normally. The shopkeeper sees a
+warning on Home and on that customer's ledger — *"Can't read some entries — update the app.
+Balances here may be incomplete."* — which stays for the rest of the session, because the skipped
+entries do not come back on a later sync. Details also go to the browser console. Covered by
+`engine-kick.spec.ts` (web).)
 
 ## Known limitations (not bugs)
 
