@@ -51,6 +51,11 @@ records "You got ₹X" themselves.
      "As on <date/time>" line under it, then the **Pay now · ₹350.00** button and the QR.
    - **Expect:** the entries are folded under **See all entries (N)**. Tap it — the list opens
      with a running balance. This works with no JavaScript (it is a plain HTML fold).
+   - **On a customer with a long history (more than 25 entries):** the count in
+     **See all entries (N)** is still the **full** number, but the list shows only the **latest
+     25**, with a line saying "Showing the latest 25 entries. Download the PDF below for the full
+     history." The **balance stays the full one** — only the list is shortened, so the page still
+     arrives on 2G. If the balance ever changes because entries are hidden, stop and report it.
 3. Check it works on a **cheap/old phone or a slow connection** (throttle to 2G in dev tools).
    - **Expect:** it loads. The page is deliberately plain HTML with no app inside it, because
      Opera Mini / UC Browser in data-saver mode cannot run one.
@@ -120,6 +125,11 @@ its own QR, made from the UPI id with the amount already filled in.
 
 ### ✅ Send a reminder
 
+**Note:** each reminder mints a fresh statement link and **retires the link the previous reminder
+made** — the link inside an older reminder message stops working on purpose, so one customer only
+ever has one live reminder link. A link you shared with **Share statement** is separate and is not
+touched by a reminder.
+
 1. On the customer screen, tap **Send reminder**.
    - **Expect:** WhatsApp (or a share sheet) opens with a message already written.
    - **Expect:** the message names the shop, states the amount, and contains the statement link.
@@ -127,6 +137,8 @@ its own QR, made from the UPI id with the amount already filled in.
    - **Expect:** you still have to press send yourself — the app must never send it silently.
 2. Send it to yourself and tap the link.
    - **Expect:** the statement opens and shows the right balance.
+3. Send a **second** reminder to the same customer, then open the link from the **first** one.
+   - **Expect:** "This link is no longer valid". The newest reminder's link still works.
 
 ### ✅ Revoking a shared link
 

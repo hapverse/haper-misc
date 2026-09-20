@@ -20,9 +20,12 @@ For testing on a laptop with the Android emulator:
    - On a **real phone**, a debug build cannot reach that address. Build with
      `./gradlew assembleDebug -PlocalApi=https://dapi.haper.in` to use the dev server instead.
 3. Sanity check: open `http://localhost:4010/api/v1/health`.
-   - **Expect:** `"database": { "name": "haper-credit-dev", "readOnly": false, ... }`.
-   - If `readOnly` is `true`, `readOnlyReason` says why (`forced` = someone set `DB_READONLY`,
-     `foreign-database` = pointed at another service's database). Logins will fail in that state.
+   - **Expect:** `{"ok":true}` and nothing else. The endpoint is public, so it deliberately does
+     not name the environment or the database any more.
+   - If it returns **503**, the API cannot reach the database and logins will fail.
+   - Which database it is using, and whether it is in read-only mode, is printed in the **boot
+     log** when you start the API (`DB_READONLY=true` = someone forced it; "not haper-credit's own
+     database" = pointed at another service's database). Logins fail in either state.
 
 Unless your local `.env` sets the SMS gateway key, no SMS is sent and the code appears on screen
 as "dev code" instead (`pnpm dev:local` turns the `OTP_ECHO` switch on for you).
