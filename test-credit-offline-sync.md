@@ -226,6 +226,20 @@ Tap the entry's bubble to open **Edit entry**. It shows "Was ₹X on <date>" and
 1. Enter `1234567.89`.
    - **Expect:** **₹12,34,567.89** (lakh grouping, not ₹1,234,567.89).
 
+### ✅ An entry with no "gave/got" or a silly amount is refused
+
+Only testable with a tool that can call the API directly; the apps always send both.
+
+1. Push an entry through `POST /api/v1/sync/mutations` with `direction` missing, or set to
+   something other than `gave`/`got`.
+   - **Expect:** refused with `VALIDATION_FAILED`, naming that entry's id. Previously it was
+     accepted and counted as money **received**, which quietly changed the balance.
+2. Push an entry with `amountPaise` larger than 9007199254740991.
+   - **Expect:** refused with `VALIDATION_FAILED`. Above that, the arithmetic loses precision.
+3. Push an entry carrying a `deviceId` that is not the device you logged in with.
+   - **Expect:** accepted, but the stored entry is filed under **your** device — the entry
+     history on the other phones must never show a device that did not write it.
+
 ### ✅ Wrong device clock
 
 1. Set the phone's date **one year in the past**. Add an entry offline. Reconnect.

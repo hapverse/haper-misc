@@ -165,6 +165,19 @@ its own QR, made from the UPI id with the amount already filled in.
 1. Change a few characters in the middle of a statement URL and open it.
    - **Expect:** "This link is no longer valid". Never someone else's data.
 
+### ✅ A statement link for a customer who is not in this shop's book
+
+Only testable with a tool that can call the API directly (not through the app, which always
+picks a customer from the list).
+
+1. `POST /api/v1/parties/party-does-not-exist/statement-link` with a valid login.
+   - **Expect:** refused with `NOT_FOUND`. It used to succeed and produce a real-looking page
+     reading "Customer ₹0.00", which a customer could easily read as "I owe nothing".
+2. Same call for a customer id belonging to a **different** shop.
+   - **Expect:** also refused with `NOT_FOUND`.
+3. Same for `POST /api/v1/parties/<unknown>/reminders`.
+   - **Expect:** refused with `NOT_FOUND`; no reminder is recorded in the history list.
+
 ### ✅ Odd characters in a customer name
 
 1. Name a customer `<b>Ramesh</b>` or `Ramesh & Sons`, then open their statement.

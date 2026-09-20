@@ -221,6 +221,27 @@ field the server needs (which platform the phone is) was silently left out of th
 
 ## Edge cases
 
+### ✅ A sign-in link cannot be replaced by a trick value
+
+Only testable with a tool that can call the API directly.
+
+1. `POST /api/v1/auth/otp/verify` with `deviceId` sent as `{"$ne": null}` instead of text.
+   - **Expect:** refused with `VALIDATION_FAILED`.
+2. `POST /api/v1/auth/refresh` with `bookId`, `deviceId` or `refreshToken` sent as
+   `{"$ne": null}`.
+   - **Expect:** each refused with `VALIDATION_FAILED`, and the real refresh token still works
+     afterwards (nothing was rotated on the way past).
+3. On an iPhone, sign in normally.
+   - **Expect:** it works. iOS device ids are UPPERCASE, and the new format check accepts both
+     cases — this step is the regression guard for that.
+
+### ✅ The sign-in token is not accepted in a web address
+
+1. In a browser, open `…/api/v1/sync/changes?access_token=<a valid token>`.
+   - **Expect:** `401`. A token in a URL ends up in server logs and browser history, so only
+     the live-updates stream (`/api/v1/sync/stream`), which technically cannot send a header,
+     still accepts it there.
+
 ### ✅ Request several OTPs in a row — the throttle
 
 Every SMS is billed, so the request endpoint is throttled. Limits match the rest of the fleet.
