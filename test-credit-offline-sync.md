@@ -269,6 +269,36 @@ Tap the entry's bubble to open **Edit entry**. It shows "Was ₹X on <date>" and
    - **This is the single most important assertion in this guide.** If ₹9999 appears, stop and
      report it: a deleted entry has come back to life.
 
+### ✅ Typing an entry is quick, and a half-typed one is never lost silently
+
+Run on Android, iOS and web.
+
+1. Open a customer → **You gave**.
+   - **Expect:** the cursor is already in the amount box and the number keyboard is up. You can
+     type `350` straight away without tapping first. (On web this only applies on a phone.)
+2. Type `350`, then press **Back** or the ✕.
+   - **Expect:** "Discard this entry?" with **Keep editing** / **Discard**.
+   - **Keep editing** → you are back with `350` still typed.
+   - **Discard** → the screen closes, no ₹350 entry exists, and the balance is unchanged.
+3. Open the entry screen again and press Back without typing anything.
+   - **Expect:** it closes straight away, with no question.
+4. Open an existing entry to edit it and change its amount, then press Back.
+   - **Expect:** the same question. With nothing changed, Back closes without asking.
+5. iOS only: with an amount typed, try swiping the screen down.
+   - **Expect:** it does not close. Use ✕ to get the question.
+6. Web only: with an amount typed, try to close or refresh the tab.
+   - **Expect:** the browser asks "Leave site?".
+
+### ✅ Small screen details
+
+1. Open a customer who has **no phone number**.
+   - **Expect:** the header under their name reads just "Customer", not "Customer ·". With a phone,
+     it reads "Customer · +91…".
+2. Tap **Add customer** and look at the sheet that slides up.
+   - **Expect:** a white or light-mint sheet (Mint Fresh), never pale lavender or grey.
+3. Type a name, then tap **Save**. Next time, swipe the sheet away instead.
+   - **Expect:** both times the keyboard goes away with the sheet and does not stay over the list.
+
 ---
 
 ## Edge cases
@@ -399,6 +429,8 @@ now, and the "as on" time stays put. Covered by `PullHealthTest` (Android).)
 - **Attachments/photos on an entry** are not built — v1.1.
 - **Only English and Hindi** ship; the other 9 languages are v1.1.
 - A **deleted customer** is not implemented yet — only entries can be deleted.
+- **Web: the browser's own Back button** does not ask before dropping a half-typed entry; only the
+  app's ✕/back button and closing the tab do.
 - **iOS has no instant (push) updates** — it fetches every 30 seconds, on each write and when the
   app is reopened. Entries arrive late at worst, never wrong.
 
