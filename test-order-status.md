@@ -278,7 +278,300 @@ out-of-stock flow (they share one code path).
 
 ---
 
+## 12. Online payment that lands too late  (webhook hardening — real-money bug fix)
+Two holes in the Razorpay `payment.captured` webhook, fixed together (Phase 0 of the
+*reopen-as-COD* work — the conversion button itself is covered by `test-order-cod-conversion.md`).
+
+**12A — capture on a LIVE order was silently dropped.** Before this fix, a capture for an order
+already at OPEN / PICKING / PACKED / ASSIGNED / PROCESSING / OUT_FOR_DELIVERY / CLOSED matched
+neither webhook branch: `meta.payment` was never written, so the admin board kept showing
+*"payment pending"* and a later cancel/undelivered refunded **only** the wallet coins — the
+customer's card money was never given back.
+
+1. **Pay late on a reopened order.** Razorpay order, abandon the sheet (cron marks it
+   *Payment cancelled*), admin **reopens** it to OPEN, then complete the payment from the old
+   checkout sheet.
+   ✅ Admin order details now shows the payment as **paid** (`meta.payment` recorded).
+   ✅ Order status is **unchanged** (still OPEN — no reopen, no new pick task, no push storm).
+   ✅ Wallet **unchanged** — this branch records, it never refunds.
+   ✅ One `order.payment.capture_recorded` row in **Order Activity**.
+   ✅ Cancel that order now → the **full** amount (card + coins) comes back.
+2. **Redelivered webhook** (Razorpay retries the same event).
+   ✅ Nothing changes, and **no second** Order Activity row.
+3. **Normal first payment — unchanged.** Place a Razorpay order and pay normally.
+   ✅ Order goes OPEN, coupon confirmed, pick task created, store-admin "New order — paid" push.
+   ✅ **No** Order Activity row for it (only the two new branches write one).
+
+**12B — capture after the order was switched to cash.** The customer's order was converted to COD
+by an admin, and their online payment lands afterwards. They must never pay twice.
+
+4. **Late capture on a converted order.** Convert an unpaid order (₹800 payable, ₹200 already paid
+   in coins) to COD, then let the ₹800 capture arrive.
+   ✅ **₹800 credited to the customer's wallet**, exactly once, with a wallet-history row.
+   ✅ Order stays **Cash on delivery** and keeps its status — the rider still collects **₹800**
+   (`price` never changes).
+   ✅ Only the **captured** ₹800 comes back — the ₹200 of coins were genuinely spent and stay spent.
+   ✅ `codConversion.lateCaptureAt` / `lateCapturePaymentId` stamped; `meta.payment` recorded.
+   ✅ One `order.cod.late_capture_refunded` row in Order Activity, one customer push
+   ("We received your ₹800 online payment after this order was switched to cash…"), one store-admin
+   push.
+   ✅ The order is still **deliverable** — a partial refund on a live order is not an "unclawed
+   refund", so assigning a rider still works.
+   ❌ Must **not** flip the order back to online / prepaid, and must **not** change the cash amount.
+5. **Duplicate delivery of that capture.** ✅ Still one ₹800 credit, one wallet row, one audit row.
+6. **Two deliveries at the same instant.** ✅ Still exactly one credit (the de-dupe lives in the
+   update filter, not in a read-then-write check).
+7. **Converted order that was later cancelled, then the capture arrives.** ✅ Existing
+   cancelled-order behaviour — refund to wallet, order not reopened (unchanged by this fix).
+
+**12C — customer self-cancel of a store-pickup prepaid order (under-refund fix).** Store-pickup
+prepaid also pays through Razorpay, but the self-cancel used to look only at `paymentMethod ===
+Razorpay`, so it gave back the coins and kept the card money.
+
+8. **Cancel a captured store-pickup prepaid order inside the 1-minute window** (₹1,000 basket =
+   ₹200 coins + ₹800 card).
+   ✅ **₹1,000** credited (card + coins), one refund entry carrying the `(pay …)` marker.
+   ❌ Must not credit only ₹200 (that was the bug).
+9. **Razorpay / Wallet / COD cancels — unchanged.** Captured Razorpay ⇒ full amount; abandoned
+   Razorpay ⇒ coins only and status *Payment cancelled* (so the daily free-gift slot isn't burnt);
+   COD ⇒ ₹0 (or just the coins if any were spent).
+10. **The 1-minute window is unchanged.** Cancel 5 minutes after placing ⇒ 400 *"Cancellation
+    window has expired"*, nothing refunded, order still OPEN.
+11. **Captured store-pickup prepaid still sitting at *Payment initiated*** (the webhook was slow) —
+    cancel it inside the window.
+    ✅ Status **Cancelled** (not *Payment cancelled*): the customer really did pay, so the daily
+    free-gift slot is burnt.
+    ✅ **₹1,000** back (card + coins).
+
+**12D — the webhook decides on facts that can be one second old (security re-audit).** Everything
+above assumed the webhook reads the order correctly and writes before anything else moves. These
+drills cover the windows where that is not true. All of them are *timing* cases — to reproduce on
+dev, have two people click at once, or use the automated drills in
+`packages/user/__tests__/razorpay-capture-hardening.test.js` and
+`razorpay-capture-primary-read.test.js`.
+
+12. **Convert to COD and let the payment land in the same second.** (Admin presses *Switch to cash*
+    while the customer's UPI app is confirming.)
+    ✅ Exactly **one** wallet credit of the captured amount, order stays **Cash on delivery**.
+    ❌ Must **not** reopen the order to OPEN, must **not** cut a pick task, must **not** leave the
+    capture unrefunded. (Both halves of the fix matter: the order is re-read from the **primary**,
+    and every write re-checks the state it decided on.)
+13. **Same race on an already-live order** (ASSIGNED, then converted mid-flight).
+    ✅ One wallet credit, status untouched.
+14. **Cancel-refund and late capture at the same instant.** The self-cancel refunds and stamps
+    `(pay …)` while the webhook is mid-flight.
+    ✅ Customer gets the money **once** — the webhook's write finds the stamp and credits nothing.
+15. **Processing fails mid-flow** (DB blip during the refund).
+    ✅ Nothing is credited, and Razorpay is told the delivery **failed** (non-2xx) so it retries.
+    ✅ The retry credits exactly once. Look for a `capture.processing_failed` alert row in logs.
+16. **An ops person refunded the payment in the Razorpay dashboard first.**
+    ✅ The webhook refuses to auto-credit the wallet and raises
+    `capture.gateway_refund_present` — otherwise the customer gets the money twice.
+17. **Odd capture entities.** Not captured / non-INR / captured amount larger than the order could
+    have owed.
+    ✅ No wallet credit for the first two (`capture.not_captured`, `capture.foreign_currency`).
+    ✅ The third is refunded **in full** (see 12E-33) with a `capture.exceeds_expected` note in the
+    logs. ❌ Must **not** be capped — that used to keep the difference.
+    ✅ A capture quoting a different gateway order id still settles, but logs
+    `capture.order_id_mismatch` for someone to look at.
+18. **Customer paid twice for one order** (two different captures).
+    ✅ The **first** payment stays recorded; the second is refunded to the wallet and raises
+    `capture.second_capture`. A redelivery of the second capture adds nothing.
+19. **A very old capture redelivered onto a refunded order** (status *Refund success* / failed /
+    deleted).
+    ✅ The payment is **recorded** so it is visible, status unchanged, no new pick task, and a
+    `capture.unexpected_status` alert. ❌ Must never flip back to OPEN.
+20. **Payment failed, customer retries and succeeds.** ✅ Still reopens to OPEN as before.
+21. **A goodwill refund note that happens to contain the payment id.** ✅ The refund is skipped
+    (we cannot tell it apart from a real settlement) but a `capture.refund_suppressed` alert is
+    written — it is never silent. *Follow-up:* store the gateway payment id in a dedicated
+    `refunds[].gatewayPaymentId` field so this ambiguity goes away.
+
+**12E — the webhook must survive deliveries it cannot process (security re-audit round 2).**
+Background for testers: a capture is answered only *after* it is processed, so anything that
+throws answers 500. Razorpay retries a failing webhook for about **24 hours** and then **disables
+the endpoint** — which would stop payment confirmation for *every* customer. So "this delivery is
+rubbish" must end in a **200 + an alert row**, and only a temporary glitch may answer 500.
+Automated drills: `packages/user/__tests__/razorpay-capture-resilience.test.js`.
+
+22. **A payment made outside the app** — a Razorpay *payment link*, a QR code, a charge created in
+    the Razorpay dashboard, or another integration on the same merchant account. Razorpay sends
+    `payment.captured` for all of them, and they carry no `notes` (or notes of another shape).
+    ✅ Webhook answers **200**, one `capture.unroutable` alert row with the payment id, no order
+    touched. ❌ Must never 500 (four deliveries like this used to be enough to start the countdown
+    to the webhook being switched off).
+    Variants that must all behave the same: `notes.orderId` that is not a real id, no `notes` at
+    all, `notes` arriving as an empty list, `notes.storeId` that is not a real store id.
+23. **A capture whose order id is real but the order is gone** (deleted / wrong environment).
+    ✅ **200** and a `capture.order_not_found` alert carrying the payment id and the notes — money
+    exists that the system has not accounted for, so it is never a silent shrug.
+24. **A permanent processing error** (a bug / bad data — it would fail the same way every time).
+    ✅ **200** plus a `capture.processing_failed` alert with `transient: false`. Nothing is
+    credited; ops settle it by hand. ❌ Must not ask for a redelivery.
+25. **A temporary database glitch** (connection dropped, write conflict).
+    ✅ **500** with `capture.processing_failed` and `transient: true`, nothing credited, and the
+    gateway's retry then credits **exactly once**.
+26. **The same payment keeps failing.** After **5** failed deliveries of one payment id:
+    ✅ the 5th is **acked (200)** with a loud `capture.retry_budget_exhausted` alert instead of
+    letting one stuck payment take the whole webhook down. Ops must settle that payment manually —
+    treat this alert as a page.
+27. **Cart cleanup fails after the money moved** (Redis blip). ✅ Still **200**, refund intact —
+    housekeeping can never fail a settled payment.
+28. **A payment the ops team already refunded in the Razorpay dashboard lands on an unpaid order**
+    (status *Payment initiated* / *Payment failed*).
+    ✅ The order stays unpaid, `meta.payment` is recorded so the money is visible, a
+    `capture.gateway_refund_present` alert is written, and **no pick task is cut**.
+    ❌ Must never go OPEN — the goods would ship after the money went back.
+    Same for a `status: authorized` (not actually captured) entity → `capture.not_captured`.
+29. **Customer paid twice and then the order was cancelled.** ✅ The **first** payment's record is
+    kept, the second capture is refunded to the wallet once (redelivery adds nothing),
+    `capture.second_capture` alert, and an **Order Activity** row.
+    ❌ The first payment's record must never be overwritten — the cancel refund maths reads it.
+30. **Every cancelled-order auto-refund now leaves a trail.** ✅ One
+    `order.payment.cancelled_capture_refunded` row in **Order Activity** (previously this branch
+    wrote nothing, so the wallet moved with no order-side record).
+31. **The order keeps changing under the webhook** (repeated admin edits while the capture is
+    being processed). ✅ After two attempts the webhook gives up safely with a
+    `capture.dispatch_unresolved` alert and **no** money moved.
+32. **A capture with no `currency` field.** ✅ Treated as INR as before, but now a
+    `capture.currency_missing` alert is written so the assumption is visible.
+33. **The late capture is bigger than the cash the order was converted at** (re-audit round 3).
+    Repro: an unpaid ₹4,000 online order at *Open*; admin removes items down to ₹1,000 (nothing
+    was paid, so no refund); convert it to **cash**; the customer's stale checkout screen finishes
+    paying and Razorpay captures the original **₹4,000**.
+    ✅ The **whole ₹4,000** goes back to the wallet (one credit, one wallet-history row, one
+    *Order Activity* row), the order stays *Cash on delivery* with its status unchanged, and the
+    rider still collects ₹1,000 cash. A `capture.exceeds_expected` row is written for ops.
+    ❌ Must **not** refund only ₹1,000 — the old cap kept ₹3,000 of the customer's money, because
+    the "expected cash" is stamped once at conversion and never updated when the order is edited
+    afterwards. A real capture is always returned in full when the order is collected in cash.
+    ✅ A duplicate delivery of that webhook still credits only once.
+
+> **Ops note — never refund a late capture manually in the Razorpay dashboard.** The system already
+> credits the customer's wallet automatically. A dashboard refund on top of that pays the customer
+> twice. If the dashboard refund happened first, the webhook now refuses to credit and logs
+> `capture.gateway_refund_present` — check the wallet before doing anything by hand.
+
+---
+
+## 13. Editing a COD order that paid with wallet coins  (double-charge bug fix)
+Coins can be redeemed on a **cash** order: checkout stores `price` already **net** of them
+(`price = gross − meta.walletUsed`), and that netted number is exactly what the rider collects and
+what "Cash to settle" sums. The item edit used to rebuild the bill as `items + delivery + platform`,
+which **re-added the coins to the cash demand** — the customer paid for the same rupees twice.
+
+Example: ₹300 basket, ₹40 paid in coins ⇒ ₹260 cash due. Admin removes a ₹200 line. Before the fix
+the rider was told to collect **₹100** for ₹100 of goods the customer had already put ₹40 towards
+(₹140 paid in total). Now the door amount is **₹60**.
+
+The rule now: on an order that is still collected (COD, store-pickup postpaid, an order converted to
+COD), `price` = new bill **minus the coins still applied**; if the new bill falls **below** those
+coins, the unusable remainder is refunded to the wallet through the normal refund path (wallet
+history row + `refunds[]` + `refundedAmount`). Prepaid orders are untouched.
+
+1. **Partial removal.** COD order, ₹300 of items, ₹40 coins, ₹260 cash due. Remove a ₹200 line.
+   ✅ Order details / rider app now show **₹60** to collect.
+   ✅ Wallet unchanged, no `refunds[]` entry (the coins are still fully used on the bill).
+   ❌ Must **not** show ₹100 (that was the bug).
+2. **Delivery / platform fees.** Same, with ₹20 delivery + ₹2 platform: ✅ ₹100 + ₹22 − ₹50 coins =
+   **₹72**, and both charges are preserved as billed.
+3. **Removal that drops the bill BELOW the coins.** ₹300 basket, ₹40 coins; remove everything except
+   a ₹25 item.
+   ✅ **₹0** to collect and **₹15 credited back to the wallet** (one refund entry, one wallet-history
+   row, `hasPartialRefund: true`).
+   ❌ Must not silently keep the ₹15.
+4. **Sequential removals.** ₹300 basket with ₹250 in coins (₹50 cash due). Remove ₹100 of items →
+   ₹50 back, ₹0 to collect. Remove another ₹100 → ₹100 back.
+   ✅ Total credited **₹150**, never more than the ₹250 of coins actually spent.
+5. **Same edit submitted twice / two admins at once.** ✅ One refund entry only, wallet credited once.
+6. **Fractional coins.** ₹40.5 in coins, bill edited down to ₹40. ✅ 200 OK, ₹0 to collect, the ₹0.50
+   residue is **not** credited (whole-rupee refunds only) and the edit does **not** fail.
+7. **Order converted to COD that had spent coins.** ✅ Same netting — ₹300 → remove ₹200 → **₹60**
+   cash due. (Conversion itself: `test-order-cod-conversion.md`.)
+8. **COD order with NO coins — unchanged.** ✅ `price` = items + charges, exactly as before.
+9. **Picker paths.** Same order shapes, picker app:
+   ✅ Line marked **out of stock** → cash due drops to the netted amount (₹100 + ₹1 fee − ₹40 =
+   **₹61**), adjustment still shown to the customer.
+   ✅ **Short pick** that takes the bill below the coins → surplus credited, refund push sent
+   ("₹… added to your wallet"), ₹0 to collect.
+   ✅ **Last line** out of stock → order Cancelled and **every remaining coin** comes back (e.g. ₹71
+   of coins ⇒ ₹71 credited), not just the fees.
+   ❌ Must **not** cancel a coin-paying COD order with the coins kept by the store (the cancel used
+   to refund only *prepaid-method* orders, and only up to `price` — which the netting had already
+   driven to ₹0).
+10. **Prepaid orders are byte-identical.** Captured Razorpay (incl. wallet+card split), pure Wallet,
+    store-pickup prepaid: same refund amounts as §11, and `price` after an edit is still the
+    items + charges total (nothing is collected at the door).
+11. **Invoice.** Print the invoice for an edited coin-paying order.
+    ✅ Item Total + fees − "Wallet Redeemed" = the **Grand Total** shown — on *every* order,
+    however many times it was edited. The wallet line is now **derived from those two totals**
+    (`gross − price`) on cash-collected orders instead of being read from `meta.walletUsed`.
+    ✅ When the bill dropped below the coins, the wallet line shows only the coins the bill could
+    absorb (the rest came back as a refund).
+    ✅ **Edit down, then back up.** ₹300 basket, ₹40 coins (₹260 due) → edit down to ₹20 (₹20
+    surplus refunded, ₹0 to collect) → add the items back to ₹300. Cash due is **₹280** (only the
+    ₹20 of coins that were never returned still apply) and the invoice prints a **₹20** wallet
+    line, so 300 − 20 = 280 matches the Grand Total.
+    ❌ Must not print **₹40** there — that invoice claims a ₹260 total while the Grand Total says
+    ₹280, i.e. a tax invoice that does not add up.
+    ✅ Unedited orders (COD without coins, COD with coins, prepaid, pure Wallet) print exactly the
+    numbers they printed before.
+    - *Sub-rupee coin residue (policy, nothing to test):* refunds are whole rupees only, so a
+      residue **under ₹1** (e.g. ₹0.50 of coins left on a bill edited to ₹0) stays with the store
+      and is unrecoverable once `price` has hit 0 — the same floor convention every refund path
+      uses. Accepted deliberately; a ₹0 refund attempt would otherwise abort the whole edit.
+12. **Cash reconciliation.** Deliver an edited coin-paying COD order, then check
+    rider → *Cash summary* / admin → delivery boy → *Cash to settle*.
+    ✅ It counts the **netted** amount (it sums `order.price` for CLOSED COD orders), i.e. the cash
+    the rider really took. No change was needed there — it was only ever wrong because `price` was.
+13. **Payment gateway unreachable at checkout, with coins spent** (order-create call fails after
+    the coins are already debited). Place a ₹400 online order paying ₹40 in coins while Razorpay
+    is down.
+    ✅ The customer gets the **₹40 back once** (one wallet-history row), stock goes back, the order
+    lands on *Payment cancelled*, and the order itself is rewound to **never paid**: no coins on
+    it and the bill back at the **full ₹400**.
+    ✅ An admin then converting that order to **cash** sends the rider for the full **₹400**, and a
+    later item edit nets **nothing** off — there is nothing paid to net.
+    ❌ Before the fix the order still claimed the ₹40 as paid while the customer held the coins:
+    the rider was told to collect ₹40 less, and an edit that took the bill under ₹40 "refunded"
+    the same ₹40 a second time.
+    ✅ Works when the customer redeemed their **whole** balance (the old code refused with an
+    "insufficient balance" error there, leaving the order stuck and the coins gone).
+    ✅ Same for a **scheduled** booking, which additionally frees the slot seat.
+14. **Picker's typed out-of-stock reason never becomes a refund note.** On a coin-paying COD order,
+    mark a line out of stock with a note containing a payment id (e.g. "customer already paid
+    pay_XXXXXXXX at the door") so that the bill falls below the coins.
+    ✅ The wallet credit's note is the fixed system text, the typed words are still kept on the
+    pick task, the customer-facing change log and the audit row.
+    ❌ The typed text must never land in `refunds[].note` — that field doubles as the late-capture
+    idempotency marker (§12), so a typed payment id could suppress a genuine refund of that
+    payment. (Prepaid refunds still carry the picker's reason, as before.)
+
+---
+
 ### Notes for devs
+- §12 lives in `packages/user/src/routes/razorpay/controller.js`. The `payment.captured` handler now
+  has four branches, in this order: **(1)** order in `CANCELLED_STATES` → existing auto-refund
+  (untouched); **(2)** order has a `codConversion.convertedAt` → late-capture refund + stamp;
+  **(3)** status NOT in `successStatuses` → existing reopen-to-OPEN path (untouched); **(4)**
+  anything else (a live, never-converted order) → record `meta.payment` only. Branch 1 stays first
+  on purpose: a converted-then-cancelled order is a cancelled order first.
+- The late-capture branch writes ONE `findOneAndUpdate` inside `withTransaction`
+  (`$push refunds` + `$inc refundedAmount` + `$set meta.payment`/`codConversion.lateCapture*`), and
+  its **filter carries the `(pay <id>)` marker check**. A read-then-write check would let two
+  simultaneous deliveries both refund; here the loser matches nothing, throws, and its wallet credit
+  rolls back with the transaction. `strict: false` on that update is deliberate — the dotted
+  `codConversion.*` paths must write even before the schema field lands.
+- `meta.payment` is always written as a **dotted** `$set` so `meta.id` / `meta.walletUsed` survive.
+- §12C: the self-cancel no longer re-implements the refund math — it calls
+  `refundUtils.computeRefundOwed(order)`, the same helper as admin cancel and the rider
+  UN_DELIVERED path. `neverPaid` (which decides `PAYMENT_CANCELLED` vs `CANCELED`, i.e. whether the
+  daily gift slot is burnt) now keys on `capturedAmount === 0` instead of the payment method, so a
+  genuinely-captured store-pickup order writes `CANCELED` like any other paid order.
+- Covered by `packages/user/__tests__/razorpay-late-capture.test.js` (8 cases, incl. the forced
+  concurrent-delivery race) and `packages/user/__tests__/order-cancel-store-pickup-refund.test.js`
+  (7 cases). Regression proof: `packages/user/__tests__/razorpay.test.js`,
+  `order-cancel-reason.test.js`, `order.test.js`, `packages/cron/__tests__/payment-initiated-orders.test.js`.
 - §9 lives in `markDeliveryStatus` (`packages/delivery/src/routes/order/controller.js`). It mirrors
   the admin path's `restockStatuses` guard: restock only when the order moves INTO
   `[ADMIN_CANCELED, UN_DELIVERED, REFUND_SUCCESS]` from a status not already in that list, and
@@ -341,10 +634,62 @@ out-of-stock flow (they share one code path).
 - Known ≤₹1 edge (accepted): `computeRefundOwed` floors the captured paise→rupees, so on an order
   with a fractional `meta.walletUsed` the ceiling can sit up to ₹1 under the true paid total. The
   cap only ever reduces a refund, and `refundToWallet` floors to whole rupees anyway.
+- §13.13 lives in the two checkout compensation blocks of
+  `packages/user/src/routes/order/controller.js` (`placeOrder` and its scheduled twin). The coin
+  return, its ledger row and the status write now share **one transaction** with the restock: a
+  crash between "coins returned" and "order marked cancelled" used to leave the order at
+  *Payment initiated* with the coins already back, which the abandonment cron then refunded a
+  second time. The coins go back through `WalletRepository.upsertWallet` (coins-only — the exact
+  inverse of the checkout debit), **not** `deductWallet`, which only writes when the wallet still
+  holds the amount and so threw for a customer who had redeemed their whole balance.
+  The order's coin fields (`meta.walletUsed` → 0, `price` → gross) are reset in that same `$set`.
+  That is deliberately a DIFFERENT shape from the abandonment cron
+  (`packages/cron/src/jobs/payment-initiated-orders.js`), which records the same coin return as a
+  `refunds[]` entry + `refundedAmount` and leaves `meta.walletUsed`/`price` alone: there the coins
+  are only re-taken if an admin reopens the order (reopen claws a refund back), whereas here the
+  order is rewound to "never paid" so no later clawback — which can fail with `WALLET_SHORT` and
+  strand the COD conversion — is needed at all. Either way the derived live credit
+  (`computeRefundOwed().amount`) is what every money path reads; both shapes drive it to the right
+  number. Covered by `packages/user/__tests__/order-gateway-failure-rollback.test.js`.
+- §13.11's wallet line is `invoiceUtils.walletLineAmount(order)`
+  (`packages/shared/utils/invoice.utils.js`): `gross − price` for cash-collected orders (it
+  reconciles with the Grand Total by construction, for any sequence of edits), and the old
+  `min(walletUsed, gross)` clamp for prepaid orders, whose `price` was never netted. An edited
+  PREPAID order still prints `−walletUsed` against a gross total — pre-existing, unchanged here.
+- §13.14: `applyItemEdit` forces its own fixed note on the coin-surplus credit and never forwards
+  the caller's, and the picker call site (`markOutOfStock`) additionally only passes `refundNote`
+  for a prepaid order — the same gate the admin edit endpoint already applies. Residual risk worth
+  a separate look: the marker is still a **substring search over free text**
+  (`refunds.some(r => r.note.includes(paymentId))`), so any path that can get admin/picker text
+  into a prepaid order's refund note is one typo away from suppressing a real refund. A structured
+  `refunds[].paymentId` field would close it for good.
 - Covered by `packages/admin/__tests__/order-edit-unpaid-refund.test.js` (11 cases) and
   `packages/picking/__tests__/oos-unpaid-order.test.js` (3 cases). `packages/picking/__tests__/testUtils.js`
   `seedOpenOrder` now seeds a `captured` `meta.payment` for prepaid-method fixtures unless the
   caller passes its own `meta` — previously every prepaid picking fixture was implicitly "unpaid".
+- §13 is the same `applyItemEdit` as §11. The invariant: **`price` on a cash-collected order is a
+  collection instruction, already net of `meta.walletUsed` — never `price − walletUsed` again, and
+  never a plain `items + charges` rebuild.** The coins still applied are *derived*, not stored:
+  for such an order `refundUtils.computeRefundOwed(order).amount` (`captured` is 0, so it is
+  `walletUsed − refundedAmount`) IS the live credit, which is what makes sequential edits and the
+  reopen-clawback self-correcting. Hence `creditApplied = prepaid ? 0 : refundCeiling`,
+  `price = max(0, gross − creditApplied)` and `surplus = max(0, creditApplied − gross)` refunded
+  through the one `refundToWallet` call. Prepaid stays at `creditApplied = 0` deliberately: nothing
+  is collected at the door there, `price` is a display total, and netting it would change every
+  shipped paid-order flow.
+- A COD coin-surplus credit reaches `refundToWallet` without an admin-supplied reason (the edit
+  endpoint only demands one for prepaid orders), so it falls back to `OTHER` + a fixed note. The
+  prepaid branch still passes the caller's reason through unchanged (invalid reasons must keep
+  throwing there).
+- `cancelEmptiedOrder` (picker, all-items-OOS) now refunds `computeRefundOwed(order).amount`
+  outright — no `prepaid` gate and **no `Math.min(order.price, …)` cap**. Both were silently
+  keeping coins: a coin-paying COD order is not "prepaid", and its `price` has already been netted
+  to ₹0 by the time the last line goes. Same reasoning as §8's amount gate.
+- The invoice's "Wallet Redeemed" line goes through `invoiceUtils.walletLineAmount()` (clamped to
+  the gross) so an edited bill still adds up on paper. Unedited orders are unaffected —
+  `walletUsed ≤ gross` always holds at checkout.
+- Covered by `packages/admin/__tests__/order-edit-cod-wallet.test.js` (10 cases) and
+  `packages/picking/__tests__/oos-cod-wallet-order.test.js` (9 cases, incl. the invoice line).
 - §6 (page-tiles bug) logic lives in `haper-admin/src/utils/orders.ts`
   (`REVENUE_COUNTED_STATUSES`, `FAILED_ORDER_STATUSES`, `computeOrdersPageSummary`) — extracted
   out of `OrdersList.tsx`'s `useMemo` so it's unit-testable without rendering the page. Covered
@@ -360,3 +705,59 @@ out-of-stock flow (they share one code path).
   redeliver). An earlier version of this fix added a `UN_DELIVERED → CANCELED` relabel on the
   false premise that old app builds render unknown status codes as "Failed"; that premise was
   disproved (there is no unknown-status fallback issue) and the relabel was reverted.
+
+---
+
+## 14. The coin refund on an admin edit is announced, and the trail says why  (follow-up to §13)
+§13 made a **cash** order able to receive a wallet credit (the coins the shrunken bill can no
+longer absorb). The admin edit endpoint still treated refunds as a prepaid-only thing, so that
+credit was **silent**: no "Refund credited 💰" push, and the audit row recorded
+`refundReason: null` because the order wasn't prepaid.
+
+1. **COD order with coins, edited below the coins.** ₹300 basket, ₹40 coins, remove everything
+   except a ₹25 item.
+   ✅ Customer gets the push "Refund credited 💰 — ₹15 has been added to your wallet for order …".
+   ✅ Order Activity → `order.items.edit` shows `refundAmount: 15`, `refundReason: "OTHER"` and the
+   note "Wallet coins exceeded the revised order total after an item edit".
+   ❌ Must not be silent, and must not say "no reason".
+2. **Prepaid edit — unchanged.** Captured Razorpay order, remove a ₹200 line with reason
+   *Out of stock*. ✅ Same single push as before; the audit records **the admin's own reason**
+   (`OUT_OF_STOCK`), not `OTHER`.
+3. **COD edit that credits nothing** (coins still fully absorbed). ✅ No push, `refundReason: null`
+   in the audit — an ordinary bill reduction is not a refund.
+4. The reason/note in the audit are now read back off the refund entry that was actually written,
+   so the trail can never disagree with `order.refunds[]`.
+
+### Day plan payment status (same pass)
+Admin → Orders → **Scheduled day plan**: a **store-pickup prepaid** booking that was already paid
+online used to show as `cod_pending` (collect on delivery) — it pays through Razorpay exactly like a
+normal online order.
+✅ Captured Razorpay **or** captured store-pickup-prepaid → `paid`.
+✅ Either of them without a capture → `pending`.
+✅ Wallet → `paid`; COD / store-pickup **postpaid** → `cod_pending` (unchanged).
+The three values are unchanged, so the admin FE needs no release.
+
+Covered by `packages/admin/__tests__/order-edit-refund-push.test.js` (3 cases) and the
+`day plan — …paymentStatus…` case in `packages/admin/__tests__/scheduled-admin-views.test.js`.
+
+## 15. The customer cancel response carries no staff-only data  (privacy fix)
+
+The customer cancel endpoint (`POST /user/order/:id/cancel` and the legacy `DELETE /user/order/:id`)
+answers with the freshly-updated order **document**, not a projected read — so any staff-only field
+added to `orders` reaches the customer app from that one response. The first such field,
+`codConversion` (which admin switched the order to cash, their email/roles, and a free-text
+internal note), was shipping. It is now stripped in `sanitizeOrderForCustomer`, alongside
+`releaseAt` / `releasedAt` / `slotHistory`.
+
+✅ Admin converts an order to COD with an internal note → the customer cancels it inside the
+1-minute window → 200, status `CANCELED`, and the response JSON contains no `codConversion`, no
+admin email and none of the note text.
+✅ Same for a **scheduled** order, which can be cancelled days ahead of its slot.
+✅ The cancel itself is unchanged: restock, slot release, wallet refund, audit row and push all
+behave exactly as in §8.
+❗ For the next staff-only order field: closing the read projections is **not** enough — this
+response, and the rider's accept/reject/status responses, are raw documents and need their own
+strip.
+
+Covered by `packages/user/__tests__/order-cod-conversion-privacy.test.js` (6 cases) and
+`packages/delivery/__tests__/order-cod-conversion-privacy.test.js` (4).

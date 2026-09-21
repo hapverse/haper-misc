@@ -565,3 +565,83 @@ both appear; one on `FRIDGE6` does not.
 
 > **Automated coverage:** `src/pages/Items/ItemsList.missingShelf.test.tsx` (chip sets
 > / removes `missingShelf=true`, composes with `status=ACTIVE`).
+
+
+---
+
+## Issue 14 — "Switch to Cash on Delivery" on the order details modal
+**Where:** Orders (`/orders`) or Live Order Board → open an order → **Manage Status** column → new **PAYMENT** block under *Update Status*. Team page → member → permission grid → Orders → **Switch to COD**.
+**Why:** customer phones "payment didn't go through, deliver it, I'll pay cash". Admin switches the unpaid online (Razorpay) order to Cash on Delivery; the rider collects the exact cash. Example: order `#HP581915100`, Rs 2,124, status Assigned, Razorpay not paid.
+Spec: `docs/plans/reopen-as-cod-ui-spec.md`. Plan: `docs/plans/reopen-as-cod.md`.
+
+**What deploy this needs**
+- **Backend first:** `POST /admin/order/:orderId/convert-to-cod`, the `codConversion` field on `GET /admin/order/:id`, and permission `orders.convert_to_cod` must be live on the target env. Before that the button shows but the request fails (404).
+- Then a `haper-admin` build to `damin.haper.in` (user-manual). No migration.
+
+**Steps**
+1. As **store admin**, open an unpaid Razorpay order in status Open / Picking / Packed / Processing / Assigned.
+   ✅ Under *Update Status* a divider, label **PAYMENT**, "Online (Razorpay) — not paid", an amber-outline **Switch to Cash on Delivery** button and the helper "Payment is still pending online. The customer will pay cash to the rider."
+   ❌ No block, or the button is a solid accent colour.
+2. Open an order that is **paid online (captured)**, a plain **COD** order, a **POS** order, and a **Closed/Cancelled** order.
+   ✅ No PAYMENT block on any of them.
+3. Open an unpaid Razorpay order that is **Out for delivery**.
+   ✅ Button is dimmed (still focusable) and the helper says "The rider is already on the way, so the payment method can't be changed now." Clicking does nothing.
+4. Open an unpaid Razorpay order **above Rs 5,000** as store admin, then as super admin.
+   ✅ Store admin: dimmed, helper "Orders above ₹5,000 must be switched to Cash on Delivery by a super admin." Super admin: enabled. A Rs 5,000 order is enabled for both.
+5. Pick a different status in the status dropdown (do not save).
+   ✅ Switch button dims with "Save or undo the status change above first." Revert the dropdown and it enables again.
+6. As a **manager without the grant**: open the same order.
+   ✅ No PAYMENT block. Then grant **Switch to COD** on the Team page and reload: block appears. Confirm the manager/support *presets* did NOT gain it.
+7. Click **Switch to Cash on Delivery**.
+   ✅ A dialog opens **above** the order modal, focus is on the Reason dropdown. Sentence: "Switch order #… to Cash on Delivery? The rider will collect ₹… at the door. This cannot be undone from here." A cash box shows **Cash to collect ₹X** (the amount after wallet coins) and, for a wallet order, "Already paid from wallet ₹Y". A "What happens" list is shown.
+   ❌ Dialog hidden behind the modal, or the cash amount is total minus wallet computed twice (Rs 800 order with Rs 200 wallet must say Rs 800, not Rs 600).
+8. Click the confirm button with no reason. Choose **Other**, leave the note empty, confirm.
+   ✅ "Please select a reason." then "Please add a note explaining "Other"." under the fields; nothing is sent (Network tab empty). Note counter shows n/300.
+9. Choose a reason (e.g. *Customer asked to pay cash*), add a note, confirm.
+   ✅ Button shows "Working…", fields and Go back / X lock, Esc does nothing. Then: dialog closes, toast "Order #… is now Cash on Delivery. Rider will collect ₹…", the Manage Status block becomes "Switched to Cash on Delivery. The rider collects ₹…" (focus lands on it), the Payment card header says **Payment (COD)** with badge **CASH TO COLLECT ₹…** and a strip "Switched to Cash on Delivery by <your email> on <date> — <reason>" plus your note. The order list behind refreshes. The modal does **not** flash a full-page spinner or jump scroll.
+   ❌ Spinner replaces the whole modal, or the button is still there (double-submit risk).
+10. For an abandoned order in **Payment cancelled / Payment failed** (reopen flavour, ideally one whose wallet coins were refunded).
+   ✅ Helper "Payment was not completed. This also reopens the order." Dialog cash box shows "Wallet coins to be taken again ₹Y" and bullets about reopening / stock / wallet. After confirming, status shows **OPEN**, toast says "reopened and switched to Cash on Delivery".
+11. Scroll to **Order Activity**.
+   ✅ New row "Switched to Cash on Delivery" with actor email and detail like `Customer request · ₹2,124 cash to collect · "note"`; reopen flavour also has "Order reopened". Same on the `/order-activity` page.
+12. Click the button on an order, then have a second admin (or Postman) switch the same order first; confirm in the first window.
+   ✅ Not an error: toast "This order is already Cash on Delivery." and the converted state shows.
+13. Error paths (use dev data or block the request in DevTools):
+   - Wallet too low (reopen flavour): ✅ dialog **stays open**, banner "The customer's wallet no longer has enough balance to take the ₹… back." with next step; reason/note preserved.
+   - Item out of stock / slot full: ✅ inline banner in the dialog with next step; retry works after fixing.
+   - A payment for the order exists at Razorpay (captured while the dialog was open, OR one our system had not recorded): ✅ dialog closes, notice "A payment for this order was found at Razorpay, so it was not switched to Cash on Delivery. Don't collect cash yet. Check the order's payment first." If our system had recorded it the button is gone; if not, the button may still show, and pressing it gives the same notice.
+   - Order moved on (e.g. now Out for delivery) : ✅ dialog closes, notice "…its status changed. It is now OUT_FOR_DELIVERY."
+   - Non-Razorpay order: ✅ notice "Only online (Razorpay) orders can be switched to cash on delivery."
+   - Razorpay unreachable while the order is above ₹5,000 (server code `GATEWAY_UNVERIFIABLE`, HTTP 503; simulate by blocking the request response in DevTools or on dev by making the gateway lookup fail): ✅ dialog **stays open**, banner "Couldn't verify the online payment with Razorpay right now. Try again in a minute.", reason and note kept, button enabled again; retrying works once Razorpay answers. ❌ Generic "Something went wrong on our side", or the dialog closing.
+   - DevTools "Offline" then confirm: ✅ banner "Couldn't confirm the result. Nothing was changed. Check your connection…"; go online and retry works. (If the request actually landed, the page detects it and shows success instead.)
+   ❌ Any error only in the 4-second toast, or a stale-state error leaving the dialog open.
+14. Late payment: for a converted order the customer later pays online (webhook refunds to wallet).
+   ✅ Payment card shows an extra strip "The customer also paid online after this switch… Still collect ₹… in cash." Activity shows "Online payment refunded (after COD switch)".
+15. Look/feel: check **light and dark** theme and a phone-width window (<= 480px).
+   ✅ Amber text readable in both themes, no horizontal scroll, dialog buttons wrap, dialog body scrolls with the keyboard open. Tab through: focus ring visible on the switch button; dimmed button is reachable by keyboard and its helper is read.
+16. Regression: open **Discounts** and trigger the below-cost confirm (re-enable a below-cost rule).
+   ✅ Same dialog as before; only the amber confirm button is slightly darker (`#b45309`) for contrast. Other confirm dialogs (delete product, coupons, maintenance …) unchanged.
+
+17. Keyboard lock while the switch is in flight (throttle to "Slow 3G" in DevTools, confirm, then press keys).
+   ✅ Focus sits on the dialog panel; **Tab / Shift+Tab never reach the order modal behind**; **Esc does nothing**; Go back / X are dimmed. If the request fails, focus returns to the Reason field and the banner shows.
+   ❌ Tab moves onto the order modal behind, or Esc closes the dialog mid-request.
+18. Role gate: as a **warehouse manager / warehouse staff** (even if the permission string were on their list).
+   ✅ No PAYMENT block (the server only allows super admin, store admin, manager, support).
+19. An order that is **refund initiated / failed / success** and was converted: ✅ badge says **CASH NOT COLLECTED**, never "CASH TO COLLECT". Activity rows "Online payment refunded (after COD switch)" and "Duplicate online payment refunded" show the amount grouped like the switch row (`₹2,124 to wallet`).
+20. Server says "order not found" without a code (deleted or wrong store): ✅ dialog closes with the notice "This order no longer exists."
+
+21. **Edit items on a converted (cash on delivery) order:** as a store admin / manager, open a converted order (total near ₹5,000), Edit items, raise a quantity so the total goes above ₹5,000, Save Items.
+   ✅ Red toast shows the server's message word for word (403, code `APPROVAL_REQUIRED`), items stay in edit mode with your changes, nothing is saved. A super admin can save the same edit. Lowering the total, or staying at or under ₹5,000, saves normally.
+   ❌ A generic "Failed to edit items." with no reason. (No new screen or button was added for this.)
+22. **Activity labels:** on the Order Activity section and `/order-activity`:
+   - Customer paid online after the order was **cancelled** → "Late online payment refunded to wallet" with `₹2,124 to wallet`.
+   - Switch blocked because Razorpay already holds a payment → "Cash on Delivery switch blocked — payment found at Razorpay" with `₹2,124 · captured` (paise from the server shown as rupees).
+   - Also present: "Switched to Cash on Delivery", "Online payment refunded (after COD switch)" (amount now shows `₹… to wallet` for webhook rows too), "Online payment recorded", "Duplicate online payment refunded". An action the admin does not know yet shows its raw name and `—`, never a blank or crash.
+
+**Edge cases**
+- Order id shows `#<first 8 chars of _id>` when `orderId` is missing.
+- A wallet-only paid part: the cash amount is always the order's net `price`, never `total - wallet`.
+- `codConversion.by.email` missing: note says "by an admin".
+
+> **Automated coverage:** `src/pages/Orders/convertToCod.test.ts` (11-row visibility matrix, validation, copy, every error code, permission + role-gate mirror + audit labels, refund-status badge, code-less 404), `src/pages/Orders/OrderDetailsModal.cod.test.tsx` (modal integration: happy path, idempotent repeat, 409, 503 retry, wallet-short, lock-while-busy with real Tab/Esc focus checks, network recovery), `src/components/common/ConfirmDialog.test.tsx` (new optional props, defaults unchanged).
+> **Not built (spec-optional):** note flash animation after switching; "Switched from online" line on the Orders list row (needs the list API to carry `codConversion`).
