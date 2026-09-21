@@ -159,6 +159,12 @@ transaction opens).
 4. No gateway call at all when the order has no `meta.id`, when it is already COD (idempotent
    path), or when a cheaper local check (status/tenancy) would refuse it anyway.
 
+> 🚨 **Those alert rows are only useful if somebody reads them.** The cron that mails them is
+> `test-payment-alerts.md` (urgent tier, hourly — to `PAYMENT_ALERT_EMAILS` if set, super
+> admins otherwise). It must be **deployed and
+> verified before `orders.convert_to_cod` is granted to anyone** — a `converted_unverified`
+> conversion is only an acceptable trade if a human hears about it within the hour.
+
 ### ❌ Wrong store
 Store A's admin aiming at store B's order → 403 `FORBIDDEN_STORE`. Super admin may convert any
 store's order.
