@@ -213,6 +213,20 @@ field the server needs (which platform the phone is) was silently left out of th
 3. Profile → **Language** → हिन्दी.
    - **Expect:** the app switches to Hindi, including the home list lines ("₹650 दिए · आज").
 
+### ✅ Profile and Home display: new shops, counts, and error states
+
+1. Log in with a brand-new number.
+   - **Expect (Profile):** the header shows "Your shop" or similar fallback, not blank or bare phone number.
+   - **Expect (Home):** greeting reads "Namaste!" (without trailing comma); summary says "from 0 customers".
+
+2. Test singular/plural counts.
+   - With 1 device: Profile → Devices shows "1 device".
+   - With 1 customer: Home shows "from 1 customer".
+   - Add a second device/customer: **Expect:** plurals ("2 devices", "from 2 customers").
+
+3. Device count fails.
+   - Open Profile → Devices while offline. If the count fails to load, **Expect:** a dash "—" appears instead of "0" or a stale number.
+
 ### ✅ Phone number format
 
 1. Try `9876543210` (no country code).
