@@ -1,6 +1,6 @@
 # Test: Payment / webhook alerts actually reach a human
 
-**Area:** cron service (no UI) → email to `PAYMENT_ALERT_EMAILS`, or super admins when it is unset
+**Area:** cron service (no UI) → email to `PAYMENT_ALERT_EMAILS` if set, else `ORDER_NOTIFICATION_EMAIL`, else `support@haper.in`
 **Backend (new):** `packages/cron/src/jobs/payment-alert-digest.js`,
 `packages/cron/src/lib/{cron-job-state,payment-alert-codes,payment-alert-notify}.js`,
 registered in `packages/cron/src/scheduler.js`
@@ -29,7 +29,7 @@ at this" rows into `logs` (`type: 3` = `WEBHOOK_ERROR`, `meta.alert: true`, `met
 **Nothing read them.** If a refund silently failed, or an order went to cash without checking
 the gateway, the system recorded it perfectly and told nobody.
 
-This job reads those rows and mails super admins. In plain words: it is the postman for a
+This job reads those rows and mails the alert address (the same `ORDER_NOTIFICATION_EMAIL` as the new-order mails by default). In plain words: it is the postman for a
 mailbox that nobody had ever opened.
 
 ### Two tiers
@@ -72,13 +72,21 @@ Zero rows ⇒ **no email at all**.
 
 ### Who gets the mail
 
-**`PAYMENT_ALERT_EMAILS` if it is set, active super admins otherwise.** Not both.
+**First non-empty of these three wins — never a combination.** Super admins are **not** mailed
+automatically.
 
-- `PAYMENT_ALERT_EMAILS` (comma separated, e.g. `finance@haper.in,ops@haper.in`) is the
-  **primary** target: a shared ops mailbox outlives any one person's admin account.
-- When it is unset (or every address in it is malformed), the mail goes to every **active super
-  admin** (`roles` includes `super_admin`, `status: 1`) with an email — so an install that never
-  set the env var still alerts somebody.
+1. `PAYMENT_ALERT_EMAILS` (optional override, comma separated, e.g. `finance@haper.in,ops@haper.in`).
+2. `ORDER_NOTIFICATION_EMAIL` — the address the new-order mails already go to (may also be a
+   comma separated list).
+3. The shared support mailbox **`support@haper.in`**.
+
+- A step that is unset, empty, or has only malformed addresses counts as "not configured" and the
+  next step is used.
+- **No new variable needs to be set on environments that already send new-order emails** — they
+  already have `ORDER_NOTIFICATION_EMAIL`, and the digest uses the same SMTP settings.
+- To also alert a super admin or anyone else, list them in `PAYMENT_ALERT_EMAILS`
+  (e.g. `ops@haper.in,owner@haper.in`). The list **replaces** steps 2 and 3, so include
+  whoever should still get the mail.
 - An entry that is not a valid address (`a@b.c` shape) is **dropped with a masked log line**
   (`f***@haper.in`) instead of being passed to the mail server, because one unparseable address
   makes the relay reject the **entire** message — a typo would otherwise mean total silence.
@@ -86,8 +94,7 @@ Zero rows ⇒ **no email at all**.
 Push is deliberately not used: `sendAdminStoreNotification` is store-scoped and explicitly
 excludes super admins.
 
-If there is **nobody** to mail, the run is treated as a **failure** — the rows are kept and
-re-sent once a recipient exists. Silence is never the outcome. Same if the mail server
+There is always at least one recipient (the default), so "nobody to mail" cannot happen. If the mail server
 **accepts nobody** (every address rejected): a resolved send is not a delivered mail, so the
 rows are kept. A *partly* rejected send counts as delivered (it reached someone) and logs each
 rejected address, masked.
@@ -210,8 +217,6 @@ reported).
 ❌ Break SMTP (wrong `SMTP_PASS` on dev) and let a tick run → no mail, an error line in the cron
 log, and the watermark does **not** move. Fix SMTP → the **same** rows arrive on the next tick.
 Nothing is lost.
-❌ Deactivate every super admin and unset `PAYMENT_ALERT_EMAILS`, seed a row, let a tick run →
-the run is logged as failed. Re-activate a super admin → that same row is delivered.
 ❌ Run two cron instances → exactly one mail per batch; the loser logs "another instance holds
 the lock — skipping this tick."
 ❌ Check the alert rows after a successful send → **unchanged** (no flag written on them).
@@ -228,9 +233,11 @@ the whole send fail.
 
 ### Recipients
 ✅ Set `PAYMENT_ALERT_EMAILS=finance@haper.in` → the mail goes to **that address only**, super
-admins are NOT copied.
-✅ Unset it → the mail goes to every **active** super admin (an inactive one, and a store admin,
-get nothing).
+admins and `support@haper.in` are NOT copied.
+✅ Unset it (or blank / only malformed entries) → the mail goes to **`ORDER_NOTIFICATION_EMAIL`
+only** (a comma separated value reaches every valid entry).
+✅ Both unset (or `ORDER_NOTIFICATION_EMAIL` only malformed) → the mail goes to **`support@haper.in`
+only**. Super admins (active or not) and store admins get nothing.
 
 ### Health
 ✅ Stop the digest tier from succeeding for >48h (e.g. break SMTP) → every urgent run logs
@@ -242,10 +249,6 @@ digest 48h) the cron log shows `[payment-alert] delivery has never succeeded —
 run(s) since <time>`.
 ❌ The same tier still inside its window → no such line. Once it succeeds, the line stops.
 (State row now records `firstRunAt` + `runCount`; older rows are backfilled on their next run.)
-
-### Recipient lookup
-✅ Super-admin fallback reads from the primary (a just-created / just-deactivated super admin is
-seen immediately).
 
 ### Privacy
 ❌ Seed a row whose `meta` also carries `email`, `contact`, `card`, `notes`, `error`, `stack` →
@@ -269,7 +272,7 @@ ids/amounts do.
 - **First run backfills at most the last 24 hours** — switching the job on does not mail out the
   entire history of `logs`.
 - Env (`.env.example` has all three; `PAYMENT_ALERT_EMAILS` ships commented out — set it, e.g.
-  `finance@haper.in,ops@haper.in`, to override; unset = active super admins), and SMTP must be configured on the cron box (`SMTP_USER` /
+  `finance@haper.in,ops@haper.in`, to override; unset = `ORDER_NOTIFICATION_EMAIL`, then `support@haper.in`), and SMTP must be configured on the cron box (`SMTP_USER` /
   `SMTP_PASS`) — the same transport the inventory red-stock mails already use.
 
 ## Decisions made (previously open)
@@ -278,4 +281,4 @@ ids/amounts do.
 2. **Email only** — no SMS/WhatsApp page for `capture.retry_budget_exhausted`.
 3. **`meta.reason` stays out** of the allow-list: it is free text, and free text must never
    leave the system in an alert mail.
-4. **Recipients:** `PAYMENT_ALERT_EMAILS` when set, super admins as the fallback (above).
+4. **Recipients:** `PAYMENT_ALERT_EMAILS` when set, else `ORDER_NOTIFICATION_EMAIL`, else `support@haper.in` (above); no super-admin lookup.

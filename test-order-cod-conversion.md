@@ -160,8 +160,8 @@ transaction opens).
    path), or when a cheaper local check (status/tenancy) would refuse it anyway.
 
 > 🚨 **Those alert rows are only useful if somebody reads them.** The cron that mails them is
-> `test-payment-alerts.md` (urgent tier, hourly — to `PAYMENT_ALERT_EMAILS` if set, super
-> admins otherwise). It must be **deployed and
+> `test-payment-alerts.md` (urgent tier, hourly — to `PAYMENT_ALERT_EMAILS` if set,
+> else `ORDER_NOTIFICATION_EMAIL`, else `support@haper.in`). It must be **deployed and
 > verified before `orders.convert_to_cod` is granted to anyone** — a `converted_unverified`
 > conversion is only an acceptable trade if a human hears about it within the hour.
 
