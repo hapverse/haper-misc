@@ -129,6 +129,35 @@ rejected. Then, in the web app:
 3. Open the same shop on a second device.
    - **Expect:** that device's total is different — and step 1's strip is what explains the gap.
      A total that differs with **nothing** on screen explaining it is the bug.
+4. **Android** shows the same disclosure, in the same words: the strip on the home screen above
+   the two totals, the strip again above the customer's balance, and the refused entry's bubble
+   carries a red **"couldn't be sent"** tag instead of the orange "Waiting to sync".
+   - **Expect:** the "N waiting to sync" pill does **not** count it — it is not waiting for
+     anything — which is exactly why the strip has to be there.
+5. Repeat the same three steps on **iOS** — same strip, same "couldn't be sent" on the customer
+   row and on the entry itself.
+
+### ✅ iOS: a save that fails keeps you on the entry screen
+
+A saved entry is money. If saving to the phone itself fails, the screen used to close as though it
+had worked, and the entry was simply gone. (Needs a developer to force the phone's own save to
+fail — an entry that saved fine but has not reached the server yet is **not** this case.)
+
+1. On iOS, open a customer → `100` → **You gave** → **Save**.
+   - **Expect:** a red strip on the same screen: "Couldn't save on this phone. Nothing was
+     recorded — please try again." The screen **stays open** with the ₹100 still typed in.
+   - **Expect:** the balance does **not** change, and no "waiting to sync" entry appears.
+2. Same for editing and deleting an entry, and for adding a customer.
+3. Shop details and Payment setup behave the same way: if the save does not reach the server,
+   the screen stays open with an error instead of closing silently.
+
+### ✅ iOS: reopening the app fetches straight away
+
+1. On iOS, leave the app (home button / app switcher) and add an entry on a second device.
+2. Wait about a minute, then reopen the iOS app.
+   - **Expect:** the other device's entry is already there, or appears within a second — not up
+     to 30 seconds later. (Nothing fetches while the app is asleep, so the reopen itself is what
+     triggers the fetch.)
 
 ### ✅ Queued entries leave on their own — no extra tap (regression, Android)
 
@@ -141,8 +170,11 @@ device never saw them.
    - **Expect:** the pending count reaches zero within a few seconds, with no tap.
    - **Expect:** the entry appears on the second device.
 3. Repeat, but turn the network back on while the app is in the **background**, then open it.
-   - **Expect:** the entry syncs within **~30 seconds** at the latest (the app also checks on
-     a timer, in case it missed the "network is back" signal).
+   - **Expect:** the entry syncs **as soon as you open the app** — reopening now triggers a sync
+     immediately rather than waiting for a timer tick.
+   - **Expect (battery):** while the app is in the background it no longer checks every 30
+     seconds. The 30s timer runs only while the app is on screen, so a phone left with the app
+     backgrounded overnight must not show repeated network activity for HaperCredit.
 
 ### ✅ Web: an entry made online leaves at once, not on the next timer tick
 
@@ -263,6 +295,9 @@ Tap the entry's bubble to open **Edit entry**. It shows "Was ₹X on <date>" and
 
 1. Enter `1234567.89`.
    - **Expect:** **₹12,34,567.89** (lakh grouping, not ₹1,234,567.89).
+2. Add an entry of `10000000` (one crore), then tap it to **edit** it.
+   - **Expect:** the amount box opens on **10000000**. It used to read **1.0E7**, which is not a
+     number anyone can check, let alone correct.
 
 ### ✅ An entry with no "gave/got" or a silly amount is refused
 
@@ -297,6 +332,10 @@ Only testable with a tool that can call the API directly; the apps always send b
 1. Queue several offline entries. Turn the network on, and turn it **off again after ~1 second**.
    - **Expect:** no duplicates when it finally syncs. Balances are correct, not doubled.
    - **Expect:** the pending count does not get stuck forever — it retries and clears.
+2. **Android, with the server returning an error** (ask a developer to point the app at a broken
+   server): open a customer's **Share balance card**.
+   - **Expect:** the "as on" line does **not** move forward. A failed check must never be
+     recorded as a successful one — the app used to treat a server error as a finished sync.
 
 ### ✅ Fresh install, same phone number
 
@@ -343,11 +382,25 @@ Balances here may be incomplete."* — which stays for the rest of the session, 
 entries do not come back on a later sync. Details also go to the browser console. Covered by
 `engine-kick.spec.ts` (web).)
 
+(Developer note, iOS sync status: iOS has no live doorbell connection yet — it fetches on a
+30-second timer, on every write and on reopening the app. It therefore reports its state as
+*degraded* ("HTTP works, no push channel"), never *live*, which is what the shared state machine
+means by those words. Nothing on screen changes; the pill still says "All saved". Covered by
+`SyncHonestyTests` (iOS).)
+
+(Developer note, Android sync status: Android has no live doorbell connection either, so
+*degraded* is its honest best case too — but it now only reports that after a fetch has really
+landed. A fetch that came back empty because the server errored used to finish the cycle as if it
+had worked, so a dead connection was relabelled healthy every 30 seconds. It reports *offline*
+now, and the "as on" time stays put. Covered by `PullHealthTest` (Android).)
+
 ## Known limitations (not bugs)
 
 - **Attachments/photos on an entry** are not built — v1.1.
 - **Only English and Hindi** ship; the other 9 languages are v1.1.
 - A **deleted customer** is not implemented yet — only entries can be deleted.
+- **iOS has no instant (push) updates** — it fetches every 30 seconds, on each write and when the
+  app is reopened. Entries arrive late at worst, never wrong.
 
 ## What this needs to ship
 

@@ -38,6 +38,9 @@ records "You got ₹X" themselves.
    - **Expect:** rejected with "That is not a valid UPI id."
    - **Why this is strict:** a typo here sends a customer's money to a stranger and nothing
      downstream would catch it.
+4. On **iOS**, turn the internet off and try to save shop details or a UPI id.
+   - **Expect:** the screen stays open with a red strip ("No internet…"). It must not close as if
+     it had saved — unlike a ledger entry, these are not queued on the phone.
 
 ### ✅ Changing the UPI id stays instant, and is recorded
 
@@ -118,6 +121,10 @@ its own QR, made from the UPI id with the amount already filled in.
    - **Expect:** the card has no QR and says "Add your QR in Payment setup" — never a broken image.
 5. Type the UPI id and a different spelling in **Type it again**.
    - **Expect:** "Does not match — check the spelling", and Save stays disabled.
+6. **Android, with the phone offline:** pick a QR screenshot, and separately save a UPI id, and
+   save **Profile → Edit** shop details.
+   - **Expect:** each one shows a short message at the bottom of the screen saying it could not
+     be saved. Previously all three failed in complete silence and looked saved.
 
 ### ✅ Share a balance card
 
@@ -158,6 +165,10 @@ touched by a reminder.
    - **Expect:** the statement opens and shows the right balance.
 3. Send a **second** reminder to the same customer, then open the link from the **first** one.
    - **Expect:** "This link is no longer valid". The newest reminder's link still works.
+4. **Android, offline:** turn on airplane mode and tap **Send reminder**.
+   - **Expect:** the sheet shows an error and a **Retry** button within a few seconds. It used to
+     sit on "Loading…" for ever, because the failure was never shown.
+   - Turn the internet back on and tap **Retry**. **Expect:** the message appears as usual.
 
 ### ✅ Revoking a shared link
 

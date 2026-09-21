@@ -128,6 +128,10 @@ the next person to log in on the same phone or browser never sees it.
    - Go online, **Sync now** again. **Expect:** it syncs, then logs out normally.
 3. Web with **two tabs** open: log out in one.
    - **Expect:** the other tab also goes to the login screen within a moment.
+4. **Android on a very slow connection** (throttle the emulator, or use a weak 2G signal):
+   Profile → **Log out**.
+   - **Expect:** you reach the login screen within a few seconds. Signing out no longer waits out
+     a slow server call — the app gives it a few seconds and signs you out locally regardless.
 
 ### ✅ A different shop logs in on the same device
 
