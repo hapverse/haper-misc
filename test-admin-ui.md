@@ -533,38 +533,59 @@ they behave like Store Controls and Free Gift already did.
 
 ---
 
-## Issue 13 — "Missing Shelf" quick-filter chip on the Items list
+## Issue 13 — "Shelf" dropdown on the Items list (replaces the Missing Shelf chip)
 
-**Where:** Items (`/items`) → header chip row (next to Expiring Items / Low Stock /
-Missing Cost Price / Missing Barcode / Unpriced). Visible to every role.
-**Why:** finds items with no shelf yet, so they can be shelved (click-to-edit, Issue 11).
-"No shelf" = `location` empty / missing / only spaces, **or** the placeholder
-`DefaultShelf1`. Example: an item with Shelf blank and one showing `DefaultShelf1`
-both appear; one on `FRIDGE6` does not.
+**Where:** Items (`/items`) → filter row, next to the stock-state select. Options:
+**With shelf** (default), **Without shelf**, **All**. Visible to every role.
+**Why:** ops work on shelved items day to day; items with no shelf yet are hidden by
+default but must stay findable. "No shelf" = `location` empty / missing / only spaces,
+**or** the placeholder `DefaultShelf1`. Example: an item with Shelf blank and one showing
+`DefaultShelf1` are "without shelf"; one on `FRIDGE6` is "with shelf".
+The old **Missing Shelf** header chip is gone (use **Without shelf** instead).
 
 **What deploy this needs**
-- **Backend first:** `GET /admin/item/catalog?missingShelf=true` must be deployed
-  (haper-backend). Before that, the chip is harmless but does nothing (param ignored,
+- **Backend first:** `GET /admin/item/catalog` must support `shelf=with|without|all` and
+  `shelfFirst=true` (haper-backend). Before that, the dropdown does nothing (params ignored,
   full list shows).
 - Then a `haper-admin` build to `damin.haper.in` (user-manual). No migration.
 
 **Steps**
-1. Open `/items`, click **Missing Shelf**.
-   ✅ The chip turns amber and its label becomes "View All Items". The table shows only
-   items whose Shelf is blank or `DefaultShelf1`. Page resets to 1.
-   ❌ Any item with a real shelf (e.g. `FRIDGE6`) is listed.
-2. With the chip on, type a product name in the search box.
-   ✅ Results are shelf-less items matching that name (filters combine; status
-   default ACTIVE still applies). Also try a category / stock filter — still combines.
-3. Click the chip again ("View All Items").
-   ✅ `missingShelf` is dropped and the full list returns.
-4. Turn on **Missing Shelf**, then click **Expiring Items** or **Low Stock**.
-   ✅ All filters combine (e.g., both `missingShelf=true` and `expiringDays=30` in the query; no console errors).
-5. Shelve one listed item via the Shelf cell (Issue 11) and re-toggle the chip.
-   ✅ That item is gone from the filtered list.
+1. Open `/items` (no search, no chip, Shelf = With shelf).
+   ✅ Only items with a real shelf are listed. A small grey line says items without a shelf
+   are hidden by default.
+   ❌ Any item with a blank shelf or `DefaultShelf1` is listed.
+2. Type a product name that exists both with and without a shelf.
+   ✅ Shelved matches come first, unshelved matches at the bottom (Shelf still shows
+   "With shelf").
+   ❌ Unshelved matches missing, or mixed in above shelved ones.
+3. Set Shelf = **Without shelf** (then also try typing a search).
+   ✅ Only shelf-less items (blank / `DefaultShelf1`), with or without search. Page resets to 1.
+4. Set Shelf = **All** (no search).
+   ✅ Everything is listed; shelved items first, shelf-less at the bottom (sort applies within each group).
+5. Back on **With shelf**, click **Expiring Items**, **Low Stock**, **Missing Cost Price**
+   (super admin), **Missing Barcode** or **Unpriced**.
+   ✅ Each shows all matching items, including ones with no shelf (default shelf
+   restriction is ignored). Then set Shelf = **Without shelf** with a chip on: only
+   shelf-less items that match the chip.
+6. Turn on **Unpriced** and **Missing Barcode** (and optionally other chips/filters), then click **Reset**.
+   ✅ Every chip turns off (Expiring, Low Stock, Missing Cost Price, Missing Barcode, Unpriced),
+   search/category/sub-category/stock/sort clear, Status returns to "Active", Shelf returns to
+   "With shelf", and the list goes back to the shelved-items view.
+   ❌ A chip stays on after Reset, so the list looks unchanged.
+6b. Turn on any chip and hover the Shelf select.
+   ✅ Tooltip reads "Ignored while an alert filter is on" (the dropdown has no effect until the chip is off).
+   With no chip on, the tooltip reads "Items without a shelf are hidden by default".
+7. Set a filter combo that has no shelved match (e.g. a category whose items have no shelf)
+   under **With shelf**.
+   ✅ Empty state reads "No items with a shelf match. Switch Shelf to All to include items
+   without a shelf."
+8. Shelve one item via the Shelf cell (Issue 11) while on **Without shelf**, then refresh.
+   ✅ It no longer appears under Without shelf and appears under With shelf.
+9. The summary tiles (Total items etc.) do not change when the Shelf dropdown changes.
 
-> **Automated coverage:** `src/pages/Items/ItemsList.missingShelf.test.tsx` (chip sets
-> / removes `missingShelf=true`, composes with `status=ACTIVE`).
+> **Automated coverage:** `src/pages/Items/ItemsList.missingShelf.test.tsx` (dropdown ->
+> `shelf` / `shelfFirst` params, search, chips, Reset, empty-state hint) and
+> `src/pages/Items/shelfMode.test.ts` (full mode matrix).
 
 
 ---

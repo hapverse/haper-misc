@@ -432,3 +432,84 @@ placeholder `DefaultShelf1` (any letter case). Constant: `ItemConstants.defaultS
 - ❌ A lookalike such as `L3-DefaultShelf1` or `DefaultShelf12` is a real value → must NOT be listed.
 - `q=DefaultShelf1` (search by shelf) + `missingShelf=true` still works — the two `$or`s are AND-composed.
 - Counts in `catalog-summary` do not change when the param is sent.
+
+---
+
+## Feature (2026-09-21): Shelf modes + shelf-first ordering on `GET /admin/item/catalog`
+
+**What:** the Items page gets a **Shelf dropdown** and a **"shelved first"** ordering toggle. Two new
+optional query params on the same endpoint:
+
+- `shelf=with|without|all`
+  - `without` — items with **no shelf** (identical to the existing `missingShelf=true`).
+  - `with` — the **exact complement**: items whose `location` is a real shelf.
+  - `all` (or param omitted) — no shelf filtering at all.
+- `shelfFirst=true|false` (default `false`) — when true, items **with** a real shelf come **before**
+  items without one; the chosen `sortBy`/`sortOrder` (`createdAt|name|price|quantity`) still orders
+  **inside** each group. Pagination and `total` stay correct across the group boundary.
+
+Both params AND-compose with every existing chip (`q`, `storeId`, `categoryId`, `subCategoryId`,
+`status`, `stockState`, `expiringDays`, `missingCostPrice`, `missingBarcode`, `missingSellingPrice`).
+`catalog-summary` accepts and **ignores** both, same as its sibling chips. **Needs a backend deploy**
+(the admin dropdown is built separately against these params).
+
+**Backward compatibility:** `missingShelf=true` is unchanged and still supported — it is exactly
+`shelf=without`, and it **wins** if both are sent; with `shelf` omitted and `shelfFirst` off/omitted
+the endpoint returns precisely what it returned before (same query, same order, same response shape),
+so every existing caller — admin Items page, warehouse/transfer item pickers — is unaffected.
+
+**"No shelf" means the item's `location` is:** missing, `null`, empty `""`, whitespace-only, or the
+placeholder `DefaultShelf1` (any letter case). Constant: `ItemConstants.defaultShelf`. `with` is
+derived as the literal `$nor` of that same list, so the two modes can never drift apart.
+
+### Steps — backend jest (in-memory)
+`cd packages/admin && NODE_ENV=test npx jest items-shelf-modes items-missing-shelf --runInBand` →
+all green (`items-missing-shelf.test.js` must stay green and unchanged).
+
+### Steps — manual (API, dev `dapi.haper.in`, admin token)
+Set once: `T=<admin jwt>`, `S=<store id>`, `H="-H \"Authorization: Bearer $T\" -H \"x-store-id: $S\""`.
+
+- ✅ **with**
+  `curl -s "https://dapi.haper.in/admin/item/catalog?page=1&limit=100&shelf=with" -H "Authorization: Bearer $T" -H "x-store-id: $S"`
+  → every row has a real `location` (e.g. `L3`, `AW3`); no row is blank / `DefaultShelf1`.
+- ✅ **without**
+  `curl -s ".../admin/item/catalog?page=1&limit=100&shelf=without" ...`
+  → identical rows and `total` to `...&missingShelf=true` (run both and compare).
+- ✅ **all / omitted**
+  `...&shelf=all` and the same URL with no `shelf` param → identical, and the `total` equals
+  `with.total + without.total` (the two modes partition the catalog exactly).
+- ✅ **missingShelf wins**
+  `...&missingShelf=true&shelf=with` → the **shelf-less** list (legacy param takes precedence).
+- ✅ **shelf-first ordering**
+  `...&shelfFirst=true&sortBy=name&sortOrder=asc` → all shelved rows first (A→Z among themselves),
+  then all unshelved rows (A→Z among themselves). Flip `sortOrder=desc` → both groups reverse, the
+  group order does not.
+- ✅ **page-boundary check (the important one)** — with e.g. 3 shelved + 3 unshelved rows:
+  `...&shelfFirst=true&sortBy=name&sortOrder=asc&limit=2&page=1`, then `page=2`, then `page=3`.
+  Page 2 must **straddle the boundary** (last shelved row, then the first unshelved row), every page
+  must report the same `total` (6), and the 6 rows across the 3 pages must have **no duplicates and
+  no gaps**.
+- ✅ **composes** `...&shelfFirst=true&shelf=with&status=ACTIVE&stockState=instock&missingBarcode=true&q=<name>`
+  → intersection of all of them, still shelved-first ordered.
+- ✅ `...&shelf=with&q=AW3` (search by the shelf code itself) → still works; `...&shelf=without&q=AW3`
+  → `total: 0`.
+- ✅ **response shape unchanged** — a `shelfFirst=true` row has exactly the same fields as a normal
+  row (incl. `pricePerUnit` / `costPerUnit`), and no `__hasShelf` field leaks out.
+- ✅ **cost redaction still applies** — repeat the `shelfFirst=true` call with a **store_admin /
+  manager** token → `costPrice` and `costPerUnit` absent, `sellingPrice` present.
+- ❌ `shelf=maybe` → 403 validation error (only `with|without|all`).
+- ❌ `shelfFirst=abc` → 403 validation error (boolean only).
+- ✅ `shelfFirst=false` or omitted → list byte-for-byte what it was before this change.
+
+### Edge cases
+- ❌ A lookalike such as `L3-DefaultShelf1` or `DefaultShelf12` is a **real shelf** → it must appear
+  under `shelf=with` (and in the shelved group), never under `without`.
+- `defaultshelf1` / `  DefaultShelf1  ` (any case, surrounding spaces) count as **no shelf**.
+- A `location` written outside the app as a non-string is treated as a real shelf on both paths.
+- A `location` that is only a non-breaking space (U+00A0) counts as a **real shelf** on both paths
+  (only ASCII whitespace — space, tab, newline, CR, FF, VT — counts as blank).
+- Non-string `location` values (number, boolean, array, object) never break `shelfFirst=true` (still
+  200) and are grouped exactly like `shelf=with`.
+- ✅ Store admin of store A with `shelfFirst=true` or `shelf=with` never sees store B's items;
+  super admin is scoped by `x-store-id` / `?storeId=` the same as the normal list.
+- Counts in `catalog-summary` do not change when either param is sent.
