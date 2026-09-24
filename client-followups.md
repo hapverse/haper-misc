@@ -523,6 +523,19 @@ barcode, the picker can only "confirm without scan" until a super admin / wareho
 
 ---
 
+## CH-13 · Unpaid online orders: edit items + switch PAYMENT_INITIATED to COD (payment-confirmation-retry A.2-A.4) — backend DONE (dev, uncommitted 2026-09-24); admin PENDING
+
+| Client | What | Status |
+|---|---|---|
+| **backend** | `PATCH /admin/order/edit-order/:orderId` accepts statuses 6/8/9 (Razorpay): no refund, price net of coins, new codes `COINS_EXCEED_TOTAL`/`PAYMENT_ALREADY_CAPTURED`/`GATEWAY_UNVERIFIABLE`/`ORDER_CHANGED`/`UNEXPECTED_REFUND`, response `data.unpaid`; route now role-gated (warehouse roles 403). `POST /admin/order/:orderId/convert-to-cod` accepts status 6 (`data.mode: "confirm_and_convert"`, 503 at any value when Razorpay is down). | ✅ done (dev) |
+| **admin** | Task A.5 (plan §12.7): Edit Items enabled for 6/8/9, no paid-order qty cap/refund reason/"₹X will be credited" for them, "Customer will pay ₹X" (items + fees − coins), INITIATED save warning (online payment closes), `MODE_C_STATUSES` + `confirm_and_convert` in `convertToCod.ts`. Ship right after the backend. | ⏳ |
+| **android / ios / web** | `payment-status` already returns `retryBlockedReason: "ORDER_EDITED"` (Android handles it in Phase 2). | ❓ |
+| **delivery / picker** | Not affected (Mode C orders arrive as ordinary OPEN COD orders). | — |
+
+**Test guides:** `test-order-edit-unpaid.md`, `test-order-cod-conversion.md` "Mode C", `test-payment-confirmation-retry.md` §9-10.
+
+---
+
 ## Future changes
 **This file is COMPLETE for inventory-v2** — CH-1…6 cover every shipped backend change (Phases 0–4) with a
 per-client checklist + exact endpoints, and CH-7 covers the one optional P9 item (with its backend prerequisite).

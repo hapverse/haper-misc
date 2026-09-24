@@ -761,3 +761,24 @@ strip.
 
 Covered by `packages/user/__tests__/order-cod-conversion-privacy.test.js` (6 cases) and
 `packages/delivery/__tests__/order-cod-conversion-privacy.test.js` (4).
+
+## 16. The abandonment cron never cancels an order that got paid  (race fix, plan task 0.2)
+
+Seen live on **HP57099093**: the 15-minute abandonment cron read the order as *Payment initiated*,
+the Razorpay capture landed a moment later, and the cron's write (filtered on `_id` only) still
+marked it *Payment Cancelled*. The customer paid and the order showed cancelled, with no refund.
+
+The cron's cancel write now matches only an order that is **still** `PAYMENT_INITIATED` **and** has
+no `meta.payment.status: "captured"`. If nothing matches, the whole transaction rolls back and the
+order is logged as `skipped` (info log, not an error).
+
+✅ Razorpay order, abandon the payment sheet, wait 15+ min → cron cancels it: stock back, wallet
+coins back, coupon and scheduled slot freed (unchanged).
+✅ Capture lands between the cron's read and write (order now OPEN) → order stays OPEN, stock NOT
+restocked, coins NOT refunded, coupon and slot NOT released; cron log says `skipped`.
+✅ Still `PAYMENT_INITIATED` but `meta.payment.status` is `captured` → same: nothing released.
+✅ `meta.payment` present but NOT captured (e.g. a failed attempt) → still cancelled normally.
+❗ The window is now `OrderConstants.PAYMENT_WINDOW_MINUTES` (15), no longer a literal.
+
+Covered by `packages/cron/__tests__/payment-initiated-orders.test.js` (3 new race cases; the 6
+existing cases unchanged). Needs a backend deploy (cron service) to take effect.

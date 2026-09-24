@@ -30,9 +30,10 @@ has `price = 800`, and the rider collects **₹800**. Never `price - walletUsed`
 |---|---|---|
 | **A** `reopen_and_convert` | `PAYMENT_CANCELLED`, `PAYMENT_FAILED` | Slot re-claim → wallet clawback → stock re-deduct → `status: OPEN`, `refundedAmount: 0`, `stockRestored: false`, `paymentMethod: COD`, `codConversion` — one transaction. |
 | **B** `convert_only` | `OPEN`, `PICKING`, `PACKED`, `PROCESSING`, `ASSIGNED` | Only `paymentMethod` + `codConversion`. This is the HP581915100 shape (already reopened, stock already deducted). |
+| **C** `confirm_and_convert` | `PAYMENT_INITIATED` (customer still on the payment screen) | `status: OPEN` + `paymentMethod: COD` + `codConversion` (`originalStatus: 6`) in ONE write. Stock, wallet coins, slot seat are **not touched** (still held from checkout); the HELD coupon is confirmed. Pick task created once. Added 2026-09-24 (plan `payment-confirmation-retry.md` §12.2). |
 
 Never convertible: `OUT_FOR_DELIVERY` (rider is at the door with a stale screen), `CLOSED`,
-`CANCELED`, `ADMIN_CANCELED`, `UN_DELIVERED`, `PAYMENT_INITIATED`, `REFUND_*`, `FAILED`,
+`CANCELED`, `ADMIN_CANCELED`, `UN_DELIVERED`, `REFUND_*`, `FAILED`,
 `DELETED`; any order with a captured payment; any order that is not Razorpay; POS orders.
 
 ## API contract
@@ -68,11 +69,11 @@ Errors are `{ msg, code }` — **branch on `code`, never on the message text**:
 | 403 | `APPROVAL_REQUIRED` | `price > ₹5,000` and not super admin |
 | 404 | `ORDER_NOT_FOUND` | |
 | 409 | `PAYMENT_ALREADY_CAPTURED` | the customer already paid online |
-| 409 | `STATUS_NOT_CONVERTIBLE` | status outside Mode A ∪ B (message names the status) |
+| 409 | `STATUS_NOT_CONVERTIBLE` | status outside Mode A ∪ B ∪ C (message names the status) |
 | 409 | `PAYMENT_METHOD_NOT_CONVERTIBLE` | wallet / store-pickup / POS order |
 | 409 | `ORDER_CHANGED` | the conditional write matched nothing (someone else moved first) |
 | 422 | `SLOT_UNAVAILABLE` | scheduled slot now full |
-| 503 | `GATEWAY_UNVERIFIABLE` | Razorpay could not be reached **and** the order is above ₹5,000 (admin should retry in a minute) |
+| 503 | `GATEWAY_UNVERIFIABLE` | Razorpay could not be reached **and** the order is above ₹5,000 — or the order is `PAYMENT_INITIATED` (Mode C), at **any** value (admin should retry in a minute) |
 
 Audit rows: `order.convert_to_cod` (metadata: `mode`, `reasonCode`, `note`, `originalStatus`,
 `originalPaymentMethod`, `cashToCollect`, `walletUsed`, `clawbackAmount`, `razorpayOrderId`)
@@ -170,8 +171,27 @@ Store A's admin aiming at store B's order → 403 `FORBIDDEN_STORE`. Super admin
 store's order.
 
 ### ❌ Wrong status
-`OUT_FOR_DELIVERY`, `CLOSED`, `CANCELED`, `ADMIN_CANCELED`, `UN_DELIVERED`,
-`PAYMENT_INITIATED` → 409 `STATUS_NOT_CONVERTIBLE` naming the status.
+`OUT_FOR_DELIVERY`, `CLOSED`, `CANCELED`, `ADMIN_CANCELED`, `UN_DELIVERED` → 409
+`STATUS_NOT_CONVERTIBLE` naming the status. (`PAYMENT_INITIATED` is now Mode C, below.)
+
+### ✅ Mode C — customer still on the payment screen (`PAYMENT_INITIATED`)
+1. Customer app: place a Razorpay order using ₹100 of wallet coins (bill ₹580 → `price` 480). Leave the
+   Razorpay sheet open, do not pay.
+2. Note: item stock, wallet coins, slot seat (scheduled) and coupon (`HELD`) in admin/DB.
+3. Store admin → open the order → **Switch to Cash on Delivery**.
+4. **Expect:** 200, `data.mode: "confirm_and_convert"`, `cashToCollect` 480, `clawbackAmount` 0.
+   Status `OPEN`, payment COD, `codConversion.originalStatus` 6, one pick task (picking stores),
+   customer push "keep ₹480 cash ready". Stock, coins and slot seat **unchanged**; coupon `CONFIRMED`.
+5. **Then** finish paying in the still-open sheet (`success@razorpay`). **Expect:** order stays OPEN +
+   COD, ₹480 credited to the wallet **once**, customer push "Payment added to your wallet", store push
+   "Still collect ₹480 cash". Redelivering the webhook changes nothing.
+6. Wait 15+ min: the abandonment cron must **not** cancel it (it is OPEN now).
+- ❌ Razorpay shows the payment `authorized`/`captured` → 409 `PAYMENT_ALREADY_CAPTURED`, nothing written.
+- ❌ Razorpay unreachable → **503 `GATEWAY_UNVERIFIABLE` even for a ₹300 order** (Mode A/B still convert
+  at ₹300 with an alert). Retry in a minute, or wait for the cron and use Mode A.
+- ❌ Another store's order (store admin) → 403 `FORBIDDEN_STORE`. Super admin: any store.
+- ❌ The capture lands while the admin is clicking → one of them wins: either 409 `ORDER_CHANGED` (order
+  is OPEN + paid online) or the conversion wins and step 5 applies.
 
 ### ❌ Money blockers (Mode A)
 - Customer spent the refunded coins → 400 `WALLET_SHORT`, nothing written.
