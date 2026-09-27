@@ -513,3 +513,31 @@ Set once: `T=<admin jwt>`, `S=<store id>`, `H="-H \"Authorization: Bearer $T\" -
 - ✅ Store admin of store A with `shelfFirst=true` or `shelf=with` never sees store B's items;
   super admin is scoped by `x-store-id` / `?storeId=` the same as the normal list.
 - Counts in `catalog-summary` do not change when either param is sent.
+
+## Popular filter + sort (`popular`, `sortBy=popular`)
+"Popular" = the item's existing `isSuggested` flag (set per item via `PATCH /admin/item/:id`).
+No schema change, no migration. Backend only; deploy of haper-backend needed.
+
+### Automated
+`cd packages/admin && NODE_ENV=test npx jest items-popular-filter-sort items-shelf-modes --runInBand --coverage=false` → green.
+
+### Steps — manual (API, dev `dapi.haper.in`, admin token; `T`/`S` as above)
+- ✅ **filter** `curl -s "https://dapi.haper.in/admin/item/catalog?page=1&limit=100&popular=true" -H "Authorization: Bearer $T" -H "x-store-id: $S"`
+  → every row has `isSuggested: true`; items with `false` or no flag are absent.
+- ✅ `...&popular=false` or omitted → list byte-for-byte what it was before this change.
+- ✅ **composes** `...&popular=true&shelf=with&status=ACTIVE&stockState=instock&missingBarcode=true&q=<name>`
+  → intersection of all of them; also with `missingCostPrice=true`.
+- ✅ **popular-first sort** `...&sortBy=popular` → all popular rows first, then the rest. Inside each
+  group the normal default order applies (newest first, `important` items first among the rest).
+  `sortOrder=asc` → oldest first **inside each group**; the popular group still comes first
+  (sortOrder never flips the group).
+- ✅ **page boundary** — e.g. 3 popular + 3 other rows, `...&sortBy=popular&limit=2&page=1..3`:
+  page 2 straddles (last popular, first other), `total` is 6 on every page, no dupes/gaps.
+- ✅ **with shelf-first** `...&shelfFirst=true&sortBy=popular` → priority is
+  **shelved > popular > newest**. Example order: shelved+popular, shelved+not-popular,
+  unshelved+popular, unshelved+not-popular.
+- ✅ **response shape** — a `sortBy=popular` row has the same fields as a normal row; no `__isPopular`
+  / `__hasShelf` field leaks out. With a store_admin/manager token `costPrice`/`costPerUnit` are absent.
+- ✅ Store admin of store A never sees store B's items on `sortBy=popular` / `popular=true`.
+- ❌ `popular=abc` → 403 (boolean only). ❌ `sortBy=bogus` → 403.
+- `catalog-summary` accepts `popular` / `sortBy=popular` but its counts do not change.

@@ -590,6 +590,45 @@ The old **Missing Shelf** header chip is gone (use **Without shelf** instead).
 
 ---
 
+## Issue 13b — "Popular" chip + Sort option on the Items list
+
+**Where:** Items (`/items`) → header chip row (alongside Missing Barcode / Unpriced) and the
+**Sort** dropdown in the filter row. Visible to every role.
+**Why:** ops want to quickly review/curate the items already marked Popular (`isSuggested`,
+toggled via the star icon on each row) without paging through everything. Example: an item
+with the star filled (Popular) shows up when the chip is on; sorting by Popular puts all
+starred items first, in-store, ahead of everything else.
+
+**What deploy this needs**
+- **Backend first:** `GET /admin/item/catalog` must support `popular=true` (filters
+  `isSuggested: true`) and `sortBy=popular` (haper-backend, built in parallel — check it has
+  shipped to `dapi.haper.in` before testing). Before that, the chip/sort option send the param
+  but the list looks unchanged.
+- Then a `haper-admin` build to `damin.haper.in` (user-manual). No migration.
+
+**Steps**
+1. Open `/items`, click the **Popular** chip.
+   ✅ Only starred (isSuggested) items are listed; the chip turns into "View All Items"; the
+   Shelf restriction drops (same as Missing Barcode/Unpriced) — items with no shelf are
+   included too.
+   ❌ Non-starred items still show, or shelf-less starred items are missing.
+2. Click it again ("View All Items").
+   ✅ `popular` param is dropped from the request; full list (subject to other filters) returns.
+3. With Popular on, set Shelf = **Without shelf**.
+   ✅ Only starred items that also have no shelf (`shelf=without&popular=true`).
+4. Open the **Sort** dropdown and pick **Sort: Popular**.
+   ✅ Starred items appear first, un-starred after (`sortBy=popular` on the request, no
+   asc/desc control needed for this option).
+5. Turn on Popular (and optionally pick Sort: Popular), then click **Reset**.
+   ✅ Popular chip turns off, Sort returns to "Newest", same as every other chip/filter.
+   ❌ Popular chip or sort stays on after Reset.
+
+> **Automated coverage:** `src/pages/Items/ItemsList.popular.test.tsx` (chip on/off, shelf
+> drop, Without-shelf composition, Sort: Popular, Reset).
+
+
+---
+
 ## Issue 14 — "Switch to Cash on Delivery" on the order details modal
 **Where:** Orders (`/orders`) or Live Order Board → open an order → **Manage Status** column → new **PAYMENT** block under *Update Status*. Team page → member → permission grid → Orders → **Switch to COD**.
 **Why:** customer phones "payment didn't go through, deliver it, I'll pay cash". Admin switches the unpaid online (Razorpay) order to Cash on Delivery; the rider collects the exact cash. Example: order `#HP581915100`, Rs 2,124, status Assigned, Razorpay not paid.
