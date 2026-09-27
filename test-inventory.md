@@ -1395,6 +1395,23 @@ handing out numbers that were already taken.
 - **Needs a backend deploy.** No database change and no manual counter fix — the first
   create after the deploy repairs the counter by itself.
 
+### 16k. Return from a NON-batch store now lands in a warehouse batch  *(fix, 2026-09-27)*
+Before: a store that doesn't track batches returned stock to a batch-tracked warehouse →
+warehouse **Available** went up but **no batch row** was created (e.g. Available 4, batches
+summed to 3 — the returned unit had no batch, no cost). Needs a **backend deploy**.
+1. Store with batches OFF, warehouse with batches ON. Item cost ₹42. Return 1 unit, dispatch.
+   ✅ Dispatch response line has one `batchAllocations` entry:
+   `batchNo: "RETURN-TR0000xx"` (the transfer's own id), qty 1, costPrice 42.
+2. Receive at the warehouse.
+   ✅ Warehouse batch table shows a new lot **RETURN-TR0000xx**, qty 1, cost 42, source **RETURN**.
+   ✅ Warehouse **Available** = sum of its batches (e.g. 4 = 4).
+- ✅ A return dispatched **before** this deploy (no lots stamped) still gets the RETURN-… lot on
+  receive, costed at the store item's current cost.
+- ✅ Warehouse batches OFF → unchanged: Available rises, no batch rows.
+- ✅ Cancel after dispatch → store shelf gets the units back (unchanged).
+- ✅ Batch-ON store → batch-ON warehouse → unchanged: units merge back into the **original**
+  lot (e.g. `A`), no RETURN-… lot.
+
 ### 16g. Known and ACCEPTED limits — do not report these as bugs
 - ~~**Splitting gets around the 50-unit approval.**~~ **CLOSED 2026-09-07** — the gate is
   now cumulative per store over 24h, plus a 10-draft cap. See **16b-2**.
