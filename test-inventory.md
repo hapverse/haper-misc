@@ -1132,3 +1132,306 @@ Tests: `packages/admin/__tests__/item-shelf-unique.test.js` (5, green).
 > be built until the **6 existing duplicate shelves in prod** (`AH3, C1, E4, J4, ZP4,
 > ZZ31`) are resolved. Re-shelve one item of each pair, then add the index via a
 > migration. Until then the app-level check above is the guard.
+
+---
+
+## 16. Store → Warehouse RETURN (store sends stock back)  *(store admin + super admin + warehouse)*
+
+**Phase C (admin FE) is now built.** On `/transfers` a **store admin or super admin**
+sees a **"+ Return to warehouse"** button next to "+ New transfer" (store admin does not
+see "+ New transfer" — that stays warehouse-role-only). Each row shows a **↩ Return /
+→ Forward** direction badge, and a direction filter (`All directions` / `Warehouse to
+store` / `Store returns`) sits next to the status filter. A `PENDING_APPROVAL` return
+shows an **Approve** button to a super admin only; Dispatch/Cancel on a return act on
+the SOURCE (the store), so they're visible only to the store admin who owns it or a
+super admin — not to warehouse roles, who'd always get a 403 (their `req.store` is
+null). The backend still re-checks every one of these on the actual call, the FE
+gating is UX only. The
+printed pick slip on a return reads "From store … / To warehouse …". **Needs an admin
+deploy** for the UI; the backend behaviour below needs its own (already-shipped)
+backend deploy.
+
+**Click-by-click (store admin), matches 16a below:**
+1. `/transfers` → **+ Return to warehouse** → pick a reason (Excess / Near expiry /
+   Damaged / Wrong item / Other — Other requires a short free-text reason) → search the
+   store's own items by name/barcode → add lines → **Create return**.
+2. The new row appears with the ↩ Return badge, status **Created** (or **Pending
+   approval** if over the 50-unit gate, see 16b) → **Dispatch**.
+3. A warehouse manager/staff on the destination warehouse opens the same row →
+   **Receive**, scans each line's barcode → warehouse stock rises.
+
+Until/if you want to bypass the UI, everything below still works with an API client
+(Postman / curl) against `dapi.haper.in` exactly as written.
+
+Prerequisite: the store must have a **serving warehouse** set (Stores → the store →
+*Serving warehouse*), and every item being returned must have a **barcode**.
+
+### 16a. Happy path — a small return  *(store admin)*
+`POST /admin/transfer/return` as a **store admin**:
+```json
+{ "items": [ { "storeItemId": "<24hex>", "quantity": 5 } ],
+  "returnReason": { "code": "EXCESS" }, "note": "optional" }
+```
+✅ **200**, status **CREATED**, `direction: "STORE_TO_WAREHOUSE"`.
+✅ `storeId` is **their own store** even though the body never said so, and `warehouseId`
+   is the store's **serving warehouse** (the response also names it, `data.warehouseName`).
+✅ No stock has moved yet.
+1. `POST /admin/transfer/:id/dispatch` (**the store admin can now do this themselves**)
+   → shelf drops by 5, ledger row `RETURN_OUT` (−5).
+2. `POST /admin/transfer/:id/receive` as the **destination warehouse manager**, with the
+   barcode scanned per line → warehouse **Available** rises by 5, ledger row `RETURN_IN` (+5).
+
+Reason codes: `EXCESS` · `NEAR_EXPIRY` · `DAMAGED` · `WRONG_ITEM` · `OTHER`.
+❌ `OTHER` **without** free text → **400**. `OTHER` with text → 200 and the text is stored.
+❌ Free text on any **other** code → **400** (a coded reason carries no free text).
+❌ No `returnReason` at all → **400**.
+
+### 16b. Big returns need a super admin's approval  (>50 units)
+The gate is on the **TOTAL units across all lines**, and it is **strictly greater than 50**.
+It is also **cumulative per store over the last 24 hours** — see 16b-2.
+- ✅ 50 units (or 25 + 25 on two lines) → **CREATED**, dispatch straight away.
+- ✅ 51 units (or 26 + 26) → **PENDING_APPROVAL**, message *"awaiting super admin approval"*.
+- ❌ Dispatching a `PENDING_APPROVAL` return → **400** *"cannot be dispatched from status
+  PENDING_APPROVAL"*. Receive → 400. Edit items → 409.
+- ✅ Super admin: `POST /admin/transfer/:id/approve` → status becomes **CREATED**, and
+  `approvedAt` / `approvedBy` are stamped. Now the store admin can dispatch.
+- ❌ The store admin who raised it **cannot** approve their own (403). Nor can the
+  warehouse manager (403). **Super admin only.**
+- ❌ Approving twice → **409**. Approving a *forward* transfer → **400** *"Only a store
+  return requires approval"*.
+- ✅ The approval **queue**: `GET /admin/transfer?status=PENDING_APPROVAL` (has a `total`).
+- ✅ **Declining** a big return = **cancelling** it (there is no separate "reject" button).
+  `cancelledBy` records who did it, so "the store withdrew it" and "a super admin
+  declined it" are distinguishable.
+
+### 16b-2. Splitting no longer gets around the approval  *(security fix, 2026-09-07)*
+The 50 units are counted **across every open return this store raised in the last 24 hours**,
+not just the one you are sending now. "Open" = `PENDING_APPROVAL`, `CREATED` or `DISPATCHED`.
+
+Real example — Chapra store, same afternoon:
+1. Return **30** units of Maggi → ✅ **CREATED** (30 ≤ 50, no approval).
+2. Return **30** units of Atta → ✅ 200, but status **PENDING_APPROVAL**, and the message
+   says *"…this store has already returned 30 units in the last 24h"*. 30 + 30 = 60 > 50.
+3. The **first** return is **not** re-graded — a decision already taken stands.
+
+- ✅ 20 then 30 = exactly 50 → still **CREATED**. One more unit → **PENDING_APPROVAL**.
+- ✅ **Cancelled** and **RECEIVED** returns stop counting (nothing is in flight any more);
+  a **DISPATCHED** one still counts (those units have left the shelf).
+- ✅ The window **rolls**: an open return older than 24h drops out of the sum.
+- ✅ Per **store** — Store B's returns never push Store A over the line. Forward transfers
+  never count at all.
+- ✅ A super admin raising the return *on behalf of* a store is graded on **that store's**
+  history, not their own.
+
+**Cap on open drafts.** A store may hold at most **10** returns that are
+`PENDING_APPROVAL` + `CREATED` (not yet dispatched) at once.
+- ❌ The 11th → **400** *"This store already has 10 open returns (limit 10). Dispatch or
+  cancel an existing return before creating another."* — and **nothing is written**.
+- ✅ Cancelling **or** dispatching one frees a slot. The cap is per store, and forward
+  transfers do not use up slots.
+
+### 16b-2b. Both gates also hold when requests arrive AT THE SAME TIME  *(security fix, 2026-09-07)*
+Both checks used to be made **before** the return was saved, so requests fired together all
+read the same "nothing open yet" picture and all slipped under the limit — the same bypass as
+splitting, just done simultaneously instead of one after another. Each request now
+**re-checks after saving** and corrects itself.
+
+Real example — a store admin double-taps *Send return* (or a script fires four at once), 20
+units each:
+- ✅ All four are accepted (**200**), and every one of them comes back
+  **PENDING_APPROVAL** — 4 × 20 = 80 > 50, so nobody gets to skip the sign-off.
+- ✅ Sending **one** 20-unit return on a quiet store is still plain **CREATED**; the
+  re-check never escalates a request that is genuinely under the limit.
+- ✅ 13 returns fired together on an empty store → exactly **10** stay open and the surplus
+  **3** get the same *"limit 10"* 400. Those 3 exist in the list as **CANCELLED** (they were
+  saved, then immediately withdrawn) — that is expected, not a bug.
+- ⚠️ Escalating is always the safe direction: under a true race a return may end up
+  **PENDING_APPROVAL** that a slower, one-at-a-time run would have left **CREATED**. A super
+  admin approving it is the fix; nothing is lost.
+- ✅ **The surplus returns show `cancelledBy` empty, not the store admin** *(fix,
+  2026-09-07)*: the store admin asked to *create* a return, not cancel one — the system
+  withdrew it. Same signature as the 7-day auto-expiry (**16i**); a real admin id in that
+  field always means a person decided.
+- 🔎 **Why this needed a second fix to work on the real servers** *(2026-09-07)*: the
+  re-check reads the return it just saved, but the live services read from a **replica**
+  that can be a moment behind, so the re-check could read the *old* picture and let the
+  race through anyway. Both re-check queries now read the **primary** explicitly. This
+  cannot be seen on a laptop (the test database has no replica) — it is pinned by
+  `transfer-return-secondary-read.test.js`, which runs a real 3-node set and fails without
+  the fix. **Needs a backend deploy** to take effect.
+
+### 16b-3. Editing an approved return re-arms the approval  *(security fix, 2026-09-07)*
+Only a super admin / warehouse role can `PATCH /admin/transfer/:id/items` (a store admin
+still gets 403 — see the matrix), but that edit used to skip the approval gate entirely.
+- ✅ Approve a 60-unit return (it becomes **CREATED**), then edit its lines to **5000** →
+  status flips **back to `PENDING_APPROVAL`** and `approvedAt` / `approvedBy` are **cleared**.
+  It is not dispatchable again until somebody **approves it afresh**.
+- ✅ Editing **down** to 50 or fewer → stays **CREATED**, the original approval is kept.
+- ✅ A small return that never needed approval, edited up to 51 → **PENDING_APPROVAL**.
+- ✅ A **forward** transfer is never re-graded (5000 units still just **CREATED**).
+- ✅ **The edit is graded on the same 24h store total as a new return** *(fix, 2026-09-07)*:
+  the store has one open **20**-unit return and somebody edits a second one up to **40** →
+  **PENDING_APPROVAL**, because 20 + 40 = 60 > 50 — even though 40 on its own is under the
+  line. Before this, several small returns could each be edited up to 50 with no sign-off.
+  The edited return's **own** old quantity is swapped out, not counted twice (a lone 40-unit
+  return edited to 45 stays **CREATED**), and an open return older than 24h does not count.
+
+### 16b-4. The same item twice in one request is rejected  *(security fix, 2026-09-07)*
+❌ `items: [ {A, 30}, {A, 30} ]` → **400** *"Each item can only appear once per transfer —
+combine duplicate lines into a single quantity."*, nothing is written.
+- Applies to **all three** writers: `POST /admin/transfer/return`, `POST /admin/transfer`
+  (forward create) and `PATCH /admin/transfer/:id/items` (the existing lines stay intact).
+- ✅ Two **different** items in one request are of course still fine.
+- Why: receive matches each posted `receivedQty` to a line **by item id**, so a duplicated
+  line let the same physical units be credited to the warehouse twice.
+
+### 16c. Who can do what (the 403 matrix)
+| Actor | Action | Result |
+|---|---|---|
+| store admin (Store A) | return for Store A | ✅ 200 |
+| store admin (Store A) | return naming **Store B** | ❌ 403 |
+| store admin | a `warehouseId` or `direction` in the body | ❌ 400 (unknown key) |
+| store admin | create a **forward** transfer (`POST /admin/transfer`) | ❌ 403 (unchanged) |
+| manager / support | create a return | ❌ 403 — **even if granted the permission** |
+| warehouse manager / staff | create a return | ❌ 403 |
+| super admin | return for any store (name `storeId`) | ✅ 200 |
+| store admin | dispatch/cancel **another store's** return | ❌ 403 |
+| store admin | dispatch/cancel a **forward** transfer | ❌ 403 |
+| store admin | **edit the lines** of their own draft return | ❌ 403 — see the limitation below |
+| warehouse manager (WH1) | receive WH1's incoming return | ✅ 200 |
+| warehouse manager (WH2) | receive **WH1's** return | ❌ 403 |
+| warehouse manager | receive a **forward** transfer | ❌ 403 (unchanged) |
+| manager holding `warehouse.manage_transfers` | receive a return | ❌ 403 |
+
+> ⚠️ **Why "even if granted the permission":** a `store_admin` passes **every** permission
+> check in this system automatically. So these routes are guarded by **role**, not by
+> permission. If you ever need to stop a store admin doing something here, it must be a
+> role check — adding/removing a permission will do nothing.
+
+### 16d. Nothing can go negative
+- ❌ Return more than the shelf holds → **dispatch fails with 400 naming the item**, the
+  shelf is **unchanged**, the transfer stays **CREATED**, and **no ledger rows** are written.
+- ❌ Multi-line where only the last line is short → the **whole** dispatch is rolled back;
+  the earlier lines are **not** decremented.
+- ✅ Cancel **after** dispatch → the units go back on the shelf with their original cost +
+  expiry, ledger row `MANUAL_ADJUST` / `return_cancelled_restock`.
+- ❌ A **RECEIVED** return cannot be cancelled (400) — correct it with a fresh forward transfer.
+- ✅ Partial receive → the warehouse rises by the received qty only.
+- ❌ Receive with **no** scanned barcode, or a **mismatched** one → 400, zero stock moves.
+- ✅ A return **never** touches the warehouse *reserved* / *in-transit* buckets.
+
+### 16e. Store with no serving warehouse
+❌ **400**: *"This store has no serving warehouse set — ask a super admin to set one before
+returning stock."* There is **deliberately no guess-by-region fallback** here (unlike
+replenishment): a wrong guess would physically ship cartons to the wrong warehouse.
+❌ Serving warehouse **inactive** → 400 *"The store's serving warehouse is not active."*
+
+### 16f. Nothing else changed  (regression checks)
+- ✅ `POST /admin/transfer` (forward create) behaves exactly as before, including a super
+  admin creating a return the old way with `direction: STORE_TO_WAREHOUSE`. That return is
+  now **stamped `approvedBy` / `approvedAt` with the super admin who created it**
+  *(fix, 2026-09-07)* — a super admin **is** the approver, so an audit can tell "signed off
+  at creation" apart from "was too small to ever need approval" (both used to show an empty
+  approver forever). A **forward** transfer created the same way still carries no approver.
+- ✅ A warehouse manager creating a return via the old route is still refused (403).
+- ✅ Old transfers with **no direction saved** still list, still dispatch as forward, and a
+  store admin still cannot dispatch them.
+- ✅ The **Transfer Discrepancies** screen looks exactly the same as before (it now asks
+  the API for the forward direction explicitly — see 16h).
+- ❌ **Barcode change is blocked while a return is waiting for approval** — changing a
+  product's barcode while it sits on a `PENDING_APPROVAL` return returns **409**
+  *"This product is on an open stock transfer…"*. Cancel or finish the return first.
+  (This is the one non-obvious knock-on of the new status.) It now **un-blocks by itself**
+  after 7 days — see 16i.
+- ✅ `GET /admin/transfer/:id` for a transfer that is **not yours** now answers **404
+  "Transfer not found"** — the same answer an id that does not exist gets (it used to say
+  403, which quietly confirmed the id was real). Reading your **own** transfer is unchanged.
+  No admin screen calls this endpoint today, so nothing visible changes.
+
+### 16h. Short-received RETURNS now appear in the discrepancy report  *(security fix, 2026-09-07)*
+`GET /admin/transfer/discrepancies` used to be hard-coded to forward transfers only, so a
+return the warehouse received **short** was invisible: the store could dispatch 100 units,
+the warehouse count 60, and nothing ever surfaced anywhere.
+- ✅ With **no** `direction` in the query it now returns **both** directions, and every row
+  carries its own `direction`.
+- ✅ `?direction=STORE_TO_WAREHOUSE` → returns only. `?direction=WAREHOUSE_TO_STORE` →
+  the original forward-only view (legacy transfers with no direction saved included).
+- ❌ An unknown direction value → **400**.
+- The **admin screen is unchanged on purpose**: it now sends
+  `direction=WAREHOUSE_TO_STORE` explicitly, because its wording and columns ("the store
+  received fewer units than the warehouse dispatched") only describe that side. The returns
+  view comes with the rest of the return UI in Phase C. **Needs an admin deploy** (one-line
+  FE change) — but the page behaves identically either way, so it is not urgent.
+
+### 16i. A return nobody approves expires after 7 days  *(new cron job, 2026-09-07)*
+A `PENDING_APPROVAL` return used to wait forever, and while it waited it kept **blocking
+barcode changes** for its products and counting against the store's 24h budget and 10-draft cap.
+- ✅ A new daily job (**3:50 AM IST**, `return-approval-expiry`) **cancels** any return still
+  in `PENDING_APPROVAL` more than **7 days** after it was created.
+- ✅ It touches **nothing else**: `CREATED` / `DISPATCHED` / `RECEIVED` / already-cancelled
+  transfers are left alone however old they are.
+- ✅ It moves **no stock** (a pending return holds none) and writes **no ledger rows**.
+- ✅ `cancelledBy` is left **empty** — that is how you tell an auto-expiry apart from a store
+  withdrawing its return or a super admin declining it (both stamp a real admin).
+- ✅ Once it expires, the **barcode change goes through again**.
+- **Needs a backend deploy** (the cron service).
+
+### 16j. Creating a return no longer fails with "duplicate key ... TR0000xx"  *(hotfix, 2026-09-08)*
+On dev, `POST /admin/transfer/return` failed with
+`E11000 duplicate key error ... index: transferId_1 dup key: { transferId: "TR000005" }`.
+Every transfer number (`TR000001`, `TR000002`, …) comes from a counter stored in its own
+`sequences` record. That counter had fallen **behind** the transfers themselves (counter said
+5, the newest transfer was already TR000045), which happens whenever transfers arrive in the
+database without going through the app — a data restore/import, for example. The app then kept
+handing out numbers that were already taken.
+- ✅ Creating a return (and a forward transfer, and a transfer created from a replenishment
+  request) now succeeds even if the counter is behind: the app notices the clash, jumps the
+  counter past the highest existing number, and saves. In the dev case the next transfer is
+  **TR000046**.
+- ✅ The number is **never reused**: check the transfer list — no two transfers share a
+  `TR…` number, and the counter only ever moves forward.
+- ✅ Two people creating returns at the same second still get different numbers.
+- ✅ Nothing else about the return changes (status, gates, stock, ledger are untouched).
+- **Needs a backend deploy.** No database change and no manual counter fix — the first
+  create after the deploy repairs the counter by itself.
+
+### 16k. Return from a NON-batch store now lands in a warehouse batch  *(fix, 2026-09-27)*
+Before: a store that doesn't track batches returned stock to a batch-tracked warehouse →
+warehouse **Available** went up but **no batch row** was created (e.g. Available 4, batches
+summed to 3 — the returned unit had no batch, no cost). Needs a **backend deploy**.
+1. Store with batches OFF, warehouse with batches ON. Item cost ₹42. Return 1 unit, dispatch.
+   ✅ Dispatch response line has one `batchAllocations` entry:
+   `batchNo: "RETURN-TR0000xx"` (the transfer's own id), qty 1, costPrice 42.
+2. Receive at the warehouse.
+   ✅ Warehouse batch table shows a new lot **RETURN-TR0000xx**, qty 1, cost 42, source **RETURN**.
+   ✅ Warehouse **Available** = sum of its batches (e.g. 4 = 4).
+- ✅ A return dispatched **before** this deploy (no lots stamped) still gets the RETURN-… lot on
+  receive, costed at the store item's current cost.
+- ✅ Warehouse batches OFF → unchanged: Available rises, no batch rows.
+- ✅ Cancel after dispatch → store shelf gets the units back (unchanged).
+- ✅ Batch-ON store → batch-ON warehouse → unchanged: units merge back into the **original**
+  lot (e.g. `A`), no RETURN-… lot.
+
+### 16g. Known and ACCEPTED limits — do not report these as bugs
+- ~~**Splitting gets around the 50-unit approval.**~~ **CLOSED 2026-09-07** — the gate is
+  now cumulative per store over 24h, plus a 10-draft cap. See **16b-2**.
+- **The gate counts UNITS, not money.** 51 sachets need approval; 50 tins of ghee do not.
+  It is deliberately **not** a financial control.
+- **A store admin still cannot edit a draft return** (403) — cancel it and create a new one.
+  A super admin / warehouse role can, and that edit is now re-graded against the 50-unit
+  gate (**16b-3**).
+- **The 24h window is a supervision control, not a stock-safety one.** A determined store
+  admin can still move a lot of stock over many days in 50-unit slices. Every return is
+  still blocked from going negative and is physically counted at receive; catching a slow
+  drain is the discrepancy report's and the stock-take's job, not this gate's.
+- ~~**Two returns sent at the same instant both skip the gate.**~~ **CLOSED 2026-09-07** —
+  both gates re-check after saving. See **16b-2b**. The cost of that safety: under a real
+  race the extra returns are graded **PENDING_APPROVAL** (approve them), and a surplus over
+  the 10-draft cap appears in the list as **CANCELLED**.
+- **No notification** is sent to the warehouse when a return is created or dispatched —
+  they see it in their Transfers list. Same as forward transfers today.
+
+Tests: `packages/admin/__tests__/transfer-return-store-initiated.test.js` (107),
+`transfer-return-backcompat.test.js` (11), `transfer-return-secondary-read.test.js` (1,
+3-node replica set) and `packages/cron/__tests__/return-approval-expiry.test.js` (7) —
+126, green.

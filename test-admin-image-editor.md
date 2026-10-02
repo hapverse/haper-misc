@@ -4,7 +4,7 @@
 **Component:** `src/components/ImageEditorModal.tsx` (React modal, client-side only)  
 **Integrated into:** `src/pages/Categories/CategoryModal.tsx` (single icon) · `src/pages/Products/ProductModal.tsx` (multi-file queue) · `src/pages/Items/ItemModal.tsx` (multi-file queue + re-edit on pending thumbnails)  
 **New dependency:** `react-easy-crop@6.2.3`  
-**Deploy needed:** haper-admin only; **no backend changes, no DB migration, no env var**.  
+**Deploy needed:** the image editor itself is haper-admin only (no DB migration, no env var). The **gallery-cap change (D2, up to 5 images)** ALSO needs a backend deploy first — see "Deploy and rollout".  
 **Tests:** Manual walkthrough only (editor is 100% client-side canvas/DOM, no API contract test needed).
 
 ---
@@ -132,6 +132,33 @@ For **Item** re-editing, if an admin clicks on a pending thumbnail (before savin
    - ✅ **Expect:** only these buttons close the editor by design; accidental interactions do not trigger a close.
 
 > **Note:** this was a real bug found and fixed same-day (2026-08-31) — clicks inside the editor (crop box drag, slider adjustments) were bubbling up and closing the parent ProductModal/ItemModal. Fixed via backdrop-click guard: only clicks on the editor's dark backdrop (outside the editor panel itself) close the editor; internal interactions do not propagate.
+
+### ✅ D2. Product Master gallery is capped at 5 images
+
+> **Root cause:** the backend limits each upload request to a fixed number of files (`s3.utils.js`, "items" entity: raised from 3 to 5); picking more files than the limit used to 400 with `MulterError: Unexpected field`. The admin now caps the gallery at 5 (`MAX_IMAGES` in `productForm.ts`, shared with Items), matching the per-request limit.
+>
+> **Deploy order:** Backend (per-request upload limit 3→5) must be deployed to dapi.haper.in BEFORE this admin build, otherwise selecting 4-5 photos fails with 400 MulterError: Unexpected field.
+
+1. **Open Products → Add Product** (or edit one with fewer than 5 images).
+   - ✅ **Expect:** the label reads **"Images (n/5 · shown on the product detail screen)"** and the upload button says **"Upload image (up to 5)"**.
+2. **On an empty product, pick 6 files at once.**
+   - ✅ **Expect:** a warning toast **"Only 5 more images allowed; extras ignored."**; the editor queue covers only the first 5; the 6th is never edited or uploaded; no 400 error.
+   - ✅ With 1 image already on the product, picking 5 files warns "Only 4 more images allowed; extras ignored."; with 4 already, picking 2 warns "Only 1 more image allowed; extras ignored."
+   - ✅ Picking 4 or 5 files on an empty product works with no warning and no 400 (this is the backend-deployed check).
+3. **Reach 5/5** (upload or paste).
+   - ✅ **Expect:** the control reads **"Image limit reached (5)"**, is dimmed and **disabled**; counter shows **5/5**.
+4. **At 5/5, paste an image URL and click Add** (or press Enter).
+   - ❌ **Expect:** blocked — toast **"You can upload at most 5 images."**, the URL is not added, counter stays **5/5**. (The Add button is dimmed and announced as disabled to screen readers, but still shows the toast on click.)
+5. **Legacy product already holding more than 5 images** (e.g. 6).
+   - ✅ **Expect:** counter shows **6/5**, upload control disabled, **no image is trimmed**; Save keeps all 6; you just can't add more (remove one to get back under the cap).
+6. **Paste a URL while a gallery upload is in flight.**
+   - ✅ **Expect:** the paste-URL input **and** Add button are **disabled** while the button reads "Uploading…" — so it can't be done. When the upload finishes they re-enable and every uploaded image is present (nothing is lost or overwritten; the append is based on the latest gallery, e.g. removing an image mid-upload is not undone).
+7. **Click Save while a gallery upload is still running.**
+   - ✅ **Expect:** Save is disabled until the upload finishes; the uploaded image is included in the saved product.
+8. **Thumbnail slot at 5/5.**
+   - ✅ **Expect:** "Upload card thumbnail" / replace still works with a full gallery (the cap does not apply to the thumbnail).
+9. **Items screen** (Items → Add/Edit Item).
+   - ✅ **Expect:** same 5-image cap (shared constant), counter "n/5", prompt "up to 5 images"; picking 6 files toasts "Only 5 more images allowed; extras ignored." and queues the first 5; at 5/5 the upload area disappears. Items add/update use the same backend upload middleware, so they need the same backend deploy.
 
 ---
 
@@ -284,31 +311,35 @@ For **Item** re-editing, if an admin clicks on a pending thumbnail (before savin
 
 ## Deploy and rollout
 
-### Current status (uncommitted)
+### Current status
 
-This feature is **completely built** in haper-admin (React component) but **not yet committed**:
+The image editor is **already on dev up to 73bf104** (ImageEditorModal and its integrations). This section tracks the **uncommitted gallery-cap change (D2: max 5 images, backend + admin)**:
 
 | Repo | Component | Status |
 |---|---|---|
-| haper-admin | `ImageEditorModal.tsx` + integration into CategoryModal, ProductModal, ItemModal | Reviewed, **APPROVED** by mayank-reviewer (0 Critical/Warning, 3 review rounds) |
+| haper-backend | `packages/shared/utils/s3.utils.js` — "items" per-request upload limit 3→5 | Parallel change; **must deploy FIRST** |
+| haper-admin | `MAX_IMAGES = 5` gallery cap in ProductModal + ItemModal (n/5 counter, disabled at cap, Save blocked during upload) | Prior 3-image version reviewed + approved; the 5-image change is a constant bump plus test/copy updates and is **awaiting your approval** |
+| haper-admin | `ImageEditorModal.tsx` + integrations (already on dev, 73bf104) | Previously approved (3 review rounds); not part of this change |
 
 ### What needs to happen
 
 **Step 1: User approves the commit**
-- Once you (`vikashv`) review this test guide and agree the feature is ready, signal approval.
+- Once you (`vikashv`) review this test guide and agree the gallery-cap change is ready, signal approval. Confirm the backend change is deployed to dapi.haper.in first (see Step 3).
 
 **Step 2: Commit and push to dev**
-- `git add src/components/ImageEditorModal.tsx src/pages/Categories/CategoryModal.tsx src/pages/Products/ProductModal.tsx src/pages/Items/ItemModal.tsx package.json package-lock.json` (or equivalent, depending on how dependencies were added).
-- `git commit -m "Add ImageEditorModal for crop/rotate/brightness-contrast image editing"`.
+- `git add src/pages/Products/ProductModal.tsx src/pages/Products/ProductModal.test.tsx src/pages/Products/ProductModal.thumbnail.test.tsx src/pages/Items/ItemModal.tsx src/pages/Items/ItemModal.test.tsx src/pages/Products/productForm.ts` (all six together — ProductModal/ItemModal import `MAX_IMAGES` from `productForm.ts`).
+- `git commit -m "Cap Product Master gallery at 5 images (MAX_IMAGES) and block Save during gallery upload"`.
 - `git push origin dev` — CI will trigger automatically (haper-admin build).
 
-**Step 3: Deploy haper-admin**
-- CI/CD auto-deploys to dev on push (standard flow).
+**Step 3: Deploy order — backend first, then haper-admin**
+- **Backend (per-request upload limit 3→5) must be deployed to dapi.haper.in BEFORE this admin build, otherwise selecting 4-5 photos fails with 400 MulterError: Unexpected field.**
+- Then haper-admin: CI/CD auto-deploys to dev on push (standard flow).
 - Verify build succeeds; no new eslint errors or test failures.
 
-### No backend deploy, no other repos
+### Other repos
 
-- **No backend changes** — this is 100% client-side (canvas-based, no API contract change).
+- **Image editor:** no backend changes — 100% client-side (canvas-based, no API contract change).
+- **Gallery cap (D2):** needs the backend upload-limit change (3→5) deployed first (Step 3). No other backend change.
 - **No database migration** — no new fields, no schema change.
 - **No new env vars** — no secrets or config needed.
 - **No client deploy needed** — web/Android/iOS are unaffected (image editing is admin-only).
@@ -316,10 +347,10 @@ This feature is **completely built** in haper-admin (React component) but **not 
 
 ### Rollback (if needed)
 
-If issues arise after commit:
-- Revert the commit (`git revert <commit-hash>`) and re-deploy haper-admin.
-- Users will see the old image upload flow (direct to upload, no editor).
-- No data loss — edited images already uploaded are fine; only new uploads will skip the editor.
+If issues arise after the gallery-cap commit:
+- Revert that commit (`git revert <commit-hash>`) and re-deploy haper-admin. The gallery goes back to no cap and no n/5 counter; the image editor itself (73bf104) is unaffected.
+- The backend change can stay at 5; reverting the admin alone is safe.
+- No data loss — products already saved with up to 5 images keep them.
 
 ---
 
@@ -353,3 +384,4 @@ If issues arise after commit:
 - **Test on all three entity types:** Categories (single image), Products (multi-file queue), Items (multi-file queue + re-edit pending). The queue behavior and re-edit flow differ slightly.
 - **Test rapid open/close cycles** (section ❌ L) — this caught a real memory leak during review. Run it as part of the acceptance test.
 - **Unsupported file types are filtered by the file picker,** not by the editor. No need to test that in the editor itself.
+- **Item/product image cap is 5 (was 3), config-driven.** Backend upload limits are plain values in `packages/shared/config/index.js` (none hardcoded in `s3.utils.js`): `maxItemImages` = 5 (images per request, field `images`), `maxUploadFileSizeMb` = 5 (per image) and `maxDocUploadFileSizeMb` = 8 (per document/bill). They are NOT env vars; to change one, edit that file and deploy the backend. The admin UI constant `MAX_IMAGES` in `haper-admin/src/pages/Products/productForm.ts` MUST be kept equal to `maxItemImages`. ✅ Product Master: pick 5 photos at once → all upload. ❌ A 6th in one request → 400 "Unexpected field" (the UI blocks this first); a file over the MB limit → 400 "File too large". Other entities (categories, banners, stores…) stay 1 image. Needs a backend deploy; the admin UI already caps at 5.

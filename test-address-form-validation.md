@@ -46,7 +46,63 @@ field-name-to-label mapping; `AddressViewModel.kt` just decodes the message as-i
 - Missing required field (e.g. `name`) returns the human label in the error message.
 Run: `cd packages/user && NODE_ENV=test npx jest`
 
+## Android app changes (2026-08-31)
+
+The fix also includes a **Kotlin-side validation bug fix** and a new **UX enhancement**:
+
+- **Error message bug**: The error validator was checking a mis-wired variable, so leaving
+  "House / flat / building" blank showed the wrong message `"Street is required"`. The
+  backend's Joi schema labels the `street` field as "House / flat / building" (required)
+  and `addressLine1` as "Street or road" (optional). Android now correctly validates
+  against the right field and shows `"House / flat / building is required"` under the
+  House/Flat input field, not under the wrong one.
+- **Auto-capitalize enhancement**: The "House / flat / building" field now applies the
+  Android keyboard hint `KeyboardCapitalization.Words` to auto-capitalize each word as
+  you type (e.g. typing "flat 402, shreeji residency" becomes "Flat 402, Shreeji Residency").
+  This is a keyboard-level IME behavior, not a forced text rewrite — behavior may vary
+  slightly depending on the device's keyboard app.
+
+## Manual test steps — Android QA
+
+### ✅ Blank "House / flat / building" shows error under the right field
+1. User app → Add Address (or edit an existing one).
+2. Leave "House / flat / building" blank; fill all other required fields (Full name,
+   Phone, Locality, PIN).
+3. Save.
+4. **Expect:** error dialog displays `"House / flat / building is required"` (not
+   `"Street is required"`). The error message appears directly under the House/Flat
+   input field, in red text with the ⚠ marker.
+
+### ✅ Blank "Street or road" saves successfully (no error)
+1. User app → Add Address (or edit an existing one).
+2. Leave "Street or road" blank; fill all other required fields.
+3. Save.
+4. **Expect:** address saves with no validation error, `addressLine1` stored as `""`.
+   The "Street or road" field has NO required star and no validation — it is intentionally
+   optional to support legacy addresses saved before the field existed.
+
+### ✅ "House / flat / building" auto-capitalizes each word as typed
+1. User app → Add Address.
+2. Tap the "House / flat / building" field and type: `flat 402, shreeji residency`
+3. **Expect:** as you type, the keyboard automatically capitalizes the first letter of
+   each word; the field value reads `Flat 402, Shreeji Residency` (matching standard
+   Android capitalize-words keyboard behavior).
+4. **Note:** This is a keyboard-level hint (KeyboardCapitalization.Words), so the exact
+   behavior depends on the device's IME. Most keyboard apps will capitalize as described;
+   some older or custom keyboards may behave differently. This is not a forced app-side
+   rewrite — it relies on the keyboard's own capitalization.
+
+### ❌ Other fields unchanged
+1. User app → Add Address.
+2. Verify that **Full name**, **Locality**, and **Landmark** fields behave exactly as
+   before — no new keyboard capitalization or text rewrite applied to them.
+3. **Expect:** no changes to these fields' behavior compared to prior builds.
+
 ## Deploy
-Backend-only change → deploys with the next `dev` backend deploy (`dapi.haper.in`).
-No app release required (Android already sends `""` today; this just makes the
-backend accept it).
+**Android app release required.** The validation error message fix and keyboard capitalization
+enhancement are entirely client-side (Kotlin code in `AddEditAddressScreen.kt` and
+`ValidationUtils.kt`). A new Android build must be released to ship these fixes to users.
+
+**Backend deploys independently.** The backend change (`.allow("", null).optional()` for
+`addressLine1` + `.label()` mappings) deploys with the next `dev` backend deploy
+(`dapi.haper.in`). Backend is ready now; app release is the blocker.

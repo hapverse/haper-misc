@@ -168,7 +168,8 @@ All wired to real data — nothing is a static mock-up.
     switches to "Almost there / Create your profile".
 39. ✅ **OTP** — back button, "Verify your number", "Code sent to +91 … · Change"
     (Change returns to login), then **six 56dp cells**. The filled cell tints green,
-    the next cell outlines teal. The system keyboard drives them (paste/autofill work).
+    the next cell outlines teal. The system keyboard opens automatically on entry and
+    drives them (paste/autofill work, no in-app custom keypad anymore).
 40. ✅ A wrong code shows the rose error card ("That code didn't work" + detail).
 41. ✅ Resend row counts down, then offers "Resend".
 

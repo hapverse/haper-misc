@@ -14,5 +14,11 @@ npm run ensure-indexes        # node ensure-indexes.js
 npm run migrate-item-indexes  # node migrate-item-indexes.js
 ```
 
-Both scripts use the native `mongodb` driver, are idempotent, and only touch
-indexes (no document writes).
+The index scripts use the native `mongodb` driver, are idempotent, and only
+touch indexes (no document writes).
+
+The `items`/`products` `taxonomy` backfill (multi-category feature, Phase 1)
+lives in `haper-backend` now, not here — see
+`haper-backend/scripts/migrations/backfill-item-taxonomy.js` (run from the
+`haper-backend` repo root; deploy/ops boxes only check out `haper-backend`, not
+`haper-misc`).

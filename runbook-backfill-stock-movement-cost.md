@@ -162,3 +162,122 @@ Once the script completes successfully:
 
 **Verification fails with "do NOT hold the expected costPrice."**
 - This is very rare (indicates a MongoDB write failure or a concurrent edit). The script exits with a non-zero status. Check the database logs and re-run to retry the failed rows.
+
+---
+
+# Follow-up script: the rows with NO batch number
+
+`scripts/migrations/backfill-stock-movement-cost-nobatch.js`
+
+## Why a second script
+
+The script above can only work when the receipt row carries a **batch number** — that is
+the key it uses to find the batch record holding the cost. Roughly 71 old receipt rows on
+production have **no batch number at all** (they were written before batch auto-naming
+existed), so the first script deliberately lists them under *"no batchNo"* and leaves them
+alone. This second script exists only for that leftover group.
+
+The two scripts never overlap: the first one skips every row without a batch number, this
+one selects **only** rows without a batch number. Neither can pick up a row the other one
+already filled in (both require the `costPrice` key to be missing).
+
+## Where the cost comes from
+
+With no batch to read, the cost is taken from another collection, in a fixed order:
+
+1. **`warehouse-stocks.costPrice` for the exact warehouse + SKU on the row.** This is the
+   warehouse's own recorded cost for that product — the most specific source, and there is
+   only ever one such record, so there is no choice to make.
+2. **Otherwise `items.costPrice` (the store-level record) — but only if every matching
+   store record agrees on one price.** Real example: SKU `8902102163923` (Exo Bar) shows
+   `3.61` in one store and `3.68` in another. Nothing in the data says which one was on
+   this bill, so that row is **skipped as "ambiguous — needs manual review"**. The script
+   never picks the newest/cheapest/first one.
+3. **Neither source has a usable price → skipped as "no recoverable cost found."** A cost
+   of `0` counts as "never priced", not as a real price of zero.
+
+## How to tell these rows apart afterwards
+
+Every row written by this script is tagged in its `note` field with the source it came
+from (any existing note text is kept, the tag is appended after ` | `):
+
+```
+... | costPrice backfilled from warehouse-stocks (no batch, pre-2026-08-05 receipt)
+... | costPrice backfilled from items.costPrice (no batch, pre-2026-08-05 receipt)
+```
+
+```js
+db.getCollection("stock-movements").find({ note: /costPrice backfilled from/ })
+```
+
+That is a **different** marker from the first script's `costPrice backfilled APPROX`, so
+the two backfills never blur together in an audit. These values are the current recorded
+cost for the SKU — the best evidence available, but **not** provably the price typed on
+the original bill. Keep the run log.
+
+## Run steps
+
+```bash
+cd /Users/office/Documents/haper/haper-backend
+
+# 1) DRY RUN — writes nothing, prints every row it would change and its source
+node scripts/migrations/backfill-stock-movement-cost-nobatch.js
+
+# 2) APPLY — after reading the dry run; prompts for a typed "yes"
+node scripts/migrations/backfill-stock-movement-cost-nobatch.js --apply
+```
+
+The connection comes from `MONGO_DB` in your own `.env`, exactly like every other
+migration script. The banner prints **DB HOST** and **DB NAME** before anything happens —
+read them. If that is not the database you meant, Ctrl+C.
+
+There is **no `--yes` bypass on this script at all**: every value it writes is inferred
+from another collection, so a human types `yes` every time.
+
+## Reading the output
+
+- Rows that would be written are listed **in full** (never sampled), with the value and the
+  source: `costPrice=3.68  [source: warehouse-stocks]`.
+- Ambiguous rows are listed in full too, with the competing values, e.g.
+  `items.costPrice disagrees across 2 item record(s): [3.61, 3.68]` — that list is the
+  manual-review to-do.
+- A **BY INVOICE (refLabel)** table closes the report so you can see exactly what happened
+  to each bill:
+
+```
+  refLabel              total  wh-stock  items  ambig  unrecov  other
+  6834                  44     30        8      4      2        0
+  (null ref)            11     6         3      1      1        0
+  6849                  10     7         2      1      0        0
+  6912                  5      3         1      0      1        0
+  INV-2607-N02247       1      1         0      0      0        0
+```
+
+(the numbers above are from a synthetic fixture used in testing — the real counts come from
+your own dry run.)
+
+## What it does NOT do
+
+- **Never touches MRP** — same reasoning as the first script.
+- **Never touches rows that have a batch number** — those belong to the first script.
+- **Never overwrites an existing cost**, so it is idempotent and safe to re-run; a second
+  run reports 0 rows and cannot append the note marker twice.
+- **Never guesses** between competing prices — an ambiguous row stays untouched.
+- **Does not update the Verify Bill screen's provenance labeling.** After `--apply`, the
+  Warehouse "Verify Bill" page for these invoices will show a full "Total cost (billed)"
+  figure with no "(N lines missing cost)" warning anymore — but there is no visual cue on
+  that screen that the number came from this backfill rather than the original receipt. The
+  only way to tell is querying the `note` field for the tag `"costPrice backfilled from"`.
+
+## ✅ / ❌ checks
+
+- ✅ Dry run makes zero writes and lists every candidate row.
+- ✅ A row whose warehouse has a cost for that SKU is filled from `warehouse-stocks`.
+- ✅ A row with no warehouse cost but one agreed store cost is filled from `items.costPrice`.
+- ❌ A row with two different store costs is **not** filled — it appears under AMBIGUOUS.
+- ❌ A row with no cost anywhere is **not** filled — it appears under "no recoverable cost".
+- ✅ Re-running after an apply reports 0 rows and changes nothing.
+- ✅ `mrp` is untouched in every case.
+
+Automated coverage:
+`packages/admin/__tests__/backfill-stock-movement-cost-nobatch.test.js` (in-memory Mongo).

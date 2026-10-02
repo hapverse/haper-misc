@@ -172,6 +172,37 @@ guard on a single payment id — that use is correct and was left alone.
 
 ---
 
+## Cancel window for unpaid orders + "order changed" guard  (payment-retry plan 0.3, 2026-09-24)
+
+**What changed:**
+- An **unpaid** online order (status `PAYMENT_INITIATED`, the customer never finished paying) can now be
+  cancelled by its owner at any time in the **15-minute payment window** (`PAYMENT_WINDOW_MINUTES`), not
+  just the first 60 s. Example: order placed 10:00, UPI app backed out, customer cancels at 10:05 → allowed.
+- A **paid or COD** order (`OPEN`) keeps the exact 60-second rule. Scheduled orders keep their own rule.
+- The cancel write now only succeeds if the order is **still in the status the server just read**
+  (and, for a scheduled order, still not released to picking). Example: customer taps Cancel on an unpaid
+  order at the same moment Razorpay confirms the payment → the order becomes OPEN, and the cancel answers
+  **409 `ORDER_CHANGED`** instead of cancelling a paid order. No wallet refund, no restock.
+
+### ✅ Should pass
+1. Place a Razorpay order, back out of the payment sheet. At ~5 minutes, cancel → 200, status
+   `PAYMENT_CANCELLED` (9), any coins used are back in the wallet.
+2. COD order, cancel within 60 s → 200 (unchanged).
+
+### ❌ Should fail
+3. COD / paid order, cancel after 60 s → 400 "…within 1 minute of placement." (unchanged).
+4. Unpaid order, cancel after 15 min (if the cron has not released it yet) → 400 "…Unpaid orders can only
+   be canceled within 15 minutes of placement."
+5. Race (automated only): status changes between read and write → 409 `{ status: false, code: "ORDER_CHANGED" }`,
+   the order is untouched, wallet and stock unchanged.
+6. Another user's order id → 404 (unchanged).
+
+Automated tests: `packages/user/__tests__/order-cancel-reason.test.js`, section 12.
+Needs: deploy `packages/user` (dev). Apps need no change. An app that shows a generic error on a non-200
+will show it for the 409. The app should re-read the order.
+
+---
+
 ## How to test — Android manual QA
 
 **Prerequisites:**

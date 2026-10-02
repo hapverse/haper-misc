@@ -200,3 +200,93 @@ back "confirmed" with a missing coordinate.
 
 ## Rollout
 - Client-only, no backend deploy needed. Ships in the next Android build.
+
+---
+
+## FIX · Retroactive map-confirmation on legacy addresses (2026-09-03)
+
+**The bug:** 121+ production addresses had a fake "pincode centroid" GPS coordinate (an approximate location guessed from just the pincode, shared byte-identically by dozens of different customers' addresses) instead of the customer's real confirmed location. Root cause: the app checked "do coordinates exist?" (`latitude != null && longitude != null`) but never checked "are they real?". So when a customer **edited** an existing address that had a fake coordinate, the app saw coordinates present, assumed they were confirmed, and saved the fake centroid right back **without asking for re-confirmation on the map**.
+
+**The fix (backend + Android):**
+- Backend: new nullable field on the address model `isCoordinateConfirmed` (Boolean, `default: null`) in `packages/shared/models/addresses.schema.js`.
+  - `true` = customer actually confirmed this coordinate via map or GPS.
+  - `false` = known unconfirmed (a pincode guess).
+  - `null` = unknown/legacy (saved before this field existed).
+- Backend validator (`packages/user/src/routes/address/validator.js`): field is optional on both create and update; never defaulted, so `null` is preserved.
+- Android: `AddressModel` + `AddressUpsertRequest` now carry nullable `isCoordinateConfirmed: Boolean?`.
+- Android logic: when **loading an existing address for editing**, the app now checks the backend's `isCoordinateConfirmed` flag via the function `isBackendCoordinateConfirmed(backendFlag: Boolean?): Boolean = backendFlag == true`.
+  - **Only** `true` → skip map re-confirmation (address already confirmed).
+  - **`null` or `false`** → treated as NOT confirmed → **map-confirmation step is required again**, same as a brand-new address.
+- Once the customer confirms a location via map picker or GPS, the app sends back `isCoordinateConfirmed: true`.
+
+**Important scope note:** this fix **stops the bug going forward** but does **NOT retroactively repair the 121 already-affected addresses**. Those customers will be prompted to confirm their real location the **next time they edit** that address — the first time they do so, they'll see the map picker (amber/unconfirmed), and after confirming, it will be locked as `isCoordinateConfirmed: true` for future edits.
+
+**Deployment requirement:** BOTH a backend deploy AND a new Android build are **required** for the fix to work end-to-end. The backend must persist the flag on new/edited addresses; the Android app must check it when loading an existing address. If only one ships:
+- Backend alone: old app versions still read `null` as "we don't know" and treat it as confirmed (no change).
+- Android alone: new app reads the backend's `isCoordinateConfirmed` field but it's always null (pre-existing), so no impact yet.
+
+### ✅ QA steps for the fix (dev)
+
+#### ✅ New address — still requires map confirmation (unchanged behavior)
+1. Add Address → fill the fields → type a PIN, let the pin snap.
+2. Status shows **"Approximate — not yet confirmed"**, pin is **amber**.
+3. Tap **Save** without touching the map.
+4. **Expect:** the map picker opens (centred on the PIN area). Only after tapping **Confirm location** does the address save.
+5. **Verify in backend:** fetch the saved address → `isCoordinateConfirmed: true`.
+6. **Expect on iOS:** identical — a new address has no `AddressModel` yet, so `AddressCoordinatePolicy.initialSource(for: nil)` never applies here; the PIN-resolved coordinate is `.pincode` (not a confirmation), so Save routes through the map picker the same way.
+
+#### ✅ Address with `isCoordinateConfirmed: true` — does NOT re-prompt on edit (no annoyance)
+1. Open an existing address that has `isCoordinateConfirmed: true` in the backend (a customer who already confirmed their spot).
+2. Edit a field (e.g., street name) without touching the coordinate.
+3. Tap **Save**.
+4. **Expect:** saves immediately, **no map picker**. The green/confirmed status never changes.
+5. Edit the PIN to a different value.
+6. **Expect:** the inline *"Your PIN changed. Update the pin location to match?"* prompt appears. Tapping **Keep current location** saves the old confirmed coordinate against the new PIN (no re-prompt). Tapping **Update location** marks it unconfirmed and runs Save through the map picker on the next click.
+7. **Expect on iOS:** identical behavior — `AddressCoordinatePolicy.initialSource(for:)` resolves `.savedAddress(confirmed: true)`, status line reads "Saved location", Save skips the map picker.
+
+#### ✅ Legacy address with `isCoordinateConfirmed: null` — NOW requires map re-confirmation on edit (THE FIX)
+**This is the actual bug being fixed — the headline test case.**
+1. Create an address via the old code path (before this fix landed) — it will have no `isCoordinateConfirmed` field (or set it to `null` via direct DB edit for testing).
+2. Load that address for editing.
+3. **Expect on Android:** the status reads **"Approximate — not yet confirmed"** (amber), even though the address **already has coordinates** from a previous PIN-centroid guess. (This is the diff from the old behavior: the old code treated "has coordinates" = "confirmed"; the new code treats "null flag" = "unknown, not confirmed".)
+4. **Expect on iOS:** identical — `AddressCoordinatePolicy.initialSource(for:)` sees `isCoordinateConfirmed == nil`, resolves `.savedAddress(confirmed: false)`, status line reads **"Approximate area — drag the pin to your exact spot"**.
+5. Edit the street name and tap **Save**.
+6. **Expect:** the map picker opens (both platforms). The address will NOT save until the customer confirms a spot via map or GPS.
+7. Once confirmed: **Verify in backend** that the address now has `isCoordinateConfirmed: true`.
+8. Edit again without touching the coordinate: **Expect** no map picker (same as step ✅2 above, now that it's marked confirmed) — on both Android and iOS.
+
+#### ✅ A legacy address with no coordinates — still behaves as before
+1. Create an address with a PIN but **before** tapping map/GPS (no coordinates saved yet, no `isCoordinateConfirmed` field).
+2. Edit it later.
+3. **Expect:** `isCoordinateConfirmed` is null → treated as unconfirmed → map picker required on Save (unchanged from the old behavior; there was nothing to confirm, so this is moot).
+
+#### ❌ Known, NOT yet fixed by this pass — tapping straight through the picker still saves a guess
+1. Trigger the map picker (new address, or a legacy address being re-prompted per the case above).
+2. **Without dragging the pin** from its pre-seeded position (pincode-centroid or default), tap **Confirm location** straight away.
+3. **Expect (still a gap):** it saves — the guessed location goes through **just like a real confirmation**, now marked `isCoordinateConfirmed: true`. Once saved this way, the address will **never be re-prompted again** (it reads as genuinely confirmed).
+4. This is a **known remaining gap**, not something this fix closes — this fix only stops the *silent, automatic* re-save of a stale guess on every edit; it does not stop a customer from *deliberately* (or carelessly) confirming a bad guess once. Closing this needs a minimum-drag-distance check or an explicit "is this pin actually where you live?" nudge — a separate, not-yet-scoped decision.
+
+**Deploy note — backend and Android must ship together:** the backend's Joi validator on `POST/PATCH /user/address` rejects **unknown fields**. An OLD Android build (sends no `isCoordinateConfirmed` key) is unaffected either way — that's backward compatible. But a **NEW** Android build sending `isCoordinateConfirmed` would get a **400** from an **OLD** (not-yet-deployed) backend that doesn't know the field yet. **Deploy order: backend first, always** — never ship the new Android build ahead of the backend deploy.
+
+## FOLLOW-UP · Location gate + coordinate source (2026-09-03)
+
+Screen 13's `locPick` stage now fronts this screen for Add and Edit — see
+**`test-address-location-gate.md`**. Two things there change behaviour covered by this guide:
+
+- A **GPS** coordinate is now marked `isFromCurrentLocation` and a later PIN edit leaves it alone
+  with **no** prompt. The "Editing the PIN never eats a good coordinate" steps below still apply
+  unchanged to **map-confirmed** coordinates.
+- The permanent-denial dead end is gone: "Enable location access" opens app Settings once the OS
+  dialog has been refused.
+
+### ❌ Known gaps
+- **iOS fix has shipped on `dev`** (uncommitted as of 2026-09-04) — `AddressModel.isCoordinateConfirmed: Bool?` + `AddressCoordinatePolicy.Source.savedAddress(confirmed:)` mirror the Android logic; `AddEditAddressView`'s load path calls the new `AddressCoordinatePolicy.initialSource(for:)` seam. This is no longer an open client follow-up.
+- Existing bad prod rows (the 121 addresses with fake centroids) are not repaired by this change. They persist with coordinates but no confirmation flag until edited by the customer. A backfill / proactive re-prompt for those rows was considered a separate decision.
+
+### Automated coverage
+- No new unit tests added to `AddEditAddressScreen.kt`/`AddressSaveFlow.kt` (the existing suite already covers the save-gate logic; the confirmation flag is passed through correctly). The verification is manual (the field is persisted, the flag is read and acted on).
+- iOS: `haperTests/AddressModelsTests.swift` has a regression test (`testInitialSource_legacyAddressWithMissingFlag_isNotConfirmed`) decoding a legacy payload (no `isCoordinateConfirmed` key) and asserting `AddressCoordinatePolicy.initialSource(for:).isConfirmation == false`. **This test covers the pure-function logic in isolation, not the view's call site.** The SwiftUI view's actual call to this function (in `AddEditAddressView.swift`'s `onAppear`) is not unit-testable (SwiftUI `@State`/`onAppear` bodies cannot be XCTest-driven), so a regression there (e.g. reverting to a hardcoded `confirmed: true`) would **not** be caught by the automated suite. Catching that regression relies on the manual QA scenario below — specifically the case "legacy address, `isCoordinateConfirmed: null` → must re-prompt on edit".
+
+### Rollout
+- **Requires both:** backend deploy (to persist the field on new/edited addresses) + a new client build (Android and/or iOS) to check the flag.
+- Ships when backend + the relevant client build are ready on dev.

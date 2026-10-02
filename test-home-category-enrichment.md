@@ -50,9 +50,9 @@ be blocked).
    `itemsCount: 1` and `cheapestPrice` equal to that one item's price, even if one of the 2
    out-of-stock items is cheaper.
    ✅ Edge case: a category where EVERY active item is out of stock still shows up in the list
-   (membership only checks `status: ACTIVE`, not stock) but with `itemsCount: 0` and
-   `cheapestPrice: null` — while `subCategoriesCount` for that same category is unaffected (see §2,
-   `subCategoriesCount` is stock-agnostic on purpose).
+   (membership only checks `status: ACTIVE`, not stock) but with `itemsCount: 0`,
+   `cheapestPrice: null` **and `subCategoriesCount: 0`** — nothing behind it is buyable, so no
+   aisle tile is offered either (see §2, `subCategoriesCount` is stock-aware too).
 
 ## 2. `subCategoriesCount` matches the drill-down screen exactly
 This is the field that shipped wrong once — verify it carefully.
@@ -60,14 +60,23 @@ This is the field that shipped wrong once — verify it carefully.
 2. Open that category's drill-down (`GET /user/home/sub-category/:categoryId`).
    ✅ The `subCategories` array length on the drill-down **must equal** the tile's
    `subCategoriesCount` — always, not "roughly."
-3. **The semantics that make this true**: `subCategoriesCount` is NOT "distinct sub-categories
-   among this category's own items." It is "active sub-categories whose own `category[]` array
-   contains this category, AND that have ≥1 active item in this store **anywhere** (regardless of
-   that item's own `category` field)." This is exactly the drill-down's membership predicate
-   (`SubCategoryRepository.getAll`).
-   ✅ Edge case: a sub-category X whose master record lists `category: [C, D]` counts towards
-   BOTH C's and D's `subCategoriesCount`, as long as X has ≥1 active item in-store somewhere — even
-   if every item referencing X happens to have its own `item.category` set to D, not C.
+3. **The semantics that make this true**: a sub-category counts under a parent category ONLY when
+   a real, buyable item is filed under **both** — i.e. there is ≥1 item in this store with
+   `status: ACTIVE` **and** `quantity > 0` **and** `item.category._id` = this category **and**
+   `item.subCategory._id` = this sub-category, and the sub-category master itself is active and
+   lists this category in its own `category[]` array. That AND-predicate is exactly what the
+   drill-down tile list (`SubCategoryRepository.getAll`) and the item list one tap later
+   (`ItemRepository.getPaginatedItemsBasedOnCatSubCat`) enforce — which is why the three always
+   agree.
+   ✅ Edge case (**changed** — this used to behave the opposite way and was a bug): a sub-category
+   X whose master record lists `category: [C, D]` counts towards C's `subCategoriesCount` only if
+   some in-stock item has its OWN `item.category` set to C. If every item referencing X is filed
+   under D, X counts for D **only** — it must NOT appear under C, because tapping it under C would
+   open an empty item list.
+   ✅ Edge case: a sub-category Z where the item is filed correctly under both the category and Z,
+   but every such item is **out of stock** (`quantity <= 0`), must NOT be counted and must NOT show
+   as a tile — customers can't buy anything behind it, so the tile would lead to an empty list.
+   One in-stock item is enough to bring the tile back.
    ✅ Edge case: a sub-category Y whose master record lists `category: [D]` only must NOT count
    towards C's `subCategoriesCount`, even if some item under C's own `category` field happens to
    reference Y as its `subCategory` (a stale/inconsistent item-level tag). This can mean
@@ -98,16 +107,23 @@ This is the field that shipped wrong once — verify it carefully.
   `controller.getAll` → `CategoryRepository.getAll` (base list) +
   `CategoryRepository.getStoreCategoryMeta` (enrichment, run in parallel, fail-open).
 - `getStoreCategoryMeta` in `packages/shared/repositories/category.repository.js` aggregates this
-  store's active items once (grouped by the item's own `category._id`) for `itemsCount` /
-  `cheapestPrice`, then separately reproduces the drill-down's sub-category membership set
-  (`SubCategoryRepository.getAll`'s predicate) to compute `subCategoriesCount` — the two counts
-  are deliberately NOT derived from the same item-side grouping.
-- `itemsCount`/`cheapestPrice` are computed with a `$cond` on `quantity` INSIDE the same `$group`
-  stage that also builds `subCategoryIds` — the outer `$match` stays `{storeId, status}` only
-  (no `quantity` predicate) on purpose, because `subCategoryIds`/`subCategoriesCount` must stay
-  stock-agnostic to match `SubCategoryRepository.getAll`'s own predicate. Do NOT add a blanket
-  `quantity` filter to the `$match` — it would silently regress that already-fixed, already-tested
-  behavior.
+  store's active items once, grouped by the item's own `category._id`, and derives **all three**
+  fields from that same item-side grouping — `itemsCount`, `cheapestPrice` and the
+  `subCategoryIds` set behind `subCategoriesCount`. The count and the tile list are therefore in
+  LOCKSTEP by construction: `SubCategoryRepository.getAll` (the drill-down tile list) applies the
+  same AND-predicate — `item.category._id` = parent, `item.subCategory._id` = the sub-category,
+  `storeId` = this store, `status: ACTIVE`, `quantity > 0` — inside its `$lookup`'s `$expr`, and
+  `getStoreCategoryMeta` reproduces it item-side, then intersects the result with the active
+  sub-category masters whose own `category[]` array lists that parent. **Any change to one of
+  these two predicates must be mirrored in the other**, or the tile count and the tile list drift
+  apart again (that drift is exactly the bug this guide's §2 documents).
+- All three fields get their stock-awareness from a `$cond` on `quantity` INSIDE the `$group`
+  accumulators — `$sum`/`$min`/`$addToSet` each wrap `{ $cond: [{ $gt: ["$quantity", 0] }, …] }`
+  (`$addToSet` contributes `null` for an out-of-stock item, which the JS loop below skips). The
+  outer `$match` stays `{storeId, status}` only, with **no** `quantity` predicate, on purpose:
+  moving the quantity check up into the `$match` would drop all-out-of-stock categories out of the
+  aggregation entirely and regress `itemsCount: 0` / `cheapestPrice: null` for them. Keep the
+  check in the accumulators.
 - ₹0-priced items are NOT excluded from `cheapestPrice` — there is no existing convention in this
   codebase for filtering `sellingPrice > 0` out of customer-facing item queries (checked
   `item.repository.js`), so an in-stock ₹0 item is treated as a genuine (if unusual) price, same as
@@ -127,5 +143,10 @@ This is the field that shipped wrong once — verify it carefully.
   soft-deleted sub-category exclusion, the sub-category-drill-down-parity mismatch case (own
   `category[]` array vs. item's `category` field), pagination page-2+, fail-open on a
   simulated aggregation failure, stock-awareness (in-stock vs. out-of-stock trap price), and the
-  all-out-of-stock regression guard (itemsCount 0 / cheapestPrice null while subCategoriesCount
-  stays unaffected).
+  all-out-of-stock case (itemsCount 0 / cheapestPrice null / subCategoriesCount 0, cross-checked
+  against the drill-down tile list).
+- Also covered by `packages/user/__tests__/category-subcategory-listing-gap.test.js` — end-to-end
+  tile-vs-drill-down parity across both causes of the "tile leads to an empty list" symptom:
+  (a) the category mismatch (multi-parent sub-category whose only item is filed under the other
+  parent) plus its correctly-filed counterpart, and (b) the stock gap (all items out of stock →
+  no tile and `subCategoriesCount: 0`; one in-stock item → tile returns, drill-down lists it).

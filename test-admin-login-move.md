@@ -237,6 +237,74 @@ seconds; notifications keep arriving after logout.
 
 **Deploy needed:** admin frontend only.
 
+### S3 — a fresh login got wiped by another tab (HIGH, 2026-09-07)
+
+**Real example:** the store laptop has yesterday's admin panel still open in a tab nobody looks at.
+You open a new tab, type your email and password, the server accepts it ("Admin logged in") — and
+half a second later you are back on the login screen, as if nothing happened. Log in again: same
+thing. The only workaround was closing the other tab first.
+
+**What was happening:** the S1 cross-tab fix above made the old tab react to your login by logging
+*itself* out — correct. But that reaction was a normal state change, so it also **wrote** an
+"empty session" into the shared browser storage, on top of the session you had just created. Your
+brand-new tab then saw that empty write, believed its own session had been ended somewhere else,
+and logged you out. A tab reacting to a login was cancelling that login.
+
+**Fix (`haper-admin` frontend only):**
+- The reacting tab now clears itself **without writing** to the shared key. It is only catching up
+  with what another tab already wrote, so it has nothing new to store.
+- Each login/logout is stamped with the time it happened (`sessionStamp`, stored alongside the
+  token). A tab now ignores any shared-storage update that is **older** than its own session, so an
+  old tab can never invalidate a newer one.
+
+**Note on what the reacting tab shows afterwards:** the reacting tab's bounce to `/login` is a full
+page load, so it re-boots into whatever session is genuinely in browser storage — i.e. the admin who
+just logged in. It lands on the login *form* (there is no redirect-if-already-logged-in), but
+navigating to `/` from there shows that other admin's panel. That is how localStorage sessions have
+always worked here (right-click "Open in new tab" keeps the login); it is not new and not a
+regression.
+
+| Step | ✅ Expected |
+|---|---|
+| Tab A left logged in as admin X (yesterday's tab). In Tab B, log in as admin Y | **Tab B lands on the dashboard and stays there.** Tab A logs itself out and goes to `/login` |
+| Repeat with Tab A sitting on a *different* page (`/orders`, `/pos`) | Same: Tab B stays signed in, Tab A bounces to `/login` |
+| After the above, in Tab B: `localStorage.getItem('haper-admin-auth')` | Holds admin **Y's** token, not an empty session |
+| After Tab A bounces to `/login`, navigate Tab A to `/` | ✅ It shows admin **Y's** panel (the browser genuinely holds Y's session; same as opening a new tab). **This is expected, not a bug** — do not raise it |
+| Regression check on S1: two tabs as the same admin, Tab B clicks **Logout** | Tab A still jumps to `/login` and the old session still does **not** come back |
+| Regression check: one tab only, normal login | Unchanged — straight to the dashboard |
+| In Tab B's console: `localStorage.clear()`, then look at Tab A | Tab A logs out and goes to `/login`; clicking around Tab A never puts the old token back into storage |
+| An admin who has not refreshed since this shipped (old stored session, no stamp) logs out in that stale tab | ⚠️ A **newly opened** tab will *not* pick up that logout (the stale tab writes no stamp). Refreshing the stale tab once fixes it — see the transitional note below. Everything else behaves as before |
+
+❌ **Fail signals:** login bounces back to `/login` with the correct password; Tab B ends up logged
+out while Tab A stays alive; a logout in one tab stops reaching the other tabs (that would mean S1
+regressed).
+
+**Known transitional detail:** a tab that is still running the *pre-fix* build (opened before the
+deploy and never refreshed) writes sessions without a stamp, and a new tab will ignore its logout.
+Refreshing that old tab once closes the gap; it cannot happen at all after everyone reloads.
+
+**Also covered by the same fix:**
+- An emptied or corrupt storage key (`localStorage.clear()`, a garbled blob) carries no stamp, so it
+  is **never** ordered away — a logged-in tab still logs out on it, and cannot write its old token
+  back afterwards.
+- A new login/logout is always stamped above the highest stamp this tab has ever held **or seen from
+  another tab**, so a backwards clock correction (NTP step, someone changing the system time — on
+  this machine or on the one the other tab is on) can't make a genuine transition look stale.
+  Example: another tab's clock is set years ahead and it publishes a huge stamp; this tab reacts,
+  keeps its own older stamp (a reaction is not a new session), and the next real sign-in here is
+  still stamped above that huge number, so the other tab cannot ignore it.
+- Logging out on a tab that already has no session writes nothing, so it can't stomp a live tab.
+
+**Automated cover:** `src/utils/authSync.test.ts` (20, incl. a full login-with-a-noisy-sibling-tab
+flow, three built through the real `login()` so the tab is genuinely stamped, and three clock-drift
+cases pinning the stamp floor for a hydrated stamp, a merely observed stamp, and one observed by a
+logged-out tab from a logged-out sibling — the case where nothing is acted on at all) plus
+`src/stores/authStore.logout.test.ts` (6) — `npx vitest run src/utils/authSync.test.ts
+src/stores/authStore.logout.test.ts`.
+
+**Deploy needed:** admin frontend only. After deploying, ask admins with a tab open since before the
+deploy to refresh it once (that closes the transitional gap above).
+
 ---
 
 ## Troubleshooting
