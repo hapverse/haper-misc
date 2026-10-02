@@ -705,3 +705,18 @@ Spec: `docs/plans/reopen-as-cod-ui-spec.md`. Plan: `docs/plans/reopen-as-cod.md`
 
 > **Automated coverage:** `src/pages/Orders/convertToCod.test.ts` (11-row visibility matrix, validation, copy, every error code, permission + role-gate mirror + audit labels, refund-status badge, code-less 404), `src/pages/Orders/OrderDetailsModal.cod.test.tsx` (modal integration: happy path, idempotent repeat, 409, 503 retry, wallet-short, lock-while-busy with real Tab/Esc focus checks, network recovery), `src/components/common/ConfirmDialog.test.tsx` (new optional props, defaults unchanged).
 > **Not built (spec-optional):** note flash animation after switching; "Switched from online" line on the Orders list row (needs the list API to carry `codConversion`).
+
+---
+
+## Thermal receipt: fee lines, "Amount to collect", discount and wallet
+
+23. Order details > Print (thermal) on an **open cash-on-delivery** app order (item ₹43, delivery ₹20, platform ₹1, total ₹64).
+   ✅ Receipt shows Subtotal ₹43, **Platform Fee ₹1**, **Delivery Fee ₹20**, Total ₹64, then **"Amount to collect: ₹64"** and "Payment Mode: Cash On Delivery". Fee rows with ₹0 are not printed.
+   ❌ No fee rows, or "Paid Amount" on an order where nothing has been collected yet.
+24. Same order after it is **closed (delivered)**: ✅ "Paid Amount: ₹64". A Razorpay order that is not captured yet and not closed prints **"Payment pending"**; captured/closed prints "Paid Amount".
+25. **Coupon order** (2 items at ₹100, coupon ₹20 off, fees ₹21): ✅ Subtotal ₹200, **Discount: -₹20**, fees, Total ₹201 — rows add up to the total.
+26. **Wallet-coin COD order** (items ₹300, wallet coins ₹40, total ₹260): ✅ **Wallet used: -₹40**, Total ₹260, "Amount to collect: ₹260" (wallet is never subtracted twice).
+27. **POS** sale receipt: ✅ unchanged — "Paid Amount", "Payment Mode: Cash", same fee/total lines as before.
+   ❌ Any receipt whose Total differs from the order's price. If the printed rows cannot add up to the total, the extra rows are skipped and only the total is shown.
+
+> **Automated coverage:** `src/utils/thermalPrint.test.ts` ("fees, discount, wallet and payment line").
