@@ -720,3 +720,16 @@ Spec: `docs/plans/reopen-as-cod-ui-spec.md`. Plan: `docs/plans/reopen-as-cod.md`
    ❌ Any receipt whose Total differs from the order's price. If the printed rows cannot add up to the total, the extra rows are skipped and only the total is shown.
 
 > **Automated coverage:** `src/utils/thermalPrint.test.ts` ("fees, discount, wallet and payment line").
+
+---
+
+## Warehouse transfer: changing the target store clears the items
+
+28. Warehouse > Transfers > New transfer: pick a source warehouse and a target store, add an item, then switch **Target store** to a different store.
+   ✅ The item list is cleared and a warning toast says "Target store changed, so the items were cleared. Add them again for <store name>." Search now shows the new store's items; Create with an empty list says "Add at least one item".
+   ❌ The old items stay, and Create fails with "Item <id> not found in target store".
+   Same thing when you change the **Source warehouse** and the current target store is not served by it (target jumps to the first served store): items cleared + the same toast.
+29. Pick the **same** target store again, or change the source warehouse when the current target store is still served: ✅ items stay, no toast.
+30. **Edit** a CREATED transfer: ✅ items load as before, nothing is cleared, no toast (warehouse and store are read-only).
+
+> **Automated coverage:** `src/pages/Warehouse/TransfersPage.test.tsx` ("target store change clears stale lines").
