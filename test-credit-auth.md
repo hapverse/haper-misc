@@ -226,6 +226,16 @@ field the server needs (which platform the phone is) was silently left out of th
 
 3. Device count fails.
    - Open Profile → Devices while offline. If the count fails to load, **Expect:** a dash "—" appears instead of "0" or a stale number.
+   - **Web:** the dash shows only while the count is still loading; once the request actually
+     fails the card reads "Couldn't check" ("जाँच नहीं पाए"). Either way it is never "0 devices".
+   - **Web:** the Home header also falls back to "Your shop" ("आपकी दुकान") for a shop with no
+     name saved — it used to show the app's own name, "HaperCredit".
+   - **iPhone:** behaves exactly like web — a dash while the count is still loading, "Couldn't
+     check" once it fails, and the Home header falls back to "Your shop" instead of
+     "HaperCredit". One extra thing worth checking on iPhone: switch to हिन्दी and look at the
+     counts again. The iPhone picks the singular/plural wording from the **in-app** language,
+     not the phone's own language, so "1 ग्राहक से" and "4 ग्राहकों से" must both read correctly
+     even on a phone whose system language is English.
 
 ### ✅ Phone number format
 
