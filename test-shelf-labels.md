@@ -226,17 +226,40 @@ block must be unaffected. **Log in as a store admin** and try each address by ha
    (50 × 30 mm)"** — the heading **names the selected format** and changes if you pick
    50 × 25 mm (see §O).
 
-### ✅ C. Scope picker has four modes
-Under **1. Choose what to print**:
+### ✅ C. Scope picker has five modes
+Under **1. Choose what to print** (cards wrap; 5 cards, same style):
 1. **All items** — every catalog item in this store.
-2. **Active only** — only items with status **ACTIVE**. (This is the **default** on load.)
+2. **Active only** — only items with status **ACTIVE**.
 3. **In stock** — only items that are **ACTIVE _and_ have stock** (`quantity > 0`). An active item
    sitting at **0 stock is excluded**, and an inactive item with stock is excluded too. (Backed by
    the catalog filter `status=ACTIVE&stockState=instock`.)
-4. **Selected specific items** — a **search-and-multi-select** picker: type in the search box, tick
+4. **With shelf** (**NEW**) — only items that have a real shelf assigned (catalog filter
+   `shelf=with`). It does **not** also require Active: an inactive item with a shelf is included.
+5. **Selected specific items** — a **search-and-multi-select** picker: type in the search box, tick
    one or many items on the left; they collect in the **Selected** list on the right (remove with
-   the trash icon, or **Clear all**).
+   the trash icon, or **Clear all**). This is the **default** on load (**changed** from Active only).
 - **Expect:** switching mode re-computes the counts and preview for that mode.
+
+### ✅ C1. Page opens on "Selected specific items"
+1. Open **Catalog → Shelf Labels** with a store selected.
+2. **Expect:** **Selected specific items** is highlighted, the item picker is visible, **Will print
+   = 0**, **Print** and **Download** are disabled, no error banner, no skipped warning.
+
+### ✅ C2. "With shelf" prints only items that have a shelf
+1. Click **With shelf**. **Expect:** counts/preview load; every preview label shows a real shelf
+   code (none blank / "Default Shelf"-style placeholders if those count as no shelf in Items).
+2. Compare **Will print** with Items list → shelf filter **With shelf** (same barcoded items).
+3. **View skipped** (if any) lists only with-shelf items missing a barcode. Print / .csv contain only
+   with-shelf items.
+4. ❌ An item with no shelf must not appear anywhere.
+
+### ✅ C3. Other options still work
+Click **All items**, **Active only**, **In stock**, **Selected specific items** in turn: counts,
+preview, skipped list, Print and Download behave as in §D–§H for each.
+
+### ✅ C4. Layout with 5 cards
+Wide window: cards share rows evenly; narrow window (~400 px): cards wrap to 1–2 per row, no
+horizontal scroll, text not clipped.
 
 ### ✅ D. Pre-flight summary (counts before you print)
 1. In **2. Review & print**, look at the two numbers:
