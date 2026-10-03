@@ -237,6 +237,19 @@ For **Item** re-editing, if an admin clicks on a pending thumbnail (before savin
 4. **Click "Use this photo"**.
    - ✅ **Expect:** the output image has the **source's aspect** (landscape), not forced to 1:1 square.
 
+### ✅ I-b. Free + rotate follows the rotated shape (regression)
+
+1. **Open the editor with a tall portrait image** (e.g., 768×1365 px) and click **Free**.
+   - ✅ **Expect:** the crop box is portrait and frames the whole picture.
+2. **Click Rotate Right (90°)**.
+   - ✅ **Expect:** the picture is now landscape and the crop box becomes **landscape too**, framing the whole rotated picture (not a narrow portrait strip).
+3. **Rotate again (180°), then again (270°).**
+   - ✅ **Expect:** the box is portrait at 180°, landscape at 270°, always matching the picture.
+4. **Switch to 1:1 after rotating, then back to Free; click Reset.**
+   - ✅ **Expect:** 1:1 is always square; Free re-matches the rotated shape; Reset returns to 1:1 at 0°.
+5. **Rotate 90° in Free and click "Use this photo".**
+   - ✅ **Expect:** the saved image is landscape and matches the preview (same framing, rotation, brightness/contrast).
+
 > **Note:** "Free" is a **known simplification** — it switches to the source image's aspect but does not allow you to freely resize the crop box. If you want to crop tightly in Free mode, use the Zoom slider to zoom in and reposition.
 
 ---
