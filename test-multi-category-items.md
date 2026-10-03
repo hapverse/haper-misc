@@ -462,3 +462,62 @@ deliberately putting it back).
 - Coupons do not target categories at all, so nothing in the coupon engine changes.
 - Rollback is a plain revert of `discount.utils.js` + the admin controller; rules fall back to
   primary-only matching and nothing needs a data change.
+
+## ✅ Empty-taxonomy blind spot — FIXED (2026-10-03)
+**What broke (live):** the Phase-3 customer read paths derived category membership from
+`taxonomy[]` ALONE, with no fallback to the singular `category`/`subCategory` (which is still
+maintained as the derived primary). One item whose `taxonomy` was empty was therefore invisible
+to every browse screen — and because `$unwind: "$taxonomy"` DROPS a taxonomy-less document,
+the whole customer category list came back **empty** with no error anywhere. A `taxonomy: []`
+row is produced by anything that never got backfilled, any write path that bypasses the
+normaliser, and by a fresh environment.
+
+**Code fix — the three read paths now mean "tagged in `taxonomy`, OR (only when `taxonomy` is
+empty) filed under the legacy singular fields":**
+- `packages/shared/utils/taxonomy.utils.js` — new `LEGACY_TAXONOMY_FILTER`
+  (`{"taxonomy.0": {$exists: false}}`, matches empty AND absent) + `EFFECTIVE_TAXONOMY_STAGE`
+  (an `$addFields` that rewrites an empty `taxonomy` into the one pair the singular fields
+  imply, so every downstream stage stays taxonomy-only).
+- `packages/shared/repositories/category.repository.js` — `getAll` membership pass (~L165) and
+  `getStoreCategoryMeta`'s counts/cheapest-price pipeline (~L258): `EFFECTIVE_TAXONOMY_STAGE`
+  inserted before the `$unwind`.
+- `packages/shared/repositories/sub-category.repository.js` — `getAll` tile membership (~L136):
+  the pre-unwind `$match` widened to `$or` [taxonomy `$elemMatch`, legacy `category._id`], then
+  the effective stage before the `$unwind` + pairing re-match.
+- `packages/shared/repositories/item.repository.js` — `getPaginatedItemsBasedOnCatSubCat`
+  (~L621): each of the three branches becomes a two-arm `$or`; the cat+sub branch keeps the
+  pair AND-ed on both arms.
+- `packages/admin/src/routes/discount-rule/controller.js` (~L86, same bug class, admin-only):
+  the affected-items preview was taxonomy-only while the live engine
+  (`discountUtils.collectItemCategoryIds`) also unions `category._id`, so a legacy item WOULD be
+  discounted live but was missing from the preview's blast-radius / below-cost warnings.
+
+The fallback is scoped to the empty case deliberately — a genuine future taxonomy bug on a
+backfilled item still surfaces instead of being masked. **It is temporary:** once
+`scripts/migrations/verify-taxonomy-go-gate.js` reports zero un-backfilled rows in every
+environment, delete the two helpers and their callers.
+
+**Migration runner:** `backfill-item-taxonomy.js` and `build-taxonomy-index.js` were never
+registered in `scripts/migrations/run.js`, so `npm run migrate:apply` silently skipped them —
+a fresh environment, or anyone trusting "I ran the migrations", reproduces the incident. They
+are now steps **13** (backfill) and **14** (index) with the same `writes: true` / dry-run-by-
+default shape as every other step (`--apply` is only passed through when the runner gets it).
+
+### Tests
+`packages/user/__tests__/multi-category-items.test.js` → new **section C** (5 tests), each
+fixture created via `ItemModel.create` directly (NOT `createItems`, whose normaliser would
+derive a taxonomy and destroy the state under test):
+1. legacy row appears in the category list with `itemsCount` / `subCategoriesCount` /
+   `cheapestPrice`; 2. its sub-category tile renders; 3. the drill-down returns it AND a cross
+pair stays empty; 4. same when the `taxonomy` KEY is absent entirely (`$unset`); 5. the money
+check — a backfilled multi-tagged item alongside a legacy one behaves exactly as before, and
+the legacy row does NOT leak into a category it was never filed under.
+❌ Mutation-verified: disabling the two helpers turns exactly those 5 red and leaves the 12
+pre-existing Phase-3 tests green.
+
+### Manual check (dev, after deploy)
+1. Pick any item, `$unset` its `taxonomy` on DEV only → it must still show in its category
+   list, its sub-category tile, and the drill-down, and its tile counts must include it.
+2. Category list on the app is non-empty for a store that has items. Every other item's
+   position/counts unchanged vs before the deploy.
+3. Admin → discount rule preview for that category still lists the item.
