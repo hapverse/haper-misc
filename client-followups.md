@@ -536,6 +536,18 @@ barcode, the picker can only "confirm without scan" until a super admin / wareho
 
 ---
 
+## CH-14 · Return to Supplier (warehouse stock back to the supplier + refund tracking) — backend DONE (dev, uncommitted 2026-10-05); admin IN PROGRESS
+
+| Client | What | Status |
+|---|---|---|
+| **backend** | New `/admin/supplier-returns` (list+stats, `/bill-context`, `/lots`, detail, create, refunds + undo, not-expected, reopen, cancel). Supplier change on a bill with live returns → 409 `BILL_HAS_SUPPLIER_RETURNS`. Verify Bill list rows gain `returnedUnits`, `returnCreditExpected`, `returnCreditReceived` (default 0). Ledger types `SUPPLIER_RETURN_OUT` / `SUPPLIER_RETURN_REVERSAL`. **Deploy BEFORE admin.** | ✅ done (dev) |
+| **admin** | Supplier Returns page + modals (spec Phase 2), Ledger type labels, Verify Bill badge/Return button + Recall button (Phase 3). Hardening (2026-10-06): send optional `creditOverrideNote` (≤500) — required when a line's credit price is 0 / below lot cost (`CREDIT_OVERRIDE_NOTE_REQUIRED`, `details.lineIndex`); show Detail `creditOverrideNote`; handle `LOT_NOT_ON_BILL` (bill mode, per line) and `VOID_NEEDS_SUPER_ADMIN` (403 on Undo refund); optional list filter `voidedRefunds=true`; Verify Bill return totals sit on a bill's first row only. | ⏳ |
+| **android / ios / web / delivery / picker** | Not affected (warehouse-only, admin API only). | — |
+
+**Test guides:** `test-supplier-return.md` (API), `test-supplier-return-ui.md` (admin UI). Spec: `docs/plans/supplier-return-final-spec.md`.
+
+---
+
 ## Future changes
 **This file is COMPLETE for inventory-v2** — CH-1…6 cover every shipped backend change (Phases 0–4) with a
 per-client checklist + exact endpoints, and CH-7 covers the one optional P9 item (with its backend prerequisite).
