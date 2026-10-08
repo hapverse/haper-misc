@@ -1435,3 +1435,73 @@ Tests: `packages/admin/__tests__/transfer-return-store-initiated.test.js` (107),
 `transfer-return-backcompat.test.js` (11), `transfer-return-secondary-read.test.js` (1,
 3-node replica set) and `packages/cron/__tests__/return-approval-expiry.test.js` (7) —
 126, green.
+
+---
+
+## 17. Restock on cancel / refund / edit returns to the ORIGINAL lot  *(fix, 2026-10-08; backend deploy only)*
+
+Before: a cancelled unit went back into the shared `LEGACY` lot at the item's **average** cost,
+and the lot's cost was re-averaged. Real case: `LEGACY` 4 @ ₹45 + lot `B` 30 @ ₹5; cancelling 1
+unit sold from `LEGACY` turned `LEGACY` into ₹37.94.
+Now: each unit returns to the lot it was sold from and **that lot's cost is not changed**.
+Order lines record `batchAllocations [{batchNo, qty, costPrice, expiresAt}]` at sale time.
+Applies to: admin cancel, user cancel, refund, `payment.failed`, unpaid-order release,
+order edit, reopen, rider "undelivered".
+
+**Setup (batch-ON store):** item with `LEGACY` 4 @ ₹45 and lot `B` 30 @ ₹5. Item cost shows the
+average rollup. Check **Stock detail modal → Batches (lots)** (and the Batch view) before and after.
+
+### 17a. Cancel a batch-ON order
+1. Place an order for 1 unit that FEFO takes from `LEGACY` (@45). Note the lots: `LEGACY` 3, `B` 30.
+2. Admin cancels the order.
+   ✅ `LEGACY` = **5 @ ₹45**. Cost stays **₹45** (not 37.94). `B` still 30 @ ₹5.
+   ✅ Item cost = (5×45 + 30×5) / 35 = **₹10.71** (the usual average rollup, only recomputed).
+   ✅ Ledger shows the restock row against `LEGACY`, not a new lot.
+3. Repeat with a user-side cancel.
+   ❌ `LEGACY` cost changes to anything but 45.
+   ❌ The unit shows up in a different lot (e.g. `B`).
+- ✅ Order with units from **two lots** (e.g. 4 from `LEGACY` + 2 from `B`): cancel returns 4 to `LEGACY`, 2 to `B`.
+- ✅ Same item on **two lines** of one order: cancel returns the right total to each lot (no double return).
+
+### 17b. A line with NO allocations (older order)
+1. Use an order placed before the batch switch-on / before this change (no `batchAllocations` on the line).
+2. Cancel it.
+   ✅ A lot named **`RST-<orderId>`** is created, qty = the cancelled units, cost = the line's
+   sale-time cost (item cost if that is 0).
+   ❌ Units go into `LEGACY` or the lot cost is averaged with another lot.
+
+### 17c. Batches-OFF store
+1. Store with batch tracking OFF. Place and cancel an order.
+   ✅ Stock count goes up by the quantity. No lot rows appear. Behaviour unchanged.
+
+### 17d. Replay / double-cancel does nothing
+1. Cancel an already-cancelled order (second click, or call the endpoint twice).
+   ✅ Stock and lots unchanged the second time.
+2. `payment.failed` webhook: send it twice for the same order (replay).
+   ✅ Stock restored **once**. The "stock restored" flag is saved in the same transaction as the
+   restock, so a crash or replay between the two cannot restock twice.
+
+### 17e. HOLD / RECALL lot stays blocked
+1. Put the original lot on HOLD (or RECALL via Batch Recall). Cancel an order sold from it.
+   ✅ Units go back into that lot and the lot is **still blocked from sale** (not sellable, not in FEFO).
+   ❌ The returned units become sellable.
+
+### 17f. Other paths (quick checks)
+- ✅ Unpaid-order release: the released order's units return to their original lots.
+- ✅ Refund of a delivered order's items: same lot return.
+- ✅ Rider "undelivered": each line restocks to its original lot (no transaction, unchanged by design).
+- ✅ A lot whose cost was **corrected after the sale** (see `test-bad-lot-cost-repair.md`): the returned unit takes the lot's **current** (corrected) cost.
+- Order edit and reopen restocks: see `test-order-edit-cost-snapshot.md`.
+
+### 17g. What to look at in the admin batch view
+Stock detail modal → **Batches (lots)**, before and after each step:
+- qty of the original lot rose by exactly the returned units;
+- its cost column did **not** move;
+- no unexpected new lot (only `RST-<orderId>` for lines without allocations);
+- blocked lots still show their HOLD / RECALL status;
+- Available = sum of the lots.
+
+### 17h. Known limits (do not report as bugs)
+- An item **added** during an order edit still takes `costPrice` from the item master, while its lot trail records the real lots.
+- **Transfer-cancel-return**, **warehouse** paths and **supplier returns** were not migrated.
+- Design only, not built: no-averaging / batch-specific CP (see `docs/plans/restock-to-original-batch.md` section 8).

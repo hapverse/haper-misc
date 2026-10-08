@@ -108,3 +108,7 @@ Items that already have cost 0 from earlier receipts are NOT changed by the depl
 Repair them separately with the user-run script
 `haper-backend/scripts/migrations/repair-store-item-cost-from-transfers.js`
 (run the dry-run first and review the plan; node 24).
+
+## Related
+A lot recorded at the wrong cost (and the orders sold from it): see `test-bad-lot-cost-repair.md`.
+Cancel / refund / edit restocks now return units to the lot they were sold from, at that lot's cost: see `test-inventory.md` section 17.

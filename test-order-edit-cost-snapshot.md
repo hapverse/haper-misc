@@ -65,17 +65,19 @@ This is the **same class of bug** as the discount-snapshot one fixed earlier in 
 4. **Free gift lines** now also carry `iId`, `gstRate` and `batchAllocations` — that branch was
    forwarding only `costPrice`.
 
-### One deliberate limitation (worth knowing before you test)
+### Update 2026-10-08: batch trail and restock on edit
 
-For the line whose **quantity actually changed**, `batchAllocations` is **kept as it was** and not
-re-calculated. The real stock ledger *is* moved correctly, but it does not report back which batches
-it took. So after a quantity change, that one line's batch list can show a unit count that no longer
-matches the new quantity.
+The old limitation (a quantity change left the line's `batchAllocations` stale) is **closed**.
+`costPrice` on the line stays the **frozen sale-time value** in every case below. Only the
+allocation trail and the stock move.
 
-Concrete: oil goes 1 → 2, the batch row still says `qty: 1`. The **cost price is right**, the
-**profit number is right**, only the batch breakdown on that one line is incomplete. This is a
-deliberate follow-up, not an oversight — fixing it properly is an inventory-accounting change.
-It is still far better than the old behaviour, which deleted the batch list entirely.
+- **Reduce / remove:** units go back to the line's allocation lots, **last allocation first**.
+  The line's remaining allocation list is saved, so a later cancel returns only what is left (no double return).
+- **Increase / add:** the lots taken (FEFO, earliest expiry first) are recorded in the line's `batchAllocations`.
+- **Reopen:** same as increase. Lots taken are recorded; `costPrice` unchanged.
+- A returned unit takes its lot's **current** cost; the lot's cost is never averaged.
+- Lines with no allocations (older orders) return to a per-order lot `RST-<orderId>`; batches-OFF stores just get a quantity increment.
+- Full restock rules and checks: `test-inventory.md` section 17.
 
 ---
 
@@ -99,13 +101,15 @@ cost, GST rate and product code are unchanged.
 1. Edit the same order and **add a third item**. Save.
 
 **Expected:** the two original lines keep their original cost. The new line picks up the current
-catalog cost — **not** 0.
+catalog cost — **not** 0. On a batch-ON store its `batchAllocations` lists the real lots taken (FEFO),
+and those lots' qty drops. (Known limit: `costPrice` still comes from the item master, not the lot.)
 
 ### ✅ 3. Remove an item from an order
 
 1. Edit and **remove** one line. Save.
 
 **Expected:** the surviving line keeps its cost, batch list, GST rate and product code exactly.
+The removed line's units go back to **their original lot** (batch view: that lot's qty up, cost unchanged).
 
 ### ✅ 4. Picker: mark an item out of stock
 
@@ -128,6 +132,28 @@ cost data. This is the most common path — it happens without any admin involve
 **Expected:** the gift line is still attached, still ₹0 to the customer, and still carries its cost
 (a free gift costs us money — it must show in COGS).
 
+### ✅ 7. Reduce a quantity, then cancel (batch-ON store)
+
+1. Order 3 units of one item (lots e.g. `LEGACY` 2 @ ₹45 + `B` 1 @ ₹5). Edit: reduce 3 → 1.
+   ✅ Last allocation first goes back: `B` +1, then `LEGACY` +1. Costs of both lots unchanged.
+   ✅ The line's `batchAllocations` now totals 1 unit; line `costPrice` unchanged.
+2. Cancel the order.
+   ✅ Only the **1 remaining** unit returns to its lot. Total returned across edit + cancel = 3, never 4.
+
+### ✅ 8. Increase a quantity, then cancel
+
+1. Edit 1 → 3. ✅ `batchAllocations` total = 3 (FEFO lots). Line `costPrice` unchanged. Lots' qty down by 2 more.
+2. Cancel. ✅ All 3 units return to the lots recorded; lot costs unchanged.
+
+### ✅ 9. Reopen, then cancel
+
+1. Reopen a cancelled order. ✅ Lots taken (FEFO) are recorded in the line's `batchAllocations`; line `costPrice` unchanged.
+2. Cancel again. ✅ Units return to those recorded lots, once.
+
+### ✅ 10. Batches-OFF store
+
+1. Edit reduce/remove/increase. ✅ Plain quantity change, no lot rows, cost fields still carried.
+
 ---
 
 ## Edge cases
@@ -137,7 +163,7 @@ cost data. This is the most common path — it happens without any admin involve
 | Same item appears twice on one order | Lines are merged; the merged line keeps the **first** line's cost, matching how salePrice and discounts already merge |
 | Edit an order that was created **before** this fix, with cost already zeroed | Cost stays 0 — **this fix stops new damage, it does not repair old orders** (see below) |
 | Store with batch tracking **off** | `batchAllocations` is empty both before and after — nothing to carry, no change |
-| Quantity changed on a line | `costPrice` correct; that line's batch breakdown may not add up to the new quantity (known limitation above) |
+| Quantity changed on a line | `costPrice` frozen; batch breakdown now adds up to the new quantity (2026-10-08) |
 | Line removed entirely | Line disappears; no orphan cost data left behind |
 
 ---
@@ -148,4 +174,4 @@ cost data. This is the most common path — it happens without any admin involve
    batch trail. Reported profit for those days is over-stated. Repairing them needs a separate
    backfill decision — the sale-time cost is genuinely lost and would have to be estimated from the
    item master or the goods-receipt history. **Not** attempted here.
-2. **Exact batch re-allocation on a quantity change** (the known limitation above).
+2. **Item added during an edit** still takes `costPrice` from the item master (its lot trail records the real lots).
