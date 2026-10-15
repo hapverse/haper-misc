@@ -529,3 +529,116 @@ grapheme-cluster count) with a live counter, and "Yes, Cancel" / "No" buttons in
 **Deployment order:** Deploy backend first, then roll out the Android app. The backend accepts both old and new requests, so there is no breaking change.
 
 **Rollback:** If a rollback is needed, disable the Android build release. Existing old builds and new builds (if downloaded before rollback) will keep using the old DELETE endpoint, which keeps working unchanged on the backend.
+
+---
+
+## Admin: Refund box in Order Details  (2026-10-15)
+
+Shows every refund on an order in the admin **Order Details** modal, at the bottom of the
+**Payment** card. Before this, the admin only saw a refund as a note. Now the admin sees where the
+money went and whether the wallet ledger has it.
+
+**Area:** Admin → Orders → open an order → Order Details modal → Payment card → **Refund** box.
+**Backend:** `packages/admin/src/routes/order/helper.js` (`annotateRefunds`), called by `getOrder`
+in `packages/admin/src/routes/order/controller.js`. Response only: nothing is written to the DB.
+**Frontend:** `haper-admin/src/pages/Orders/RefundBox.tsx`, rendered from `OrderDetailsModal.tsx`.
+
+### What the box shows (one block per refund)
+
+| Line | Example (fictional) | When |
+|---|---|---|
+| Headline | `₹250 → Haper Wallet` | refund was credited to the wallet |
+| Headline | `₹250 → Original payment (UPI/bank)` | refund went back to the gateway (see Edge cases) |
+| Headline | `₹250 · Destination not recorded` | no wallet log and no gateway id. Note: `·`, no arrow |
+| Green chip | `Credited` | wallet destination and the wallet ledger entry exists |
+| Red chip | `Not found in wallet ledger` | wallet destination but the ledger entry is missing |
+| Line 2 | `<date and time, IST> · Customer request` | date, then reason label |
+| Line 3 | `Note: Auto-refund on user cancel (pay pay_TEST0001)` | only when the refund has a note |
+
+Reason labels: `CUSTOMER_REQUEST` → Customer request · `ADMIN_CANCEL` → Admin cancellation ·
+`OUT_OF_STOCK` → Item out of stock · `QUALITY_ISSUE` → Quality issue · `OTHER` → Other.
+Any other code shows as-is.
+
+Amounts use Indian grouping (₹1,250). This box is the **refund** reason. The customer's cancel
+reason (section above) is a different field and is not shown here.
+
+### Prerequisites
+
+- Backend (`packages/admin`) deployed to dev **before** haper-admin. See Deploy.
+- Dev customer account that pays by UPI. Test order in this guide: `TEST-ORD-1001`, ₹250 (fictional).
+- Admin login on the dev admin panel (`damin.haper.in`).
+
+### ✅ A. Prepaid UPI order cancelled by the customer → credited to wallet
+
+1. In the dev customer app, place a ₹250 UPI order (`TEST-ORD-1001`).
+2. Within 60 seconds of placing, tap **Cancel**. Expect 200. (A paid order keeps the 60-second rule.)
+3. Admin → Orders → open `TEST-ORD-1001`.
+4. ✅ Refund box appears under the Payment card with:
+   - `₹250 → Haper Wallet`
+   - green chip `Credited`
+   - date and time, then `Customer request`
+   - `Note: Auto-refund on user cancel (pay pay_TEST0001)`
+5. ✅ Customer app wallet shows the ₹250 credit for this order.
+
+### ✅ B. Order with no refund → no box
+
+1. Admin → open any order that was never cancelled or refunded (e.g. a delivered COD order).
+2. ✅ No "Refund" box at all. The Payment card looks exactly as before this change.
+
+### ✅ C. Old order without the new fields
+
+Use an order refunded before this deploy.
+
+1. Admin → open that order.
+2. ✅ Refund with a wallet log (most old refunds): `₹X → Haper Wallet`, green `Credited` chip, reason and date still show.
+3. ✅ Refund with no wallet log and no gateway id: `₹X · Destination not recorded`, no chip. No crash, no blank box.
+4. ✅ Order whose refund list is empty: no box (same as B).
+
+If no old refund exists on dev, say so in the test notes. The backend unit test covers the same mapping (see Automated checks).
+
+### ❌ D. Refund whose wallet log is missing → red chip
+
+Needs a refund whose `walletLogId` points at a log that does not exist. Do not hand-edit dev data for
+this. Ask the backend owner to prepare one on dev.
+
+1. Admin → open that order.
+2. ❌ Should NOT show a green `Credited` chip. Expect `₹X → Haper Wallet` with red `Not found in wallet ledger`.
+
+### ✅ E. Admin cancellation label
+
+1. Admin cancels a paid order and picks a cancel reason that maps to `ADMIN_CANCEL` (mapping in
+   `haper-admin/src/pages/Orders/cancelReasons.ts`). The refund goes to the wallet.
+2. ✅ Refund box line 2 reads `Admin cancellation`, not the raw code `ADMIN_CANCEL`.
+
+## Edge cases / notes
+
+- **Gateway refunds show "Destination not recorded" today.** The code reads `razorpayRefundId` /
+  `gatewayRefundId` if a refund has one, but no code path writes them yet. A refund that went back to
+  the card or UPI therefore shows `Destination not recorded`, not `Original payment`. Expected until
+  gateway refunds are stored.
+- **Admin only.** The customer app does not show this box. The order list does not show it either;
+  only the order details call (`getOrder`) carries the annotation.
+- **Deploy order matters.** If haper-admin ships first, the box still renders, but the `Credited` and
+  `Not found in wallet ledger` chips never appear, because the frontend cannot read the ledger itself.
+- **Old haper-admin builds** ignore the new response fields. Nothing breaks.
+- **Frontend fallback:** if a response has no `destination`, a refund with a `walletLogId` shows as
+  WALLET, and a refund without one shows as UNKNOWN. The backend always sends `destination`, so the
+  fallback only matters for stale data.
+
+## Automated checks
+
+- `haper-admin/src/pages/Orders/RefundBox.test.tsx`: 5/5 pass (vitest), run 2026-10-15.
+- `haper-backend/packages/admin/__tests__/order-refund-destination.test.js`: covers WALLET found,
+  WALLET missing, UNKNOWN, ORIGINAL_PAYMENT, and the no-refund pass-through. **Not verified on
+  2026-10-15:** jest failed while loading `jsonwebtoken` (`buffer-equal-constant-time` error on
+  require) before any test ran. This is a local environment problem. Re-run in CI or on a machine
+  where the admin suite is known green.
+
+## Deploy (admin refund box)
+
+1. **Backend first:** deploy `packages/admin` (haper-backend) to dev. This adds `destination` and
+   `walletCredited` to the order-detail response.
+2. **Then haper-admin:** deploy the admin frontend to dev (`damin.haper.in`).
+3. No app release needed.
+
+**Rollback:** reverting haper-admin hides the box. The extra backend fields are harmless and can stay.
