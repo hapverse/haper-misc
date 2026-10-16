@@ -65,7 +65,9 @@ Test data: a paid print order (OPEN) for the store, example file `sample_notes.p
 
 **Print service card (Store Config)**
 16. Super admin with a store selected: card editable. Store admin / manager: inputs disabled with "Only a super admin can change prices.". Super admin on "All stores": "Select a specific store". ✅
-17. Bad values blocked inline before save: price over 100, 3 decimals, minimum order over 10000, delivery charge over 1000, GST over 100, max pages over 200, max copies over 50, sides over 5000, SAC not 4-8 digits. ✅/❌
+17. Bad values blocked inline before save: price over 100, 3 decimals, minimum order over 10000, delivery charge over 1000, GST over 100, max pages over 200, max copies over 50, sides over 5000. ✅/❌
+17b. SAC code shows as read-only text (998912) with note "Fixed: service code for printing"; no input to edit it, and Save never sends sacCode (check the PUT payload in the network tab). ✅
+17c. API: PUT /admin/print/config/:storeId with `sacCode` returns 400 (not editable); GET still returns sacCode 998912 even if a store had another value stored. ✅
 18. Turning the switch ON with a zero price -> "Set the prices first." and Save disabled. ✅
 19. Save sends only changed fields; toast "Print settings saved". Two admins editing at once: second save shows the "changed by someone else" message with Reload; typed values stay until reload. ✅/❌
 20. Prices changed here only affect new quotes; existing paid orders keep their price. ✅
