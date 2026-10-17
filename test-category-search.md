@@ -71,8 +71,10 @@ the old name-only result is returned — never a 500.
 - Name hits capped at 100 and category products at 300 for a category-matched query.
 - Hindi/local words (`atta`, `doodh`) only match if the category name contains them (synonyms are a follow-up).
 - Up to 8 chips per query.
+- Taxonomy-only everywhere: items with an empty `taxonomy` (not backfilled) are excluded from search, the aisle list AND the home category/sub-category tiles, so tile counts always match the aisle. Backfill before expecting such items to show.
 - Pages are fixed slices of one list. If stock changes between two page loads (an item sells out or comes back), the list shifts: one product can be skipped or show twice. The apps drop the repeat by id. Expected, not a bug.
 - A category or sub-category set to inactive in admin can still match for up to ~60 s (same delay as a rename). Turning it off for one store is instant.
+- Items with an EMPTY taxonomy list are not listed in the aisle or in category search (the old fallback to the single category field was removed). Invariant: every active item has at least one taxonomy entry (admin create requires a category, edits reject an empty taxonomy, backfill migration). Dev and the prod dump have 0 such items.
 
 ## Automated tests (in-memory Mongo)
 `cd haper-backend/packages/user && NODE_ENV=test npx jest --coverage=false --forceExit __tests__/item-search-category.test.js __tests__/category-search.utils.test.js`
