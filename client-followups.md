@@ -536,6 +536,31 @@ barcode, the picker can only "confirm without scan" until a super admin / wareho
 
 ---
 
+## CH-14 · Return to Supplier (warehouse stock back to the supplier + refund tracking) — backend DONE (dev, uncommitted 2026-10-05); admin IN PROGRESS
+
+| Client | What | Status |
+|---|---|---|
+| **backend** | New `/admin/supplier-returns` (list+stats, `/bill-context`, `/lots`, detail, create, refunds + undo, not-expected, reopen, cancel). Supplier change on a bill with live returns → 409 `BILL_HAS_SUPPLIER_RETURNS`. Verify Bill list rows gain `returnedUnits`, `returnCreditExpected`, `returnCreditReceived` (default 0). Ledger types `SUPPLIER_RETURN_OUT` / `SUPPLIER_RETURN_REVERSAL`. **Deploy BEFORE admin.** | ✅ done (dev) |
+| **admin** | Supplier Returns page + modals (spec Phase 2), Ledger type labels, Verify Bill badge/Return button + Recall button (Phase 3). Hardening (2026-10-06): send optional `creditOverrideNote` (≤500) — required when a line's credit price is 0 / below lot cost (`CREDIT_OVERRIDE_NOTE_REQUIRED`, `details.lineIndex`); show Detail `creditOverrideNote`; handle `LOT_NOT_ON_BILL` (bill mode, per line) and `VOID_NEEDS_SUPER_ADMIN` (403 on Undo refund); optional list filter `voidedRefunds=true`; Verify Bill return totals sit on a bill's first row only. | ⏳ |
+| **android / ios / web / delivery / picker** | Not affected (warehouse-only, admin API only). | — |
+
+**Test guides:** `test-supplier-return.md` (API), `test-supplier-return-ui.md` (admin UI). Spec: `docs/plans/supplier-return-final-spec.md`.
+
+---
+
+## CH-15 · Search finds category / sub-category names ("biscuit" → Biscuits & Cookies) — backend DONE (dev, uncommitted 2026-10-17); Android chips PENDING
+
+| Client | What | Status |
+|---|---|---|
+| **backend** | `GET /user/item/search/:query/:page`: `data.item` now also lists the matched categories' in-stock products after the name hits; page 2+ no longer repeats page 1 (skip fix). New **always-present** `data.categories` array (`[]` when no match and on page 2+): `{ categoryId, subCategoryId\|null, name, parentName\|null, icon\|null, itemCount }`. `item` / `cart` / `isFallback` unchanged. Env `SEARCH_CATEGORY_MATCH` (default on). | ✅ done (dev) |
+| **android** | Old builds get the fix with no update (they render `data.item`). New build: chip row from `data.categories` (model fields ALL nullable), tap → aisle with the sub-category pre-selected. Plan `plans/category-search-plan.md` A1–A4, design `design-search-category-chips.md`. | ⏳ |
+| **ios / web** | Same contract; ignore `categories` until chips are built. iOS dedupes by id on append; web loads page 1 only, so it needs no dedupe until it adds paging. | ⏳ later |
+| **admin / delivery / picker** | Not affected. | — |
+
+**Test guide:** `test-category-search.md`.
+
+---
+
 ## Future changes
 **This file is COMPLETE for inventory-v2** — CH-1…6 cover every shipped backend change (Phases 0–4) with a
 per-client checklist + exact endpoints, and CH-7 covers the one optional P9 item (with its backend prerequisite).
