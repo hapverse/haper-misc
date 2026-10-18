@@ -4,8 +4,16 @@ Needs (in order): backend deployed (print routes + order `orderType`/`print` lin
 Use a dev account with a saved address and (for 12) some wallet balance. All prices below are the defaults: Rs 2/side single, Rs 1.50 double, minimum Rs 20, delivery Rs 20.
 
 ## Entry points
-1. Store with print ON -> Home shows a "Print documents" card under the wallet strip; Stationery category shows the same card above the products; both open the Print screen. ✅
-2. Store with print OFF, or `GET /user/print/config` failing (airplane mode then reopen) -> no card on Home or Stationery. ✅
+1. Store with print ON -> Home shows one row directly under the promo carousel: the wallet card on the left and a square pale-mint "Print" tile on the right, same height. Tapping the tile opens the Print screen. ✅
+1a. Home row details (Android, print ON):
+    - Wallet card: subtitle "Invite a friend, earn rewards on their orders" stays on one line and ends in "…" when space runs out; chevron sits at the right edge of the card. ✅
+    - Print tile: square, pale mint, dark green print icon and "Print" label. ✅
+    - Press feedback: the tile shrinks slightly on press (scale 0.96, about 120 ms) with a ripple. ✅
+    - Reduced motion (Developer options > Animator duration scale = Off): the row has no entrance animation; it appears at once. ✅
+    - TalkBack order: wallet card first (reads its balance title), then "Print documents, button". ✅
+    - 200% font scale: the wallet card grows taller, the tile grows with it and stays square, and the "Print" label is neither clipped nor wrapped. ✅
+1b. Stationery category (print ON) shows one full-width card above the products: pale mint, dark green print icon, "Print documents" with the line "Upload a PDF or photo. We print it and deliver it.", and a chevron. Tapping it opens the Print screen. ✅
+2. Store with print OFF, or `GET /user/print/config` failing (airplane mode then reopen) -> no Print tile on Home: the wallet card runs full width with no empty gap, and Stationery shows no Print card. Automated: `WalletPrintRowTest` (print-off case). ✅
 3. Switch store (address change) to a print-OFF store while on the Print screen with a file -> "Printing isn't available at your location yet" + Back to home; the draft is deleted (check `GET /user/print/jobs/:id` -> 404/EXPIRED). ✅
 4. Orders screen / Order detail of a print order on an OLD build -> shows "B&W print · name · N sides", no image, no crash. (separate old-build check)
 
