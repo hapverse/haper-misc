@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>haper-admin - Size groups</title>
+<style>
+:root{--bg-primary:#0a0a0a;--bg-secondary:#1a1a1a;--bg-panel:#242424;--text-primary:#fff;--text-secondary:#a0a0a0;--accent-primary:#5b57e8;--accent-text:#a5b4fc;--accent-soft:rgba(91,87,232,.16);--accent-border:rgba(91,87,232,.45);--danger:#ef4444;--success:#22c55e;--border-color:#333;--warning-text:#fbbf24;--warning-soft:rgba(217,119,6,.14);--warning-border:rgba(251,191,36,.4);--radius-md:8px;--bar:#2a2a2a}
+[data-theme=light]{--bg-primary:#f4f5f7;--bg-secondary:#fff;--bg-panel:#fff;--text-primary:#111827;--text-secondary:#6b7280;--accent-text:#4f46e5;--accent-soft:rgba(91,87,232,.10);--accent-border:rgba(91,87,232,.3);--success:#16a34a;--border-color:#e5e7eb;--warning-text:#92400e;--warning-soft:rgba(217,119,6,.10);--warning-border:rgba(180,83,9,.4);--bar:#e5e7eb}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg-primary);color:var(--text-primary);font:14px system-ui,-apple-system,Segoe UI,sans-serif}
+.ctrl{display:flex;gap:6px;flex-wrap:wrap;padding:8px 16px;background:var(--bg-panel);border-bottom:1px solid var(--border-color);align-items:center;font-size:12px;color:var(--text-secondary)}
+.ctrl button{font-size:12px}
+.page{max-width:1080px;margin:0 auto;padding:20px 16px 60px}
+h1{margin:0;font-size:1.4rem}.sub{margin:.25rem 0 0;color:var(--text-secondary);font-size:.85rem}
+.ph{display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-wrap:wrap;margin-bottom:1.1rem}
+.card{background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:10px;padding:1rem;margin-bottom:12px}
+button{font:inherit;cursor:pointer}
+.btn{padding:.5rem .85rem;border-radius:8px;border:none;background:var(--accent-primary);color:#fff;font-size:.8rem;font-weight:500}
+.btn.ghost{background:transparent;border:1px solid var(--border-color);color:var(--text-secondary)}
+.btn.danger{background:#ef4444}.btn[disabled]{opacity:.45;cursor:not-allowed}
+.btn:focus-visible,input:focus-visible,select:focus-visible,tr:focus-visible{outline:2px solid var(--accent-primary);outline-offset:2px}
+input,select{width:100%;padding:.55rem .7rem;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-primary);color:var(--text-primary);font-size:.85rem}
+input[aria-invalid=true]{border-color:var(--danger)}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;padding:.55rem .7rem;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;color:var(--text-secondary);border-bottom:1px solid var(--border-color)}
+td{padding:.55rem .7rem;font-size:.85rem;border-bottom:1px solid var(--border-color)}
+.r{text-align:right}
+tbody tr.g{cursor:pointer}tbody tr.g:hover{background:var(--accent-soft)}
+.pill{padding:.15rem .5rem;border-radius:999px;font-size:.7rem;font-weight:600;border:1px solid}
+.p-ok{color:var(--success);border-color:color-mix(in srgb,var(--success) 40%,transparent);background:color-mix(in srgb,var(--success) 12%,transparent)}
+.p-warn{color:var(--warning-text);border-color:var(--warning-border);background:var(--warning-soft)}
+.p-off{color:var(--text-secondary);border-color:var(--border-color)}
+.th{width:26px;height:26px;border-radius:6px;background:var(--bar);display:inline-block;margin-right:-6px;border:2px solid var(--bg-secondary);vertical-align:middle}
+.sk{height:14px;border-radius:6px;background:var(--bar);animation:p 1.2s infinite}@keyframes p{50%{opacity:.5}}
+.bn{border:1px solid var(--warning-border);background:var(--warning-soft);color:var(--warning-text);border-radius:8px;padding:.6rem .8rem;font-size:.8rem;margin-bottom:12px}
+.bn.err{border-color:var(--danger);color:var(--danger);background:color-mix(in srgb,var(--danger) 10%,transparent)}
+.chip{display:inline-block;background:var(--accent-soft);color:var(--accent-text);border-radius:999px;padding:.1rem .55rem;font-size:.7rem;margin:2px 3px 2px 0}
+.ov{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:50;padding:1rem}
+.md{background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:10px;width:880px;max-width:100%;max-height:92vh;overflow-y:auto;padding:1rem;animation:rise .15s ease-out}
+@keyframes rise{from{opacity:0;transform:translateY(4px)}}@media(prefers-reduced-motion:reduce){.md{animation:none}}
+.md h3{margin:0;font-size:1.05rem}
+.mh{display:flex;justify-content:space-between;align-items:center;margin-bottom:.8rem}
+.lab{font-size:.74rem;color:var(--text-secondary);margin:.7rem 0 .25rem;display:block}
+.res{border:1px solid var(--border-color);border-radius:8px;max-height:150px;overflow:auto}
+.res div{display:flex;gap:.6rem;align-items:center;padding:.4rem .6rem;border-bottom:1px solid var(--border-color);font-size:.82rem}
+.res div:last-child{border:0}.res .why{color:var(--danger);font-size:.72rem}.res .dis{opacity:.55}
+.res .nm{flex:1}
+.err-row td{background:color-mix(in srgb,var(--danger) 8%,transparent)}
+.err-row td:first-child{box-shadow:inset 3px 0 0 var(--danger)}
+.em{color:var(--danger);font-size:.74rem;margin-top:3px}
+.sum{border:1px solid var(--danger);border-radius:8px;padding:.5rem .8rem;margin:.7rem 0;font-size:.8rem;color:var(--danger)}
+.sum ul{margin:.25rem 0 0 1rem;padding:0}
+.wn{border:1px solid var(--warning-border);background:var(--warning-soft);color:var(--warning-text);border-radius:8px;padding:.5rem .8rem;margin:.7rem 0;font-size:.8rem}
+.ft{display:flex;justify-content:space-between;align-items:center;margin-top:1rem;gap:1rem;flex-wrap:wrap}
+.ib{background:none;border:1px solid var(--border-color);color:var(--text-secondary);border-radius:6px;width:28px;height:28px}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--text-primary);color:var(--bg-primary);padding:.55rem 1rem;border-radius:8px;font-size:.82rem;z-index:99}
+.mid{text-align:center;padding:2.2rem 1rem}.mid h3{margin:.3rem 0}.mid p{color:var(--text-secondary);margin:.3rem 0 1rem}
+@media(max-width:900px){.hide-s{display:none}}
+</style></head><body>
+<div class="ctrl"><b style="color:var(--text-primary)">Mock controls:</b>
+<button class="btn ghost" onclick="st('ok')">Normal</button><button class="btn ghost" onclick="st('loading')">Loading</button><button class="btn ghost" onclick="st('empty')">Empty</button><button class="btn ghost" onclick="st('error')">Error</button><button class="btn ghost" onclick="st('denied')">Permission denied</button>
+<button class="btn ghost" onclick="th()">Light / dark</button></div>
+<div class="page" id="app"></div><div id="layer"></div>
+<script>
+var CAT={atta:'Atta & Flour',oil:'Oils',sugar:'Sugar & Salt'};
+var ITEMS=[
+ {id:1,n:'Madhur Sugar 500 g',b:'Madhur',c:'sugar',w:500,pr:20,s:'active'},
+ {id:2,n:'Madhur Sugar 1 kg',b:'Madhur',c:'sugar',w:1000,pr:75,s:'active'},
+ {id:3,n:'Madhur Sugar 5 kg',b:'Madhur',c:'sugar',w:5000,pr:355,s:'active'},
+ {id:4,n:'Madhur Sugar 1 kg x 2 pack',b:'Madhur',c:'sugar',w:2000,pr:150,s:'active'},
+ {id:5,n:'Tata Sugar 1 kg',b:'Tata',c:'sugar',w:1000,pr:82,s:'active'},
+ {id:6,n:'Madhur Jaggery 1 kg',b:'Madhur',c:'oil',w:1000,pr:70,s:'active'},
+ {id:7,n:'Madhur Sugar 250 g (old)',b:'Madhur',c:'sugar',w:250,pr:11,s:'inactive'},
+ {id:8,n:'Madhur Sugar 10 kg',b:'Madhur',c:'sugar',w:10000,pr:700,s:'active',grp:'Sugar (bulk)'}];
+var GROUPS=[
+ {id:'g1',name:'Sugar (Madhur)',brand:'Madhur',cat:'sugar',ids:[1,2,3],def:2,status:'Active',upd:'24 Oct 2026'},
+ {id:'g2',name:'Atta (Aashirvaad)',brand:'Aashirvaad',cat:'atta',ids:[],cnt:5,def:null,status:'Active',upd:'22 Oct 2026'},
+ {id:'g3',name:'Mustard oil (Fortune)',brand:'Fortune',cat:'oil',ids:[],cnt:3,def:null,status:'Needs attention',upd:'20 Oct 2026'}];
+var SUG=[{name:'Basmati rice (India Gate)',brand:'India Gate',cat:'atta',ids:[1,2,3],w:0},{name:'Toor dal (Tata Sampann)',brand:'Tata Sampann',cat:'atta',ids:[1,2,4],w:1}];
+var state='ok',modal=null,toastT='',sugOpen=true,dismissed={};
+var theme='dark';
+function th(){theme=theme=='dark'?'light':'dark';document.documentElement.setAttribute('data-theme',theme)}
+function st(s){state=s;modal=null;render()}
+function toast(m){toastT=m;render();setTimeout(function(){toastT='';render()},2200)}
+function it(id){return ITEMS.filter(function(x){return x.id==id})[0]}
+function per100(i){return (i.pr/i.w*100).toFixed(1)}
+function lbl(i){return i.w>=1000&&i.w%1000==0?i.w/1000+' kg':i.w+' g'}
+function render(){
+ var a=document.getElementById('app'),h='<div class="ph"><div><h1>Size groups</h1><p class="sub">Sizes of one product shown as one card in the app</p></div>'+(state=='denied'?'':'<button class="btn" onclick="openM()" '+(state=='loading'?'disabled':'')+'>New size group</button>')+'</div>';
+ if(state=='denied')h+='<div class="card mid"><h3>You do not have access to Size groups</h3><p>Ask a super admin or warehouse manager.</p><button class="btn ghost">Back to dashboard</button></div>';
+ else if(state=='error')h+='<div class="bn err" role="alert">Could not load size groups (network error). <button class="btn ghost" style="margin-left:8px" onclick="st(\'ok\')">Retry</button></div>';
+ else if(state=='loading')h+=[1,2,3,4,5,6].map(function(){return '<div class="card"><div class="sk" style="width:'+(40+Math.random()*40|0)+'%"></div></div>'}).join('');
+ else if(state=='empty')h+='<div class="card mid"><h3>No size groups yet</h3><p>Group items like Sugar 500 g / 1 kg / 5 kg so customers see one card.</p><button class="btn" onclick="openM()">New size group</button> <button class="btn ghost" onclick="st(\'ok\')">or review '+SUG.length+' suggestions</button></div>';
+ else{
+  h+='<div class="bn">Size variants are off for all stores. Customers will not see groups yet. Turn it on per store in Stores.</div>';
+  var vis=SUG.filter(function(s,i){return !dismissed[i]});
+  if(vis.length){h+='<div class="card"><button class="btn ghost" style="border:0;padding:0;color:var(--text-primary);font-weight:600" onclick="sugOpen=!sugOpen;render()" aria-expanded="'+sugOpen+'">'+(sugOpen?'&#9662;':'&#9656;')+' Suggestions - '+vis.length+' candidate groups found</button>';
+   if(sugOpen){h+='<p class="sub">Suggestions are never saved automatically.</p>';SUG.forEach(function(s,i){if(dismissed[i])return;h+='<div style="display:flex;gap:.8rem;align-items:center;padding:.6rem 0;border-top:1px solid var(--border-color);flex-wrap:wrap"><div style="flex:1;min-width:200px"><b>'+s.name+'</b><div class="sub">'+s.brand+' &middot; '+CAT[s.cat]+'</div>'+s.ids.map(function(x){return '<span class="chip">'+lbl(it(x))+'</span>'}).join('')+(s.w?'<span class="chip" style="background:var(--warning-soft);color:var(--warning-text)">'+s.w+' warning</span>':'')+'</div><button class="btn" onclick="review('+i+')">Review &amp; create</button><button class="ib" aria-label="Dismiss" onclick="dismissed['+i+']=1;render()">x</button></div>'})}
+   h+='</div>'}
+  h+='<div class="card" style="padding:.4rem 0 0"><div style="display:flex;gap:.6rem;padding:.6rem .8rem"><input placeholder="Search by name or brand" aria-label="Search groups" style="max-width:300px"></div><table><thead><tr><th>Group</th><th class="hide-s">Brand</th><th class="hide-s">Category</th><th class="r">Sizes</th><th>Default</th><th>Status</th><th class="r hide-s">Updated</th><th></th></tr></thead><tbody>';
+  GROUPS.forEach(function(g){var n=g.ids.length||g.cnt;h+='<tr class="g" tabindex="0" onclick="openM(\''+g.id+'\')" onkeydown="if(event.key==\'Enter\')openM(\''+g.id+'\')"><td><span class="th"></span><span class="th"></span><span class="th"></span> &nbsp;<b>'+g.name+'</b></td><td class="hide-s">'+g.brand+'</td><td class="hide-s">'+CAT[g.cat]+'</td><td class="r">'+n+' / 8</td><td>'+(g.def?lbl(it(g.def)):'-')+'</td><td><span class="pill '+(g.status=='Active'?'p-ok':'p-warn')+'">'+g.status+'</span></td><td class="r hide-s">'+g.upd+'</td><td class="r"><button class="ib" aria-label="Dissolve '+g.name+'" title="Dissolve" onclick="event.stopPropagation();dis(\''+g.id+'\')">&#8856;</button></td></tr>'});
+  h+='</tbody></table></div>'}
+ a.innerHTML=h;
+ document.getElementById('layer').innerHTML=(modal?modalH():'')+(toastT?'<div class="toast" role="status">'+toastT+'</div>':'');
+}
+function openM(id){var g=GROUPS.filter(function(x){return x.id==id})[0];modal={kind:'edit',name:g?g.name:'',ids:g&&g.ids.length?g.ids.slice():[],def:g?g.def:null,labels:{},q:'',ack:false,saving:false,title:g?'Edit size group - '+g.name:'New size group',conflict:false};if(g&&!g.ids.length){modal.ids=[];modal.note='Mock: this group has no sample members; add items below.'}render()}
+function review(i){var s=SUG[i];modal={kind:'edit',name:s.name,ids:s.ids.slice(),def:null,labels:{},q:'',ack:false,title:'New size group (from suggestion)',warn:s.w};render()}
+function dis(id){var g=GROUPS.filter(function(x){return x.id==id})[0];modal={kind:'dis',g:g,ack:false};render()}
+function closeM(){if(modal&&modal.kind=='edit'&&modal.dirty&&!confirm('Discard changes?'))return;modal=null;render()}
+function base(m){var f=it(m.ids[0]);return f?{b:f.b,c:f.c}:null}
+function problems(m){
+ var P=[],bs=base(m),seen={};
+ if(!m.name.trim())P.push({t:'Name is required.'});
+ if(m.ids.length<2)P.push({t:'Need at least 2 sizes.'});
+ if(m.ids.length>8)P.push({t:'More than 8 sizes. Remove '+(m.ids.length-8)+'.'});
+ m.ids.forEach(function(id){var i=it(id);
+  if(bs&&i.b!=bs.b)P.push({id:id,t:'Brand differs: '+i.n+' is "'+i.b+'", this group is "'+bs.b+'". Fix the brand in Product Master or remove it.'});
+  if(bs&&i.c!=bs.c)P.push({id:id,t:'Category differs: '+i.n+' is in '+CAT[i.c]+', this group is '+CAT[bs.c]+'.'});
+  if(i.grp)P.push({id:id,t:i.n+' is already in group "'+i.grp+'". Open that group or remove it here.'});
+  if(i.s!='active')P.push({id:id,t:i.n+' is inactive and cannot be a size. Remove it or reactivate it in Product Master.'});
+  var l=(m.labels[id]!=null?m.labels[id]:lbl(i)).trim().toLowerCase();
+  if(!l)P.push({id:id,t:'Label is required (max 20 characters).'});
+  else if(seen[l])P.push({id:id,t:'Label "'+l+'" is used twice.'});seen[l]=1});
+ return P}
+function warns(m){var W=[];m.ids.forEach(function(id){var i=it(id);if(/x 2 pack/.test(i.n))W.push(i.n+' looks like a multipack. Check it belongs with single packs.');});
+ var ps=m.ids.map(function(id){return +per100(it(id))});if(ps.length>2){var med=ps.slice().sort(function(a,b){return a-b})[ps.length>>1];m.ids.forEach(function(id){var p=+per100(it(id));if(Math.abs(p-med)/med>0.5)W.push('Rs '+p+' per 100 g vs about Rs '+med+' for the others - check the pack size of '+it(id).n+'.')})}
+ return W}
+function modalH(){
+ if(modal.kind=='dis'){var g=modal.g,n=g.ids.length||g.cnt;return '<div class="ov"><div class="md" style="width:460px" role="alertdialog" aria-label="Dissolve group"><div class="mh"><h3>Dissolve "'+g.name+'"?</h3></div><p>The '+n+' sizes become separate products again. In the app, customers will see '+n+' separate cards. Carts that contain these sizes are not affected.</p><label style="display:flex;gap:.5rem;align-items:center;font-size:.85rem"><input type="checkbox" style="width:auto" '+(modal.ack?'checked':'')+' onchange="modal.ack=this.checked;render()"> I understand</label><div class="ft"><span></span><span><button class="btn ghost" onclick="modal=null;render()">Cancel</button> <button class="btn danger" '+(modal.ack?'':'disabled')+' onclick="modal=null;GROUPS=GROUPS.filter(function(x){return x.id!=\''+g.id+'\'});toast(\'Group dissolved\')">Dissolve group</button></span></div></div></div>'}
+ var m=modal,P=problems(m),W=warns(m),bs=base(m),blocked=P.length>0||(W.length>0&&!m.ack);
+ var h='<div class="ov"><div class="md" role="dialog" aria-label="'+m.title+'"><div class="mh"><h3>'+m.title+'</h3><button class="ib" aria-label="Close" onclick="closeM()">x</button></div>';
+ if(m.conflict)h+='<div class="bn err" role="alert">Someone changed this group. <button class="btn ghost" onclick="m=null">Reload</button></div>';
+ h+='<label class="lab" for="nm">Group name (shown in the app, e.g. Sugar)</label><input id="nm" value="'+m.name.replace(/"/g,'&quot;')+'" oninput="modal.name=this.value;modal.dirty=1;lv()" '+(m.name.trim()?'':'aria-invalid="true"')+'>';
+ h+='<div style="margin-top:.6rem;font-size:.8rem;color:var(--text-secondary)">Brand: '+(bs?'<span class="chip">'+bs.b+'</span>':'<i>set by first item</i>')+' &nbsp; Category: '+(bs?'<span class="chip">'+CAT[bs.c]+'</span>':'<i>set by first item</i>')+' &nbsp; Sizes: <b style="color:'+(m.ids.length>8?'var(--danger)':'inherit')+'">'+m.ids.length+' / 8</b></div>';
+ if(P.length)h+='<div class="sum" role="alert"><b>'+P.length+' problem'+(P.length>1?'s':'')+' to fix before saving</b><ul>'+P.map(function(p){return '<li>'+p.t+'</li>'}).join('')+'</ul></div>';
+ if(W.length)h+='<div class="wn"><b>Please check</b><ul style="margin:.25rem 0 .4rem 1rem;padding:0">'+W.map(function(w){return '<li>'+w+'</li>'}).join('')+'</ul><label><input type="checkbox" style="width:auto" '+(m.ack?'checked':'')+' onchange="modal.ack=this.checked;render()"> I checked these, save anyway</label></div>';
+ h+='<label class="lab" for="q">Add items (search by name or barcode)</label><input id="q" placeholder="Try: sugar" value="'+m.q+'" oninput="modal.q=this.value;sr()"><div class="res" id="res">'+resH(m)+'</div>';
+ h+='<label class="lab">Sizes (order here = order customers see)</label><table><thead><tr><th>#</th><th>Item</th><th>Label</th><th class="r">Rs / 100 g</th><th>Default</th><th></th></tr></thead><tbody>';
+ if(!m.ids.length)h+='<tr><td colspan="6" style="color:var(--text-secondary)">No items yet. Search above to add the first size.</td></tr>';
+ m.ids.forEach(function(id,k){var i=it(id),pe=P.filter(function(p){return p.id==id}),lv_=m.labels[id]!=null?m.labels[id]:lbl(i);
+  h+='<tr class="'+(pe.length?'err-row':'')+'"><td>'+(k+1)+'</td><td>'+i.n+'<div class="em">'+pe.map(function(p){return '&#9888; '+p.t}).join('<br>')+'</div></td><td style="width:120px"><input value="'+lv_+'" maxlength="20" aria-label="Label for '+i.n+'" oninput="modal.labels['+id+']=this.value;modal.dirty=1;lv()" '+(lv_.trim()?'':'aria-invalid="true"')+'></td><td class="r">'+per100(i)+'</td><td><input type="radio" name="def" style="width:auto" aria-label="Default '+i.n+'" '+(m.def==id?'checked':'')+' onchange="modal.def='+id+'"></td><td class="r" style="white-space:nowrap"><button class="ib" aria-label="Move up '+i.n+'" onclick="mv('+k+',-1)">&#8593;</button> <button class="ib" aria-label="Move down '+i.n+'" onclick="mv('+k+',1)">&#8595;</button> <button class="ib" aria-label="Remove '+i.n+'" onclick="rm('+id+')">x</button></td></tr>'});
+ h+='</tbody></table><label style="font-size:.8rem;color:var(--text-secondary)"><input type="radio" name="def" style="width:auto" '+(m.def==null?'checked':'')+' onchange="modal.def=null"> No default size (app uses the first in-stock size)</label>';
+ h+='<div class="ft"><span style="font-size:.8rem;color:'+(P.length?'var(--danger)':'var(--text-secondary)')+'">'+(P.length?P.length+' problem'+(P.length>1?'s':''):'Ready to save')+'</span><span><button class="btn ghost" onclick="closeM()">Cancel</button> <button class="btn" '+(blocked||m.saving?'disabled':'')+' title="'+(blocked?'Fix the problems above first':'')+'" onclick="save()">'+(m.saving?'Saving...':'Save group')+'</button></span></div></div></div>';
+ return h}
+function resH(m){var q=m.q.toLowerCase();var bs=base(m);var L=ITEMS.filter(function(i){return !q||i.n.toLowerCase().indexOf(q)>=0});
+ return L.map(function(i){var why='';if(m.ids.indexOf(i.id)>=0)why='Already added';else if(m.ids.length>=8)why='Group is full (8)';else if(i.grp)why='Already in "'+i.grp+'"';else if(i.s!='active')why='Inactive';else if(bs&&i.b!=bs.b)why='Different brand ('+i.b+')';else if(bs&&i.c!=bs.c)why='Different category ('+CAT[i.c]+')';
+  return '<div class="'+(why?'dis':'')+'"><span class="nm">'+i.n+'<br><small style="color:var(--text-secondary)">'+i.b+' &middot; '+CAT[i.c]+'</small></span>'+(why?'<span class="why">'+why+'</span>':'<button class="btn ghost" onclick="add('+i.id+')">Add</button>')+'</div>'}).join('')||'<div>No items match.</div>'}
+function lv(){var a=document.activeElement,id=a&&a.id,pos=a&&a.selectionStart;render();if(id){var e=document.getElementById(id);if(e){e.focus();try{e.setSelectionRange(pos,pos)}catch(x){}}}}
+function sr(){var r=document.getElementById('res');if(r)r.innerHTML=resH(modal)}
+function add(id){modal.ids.push(id);modal.dirty=1;render()}
+function rm(id){modal.ids=modal.ids.filter(function(x){return x!=id});modal.dirty=1;render()}
+function mv(k,d){var j=k+d,a=modal.ids;if(j<0||j>=a.length)return;var t=a[k];a[k]=a[j];a[j]=t;modal.dirty=1;render()}
+function save(){modal.saving=true;render();setTimeout(function(){var n=modal.name;modal=null;toast('Saved "'+n+'"')},600)}
+render();
+</script></body></html>
