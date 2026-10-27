@@ -561,6 +561,42 @@ barcode, the picker can only "confirm without scan" until a super admin / wareho
 
 ---
 
+## CH-16 · Size variants: one card per product, sizes picked in a sheet — backend built (dev, UNCOMMITTED); admin built; Android built (NOT device-tested, NOT released)
+**Plan:** `haper-backend/docs/plans/product-size-variants.md` (build log §16). **Test guide:** `test-product-size-variants.md` (Backend, Admin, Android sections).
+**Plain summary:** a store can group the same product in several sizes (e.g. "Premium Sugar" 500 g / 1 kg / 5 kg).
+In the customer app that group shows as **one card**. Tapping ADD opens a size sheet. Old apps and stores with the
+switch OFF see exactly what they saw before.
+
+**Three things must all be true** for a customer to see grouped cards: (1) the store's **Size variants** switch is ON
+(`config.variantsEnabled`, default OFF); (2) the app sends `x-client-features: variants-v1`; (3) the group is active and has
+at least 2 sizes in stock at that store.
+
+| Client | What to do | Status |
+|---|---|---|
+| **backend (do FIRST)** | Additive only: `variantGroup` + `variants` keys on list/search/detail items when the header is sent and the switch is ON; the 3 raw keys (`variantGroupId`, `variantLabel`, `variantRank`) are stripped for legacy responses. New admin routes `/admin/variant-group`. Migration scripts (`build-variant-indexes.js`, `report-variant-candidates.js`, `seed-variant-groups.js`). | 🟡 built on `dev`, **UNCOMMITTED** (plan §16). Item-create inheritance (L3) **NOT built** |
+| **admin** | "Size groups" screen (create / edit / dissolve, validation and "Save anyway" warnings), **Size variants** switch on the store config, Product Master badge. | ✅ built (lead-reported; not re-checked in this docs pass) |
+| **android** | Sends the header on the main, invoice and print-upload clients (not the token-refresh client). Size sheet, picker-mode cards, de-dup by group on Home/Aisle/Search, "Select Unit" tiles on detail, rail hides same-group items. | 🟡 built, **NOT device-tested, NOT released**. QA steps: `test-product-size-variants.md` Android section |
+| **ios** | Not started. Plan Phase 5 (I1–I7). Needs the Android QA pass first. Never trigger the iOS pipeline. | ⏳ to do |
+| **web** | Not started. Plan Phase 6 (W1–W6). | ⏳ to do |
+| **delivery** | Not affected (riders do not browse items). | — |
+| **picker** | Not affected by the browse change. Barcode and pick flow unchanged by this feature. | — |
+
+**Backend deploy order (dev; from plan §10):**
+0. **Hard step first (user-run, dev DB only):** `node scripts/migrations/build-variant-indexes.js` (dry run), then `--apply`. The cron reconcile change must **not** ship before `items.idx_items_iid` exists.
+1. Backend to dev (cron, admin and user on the same `shared` version), switch **OFF** everywhere. Check old apps on dev are unchanged.
+2. Admin to dev. Then the read-only `report-variant-candidates.js` for the pilot store. Then groups (admin screen, or `seed-variant-groups.js` dry run then `--apply`). Fix brands first.
+3. Turn **Size variants** ON for the **dev store only**. Test with a new Android dev build.
+4. Android → iOS → web. Prod is user-driven; none of this runs on prod without the user.
+
+**Decode-safety (Android / iOS):** the new keys are optional and nullable on the item model (`variantGroup`, `variants`).
+Old builds never send the header, so the server never returns them to them. Still: never declare them non-null.
+
+**Known gaps (decide before Android QA signs off):**
+- Item created by hand in a store (admin item-create) does **not** inherit its size group until re-assigned (L3, plan §16).
+- Detail "related" rail: a grouped card shows as a plain card and ADD adds that size directly. It does **not** open the size sheet (Android code). Intent to confirm.
+
+---
+
 ## Future changes
 **This file is COMPLETE for inventory-v2** — CH-1…6 cover every shipped backend change (Phases 0–4) with a
 per-client checklist + exact endpoints, and CH-7 covers the one optional P9 item (with its backend prerequisite).
