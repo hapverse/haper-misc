@@ -17,9 +17,23 @@ Use a dev account with a saved address and (for 12) some wallet balance. All pri
 3. Switch store (address change) to a print-OFF store while on the Print screen with a file -> "Printing isn't available at your location yet" + Back to home; the draft is deleted (check `GET /user/print/jobs/:id` -> 404/EXPIRED). ✅
 4. Orders screen / Order detail of a print order on an OLD build -> shows "B&W print · name · N sides", no image, no crash. (separate old-build check)
 
+## Empty state (Print screen before a file is picked)
+Spec: `design-print-page-spec.md` (variant A). Android-only; needs only the new Android build (no backend/admin change). All numbers come from `GET /user/print/config` - change them in admin print settings and reopen the screen to check each case.
+E1. Default config -> top to bottom: back arrow + "Print documents", grey rounded printer badge, "Print from your phone", "PDF, JPG or PNG. Up to 20 MB and 200 pages.", "Word file? Save it as PDF first.", lawful-content checkbox, ORANGE "Choose file" (deep orange gradient, white label clearly readable; Continue and Pay buttons stay green), "Black & white, A4. Delivered to your door.", then a "Black & White" card with a big orange "Rs 2 / page" and two small orange pills "Double-sided Rs 1.50 / page" and "A4", then a pale-mint strip with a green "i": "Minimum order Rs 20 · about 10 pages" / "Delivery Rs 20 per order". No colour-print card anywhere, no "Coming soon". ✅
+E2. Small grey lines ("Word file?...", "Tick the box to choose a file.", "Black & white, A4...") are the darker grey (InkSecondary), readable on the light background. ✅
+E3. Single price Rs 1.50, minimum Rs 20 -> "about 14 pages" (always rounded up). Single Rs 3, minimum Rs 20 -> "about 7 pages". ✅
+E4. Double price unset, equal to single, or higher than single -> the "Double-sided" pill is hidden (the "A4" pill stays). ✅
+E5. Delivery charge 0 or unset -> the "Delivery Rs N per order" line is hidden; the strip shows only the minimum line. ✅
+E6. Single price unset or 0 -> the Black & White card is hidden entirely (never "Rs 0"); the strip still shows "Minimum order Rs 20" without "about N pages". Minimum also unset/0 and delivery 0 -> strip hidden too; the rest of the screen (Choose file etc.) still works. ✅
+E7. Config still loading (slow network) -> grey placeholder blocks, including a tall card block and a short strip block, so nothing jumps when prices arrive. ✅
+E8. Config request fails (airplane mode, then open Print) -> "Couldn't load print settings. Retry" (unchanged); Retry with network back shows the full empty state. ❌ expected
+E9. Offline after the screen loaded -> offline banner, Choose file disabled, price card and strip still visible. ✅
+E10. TalkBack: price card reads as one item "Black and white printing, 2 rupees per page. Double-sided 1 rupee 50 paise per page. A4 paper." (not a button); strip reads "Minimum order 20 rupees, about 10 pages. Delivery 20 rupees per order."; order is back -> hero text -> checkbox -> Choose file -> captions -> card -> strip. Automated: `PrintRateCardTest` (connected test). ✅
+E11. Font scale 200% -> the pills wrap onto a new line, the big price is never cut off. Dark theme / rotation -> no crash, card and strip keep their colours. ✅
+
 ## Upload
 5. Tick the lawful box, Choose file, pick a 3-page PDF -> determinate "Uploading... N%", then "Checking your file...", then file card "3 pages · size" + A4 preview strip. ✅
-6. Tap Choose file with the box unticked -> picker does not open, view scrolls to the checkbox. ✅
+6. Tap Choose file with the box unticked -> picker does not open, view scrolls to the checkbox. ✅ Orange button behaves exactly as before (same press feedback, 48dp+ height). Automated: `HaperButtonAmberDeepContrastTest` (white label >= 4.5:1).
 7. JPG and PNG -> 1 page. ✅
 8. Word/text file -> local error "We can only print PDF, JPG or PNG..." (no network call). 25 MB file -> "This file is 25 MB. The limit is 20 MB..." (no network call). ❌ expected
 9. Password-protected PDF -> "We couldn't open this file. If it has a password...". PDF over the page limit -> too-many-pages copy. ❌ expected
@@ -30,6 +44,7 @@ Use a dev account with a saved address and (for 12) some wallet balance. All pri
 12. Change sides / copies / custom pages -> price dims, updates once ~0.3 s after the last change (one `/quote` call, see logcat okhttp BASIC). Copies + disabled at the store max with "Up to N copies". ✅
 13. Pages "1-3, 7" -> thumbnails outside the range dimmed with "Not printed"; "1-99" on a 12-page file -> inline error "Enter pages like 1-3, 7. This file has 12 pages.", Continue disabled, no quote call. ✅
 14. Tiny job (1 page) -> breakdown shows "Minimum order top-up" and "Minimum print order is Rs 20." Cost / margin never appears anywhere. ✅
+14b. Options-screen breakdown ends with "Delivery charge Rs 20" and a bold "Total Rs 40" (4 sides, min top-up case: Printing 8 + top-up 12 + delivery 20); Total equals the sticky bar value. If delivery is 0 the delivery row is hidden but Total still shows. A thin line sits above the Total row on the Options screen. ✅
 15. Quote fails (airplane mode) -> "Couldn't update the price. Retry", Continue disabled, old price kept. ❌/✅
 16. Continue is disabled until: price loaded, range valid, lawful box ticked. Tapping it while only the box is missing scrolls to the box. ✅
 17. Back with a file attached -> "Discard this file?"; Discard calls DELETE (job gone), Keep stays. Remove (X) asks "Remove this file?". Replace picks a new file and deletes the old draft. ✅
