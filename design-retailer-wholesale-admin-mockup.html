@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>haper-admin - Retailers</title>
+<style>
+:root{--bg-primary:#0a0a0a;--bg-secondary:#1a1a1a;--bg-panel:#242424;--text-primary:#fff;--text-secondary:#a0a0a0;--accent-primary:#5b57e8;--accent-text:#a5b4fc;--accent-soft:rgba(91,87,232,.16);--border-color:#333;--danger:#ef4444;--success:#22c55e;--warning-text:#fbbf24;--warning-soft:rgba(217,119,6,.14);--warning-border:rgba(251,191,36,.4);--bar:#2d2d2d}
+[data-theme=light]{--bg-primary:#f4f5f7;--bg-secondary:#fff;--bg-panel:#fff;--text-primary:#111827;--text-secondary:#6b7280;--accent-text:#4f46e5;--accent-soft:rgba(91,87,232,.10);--border-color:#e5e7eb;--success:#16a34a;--warning-text:#92400e;--warning-soft:rgba(180,83,9,.10);--warning-border:rgba(180,83,9,.35);--bar:#e5e7eb}
+*{box-sizing:border-box}body{margin:0;background:var(--bg-primary);color:var(--text-primary);font:14px system-ui,sans-serif}
+.ctrl{display:flex;gap:6px;padding:8px 16px;background:var(--bg-panel);border-bottom:1px solid var(--border-color);flex-wrap:wrap;align-items:center;font-size:12px;color:var(--text-secondary)}
+button{font:inherit;cursor:pointer}.btn{padding:.5rem .85rem;border-radius:8px;border:none;background:var(--accent-primary);color:#fff;font-size:.8rem;font-weight:500}
+.btn.ghost{background:transparent;border:1px solid var(--border-color);color:var(--text-secondary)}.btn.danger{background:var(--danger)}.btn[disabled]{opacity:.45;cursor:not-allowed}
+.page{max-width:1080px;margin:0 auto;padding:20px 16px 60px}h1{margin:0;font-size:1.4rem}.sub{color:var(--text-secondary);font-size:.85rem;margin:.25rem 0 1rem}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--border-color);margin-bottom:12px}.tabs button{background:none;border:0;color:var(--text-secondary);padding:.5rem .8rem;border-bottom:2px solid transparent}.tabs button.on{color:var(--accent-text);border-color:var(--accent-primary)}
+.badge{background:var(--accent-soft);color:var(--accent-text);border-radius:99px;padding:0 .45rem;font-size:.7rem;margin-left:4px}
+input,select,textarea{width:100%;padding:.55rem .7rem;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-primary);color:var(--text-primary);font:inherit;font-size:.85rem}
+table{width:100%;border-collapse:collapse}th{text-align:left;padding:.55rem .7rem;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;color:var(--text-secondary);border-bottom:1px solid var(--border-color)}
+td{padding:.55rem .7rem;font-size:.85rem;border-bottom:1px solid var(--border-color)}.r{text-align:right}tbody tr{cursor:pointer}tbody tr:hover{background:var(--accent-soft)}
+.mono{font-family:ui-monospace,monospace}.pill{padding:.15rem .5rem;border-radius:99px;font-size:.7rem;font-weight:600;border:1px solid}
+.p-w{color:var(--warning-text);border-color:var(--warning-border);background:var(--warning-soft)}.p-ok{color:var(--success);border-color:var(--success)}.p-no{color:var(--danger);border-color:var(--danger)}.p-off{color:var(--text-secondary);border-color:var(--border-color)}
+.ov{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:1rem;z-index:5}
+.md{background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:10px;width:880px;max-width:100%;max-height:92vh;overflow:auto;padding:1rem}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:16px}@media(max-width:760px){.cols{grid-template-columns:1fr}}
+.card{border:1px solid var(--border-color);border-radius:10px;padding:.8rem;margin-bottom:12px}.card h4{margin:0 0 .5rem;font-size:.8rem;text-transform:uppercase;color:var(--text-secondary);letter-spacing:.04em}
+.kv{display:flex;justify-content:space-between;padding:.25rem 0;font-size:.85rem}.kv span:first-child{color:var(--text-secondary)}
+.ph{height:150px;border-radius:8px;background:var(--bar);display:flex;align-items:center;justify-content:center;color:var(--text-secondary)}
+.ck{display:flex;gap:.4rem;font-size:.82rem;margin:.3rem 0;align-items:center}.ok{color:var(--success)}.wn{color:var(--warning-text)}.bad{color:var(--danger)}
+.ft{display:flex;justify-content:flex-end;gap:8px;margin-top:.5rem;border-top:1px solid var(--border-color);padding-top:.8rem}
+.sw{display:flex;justify-content:space-between;align-items:center;padding:.4rem 0;font-size:.85rem;gap:12px}.sw small{display:block;color:var(--text-secondary)}
+.tg{width:36px;height:20px;border-radius:99px;background:var(--bar);position:relative;flex:none}.tg.on{background:var(--accent-primary)}.tg:after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff}.tg.on:after{left:18px}
+.lbl{font-size:.74rem;color:var(--text-secondary);margin:.6rem 0 .25rem;display:block}
+.bn{border:1px solid var(--warning-border);background:var(--warning-soft);color:var(--warning-text);border-radius:8px;padding:.5rem .8rem;font-size:.8rem;margin:.5rem 0}
+.sk{height:14px;border-radius:6px;background:var(--bar);margin:.5rem 0;animation:p 1.2s infinite}@keyframes p{50%{opacity:.5}}
+.tl div{border-left:2px solid var(--border-color);padding:0 0 .7rem .8rem;font-size:.82rem}.tl small{color:var(--text-secondary);display:block}
+</style></head><body>
+<div class="ctrl"><b style="color:var(--text-primary)">Mock:</b>
+<button class="btn ghost" onclick="v('list')">List</button><button class="btn ghost" onclick="v('detail')">Detail (pending)</button><button class="btn ghost" onclick="v('reject')">Reject panel</button><button class="btn ghost" onclick="v('pay')">Payment options (super admin)</button><button class="btn ghost" onclick="v('payro')">Payment options (store admin)</button><button class="btn ghost" onclick="v('packs')">Size group + pack</button><button class="btn ghost" onclick="v('loading')">Loading</button><button class="btn ghost" onclick="document.documentElement.dataset.theme=document.documentElement.dataset.theme=='dark'?'light':'dark'">Light / dark</button></div>
+<div class="page" id="app"></div><div id="layer"></div>
+<script>
+const rows=`<tr><td><b>Madhur Kirana Store</b><br><small style="color:var(--text-secondary)">Test Owner</small></td><td class="mono">10ABCDE1234F1Z5</td><td>Patna Central</td><td><span class="pill p-w">Pending</span></td><td class="r">31 Oct 2026</td><td class="r wn">🕒 3 days</td></tr>
+<tr><td><b>Sample Medical Hall</b><br><small style="color:var(--text-secondary)">Test Owner Two</small></td><td class="mono">10FGHIJ5678K1Z2</td><td>Patna Central</td><td><span class="pill p-w">Pending</span></td><td class="r">30 Oct 2026</td><td class="r">1 day</td></tr>`;
+const list=`<h1>Retailers</h1><p class="sub">Shop owners who buy wholesale</p>
+<div class="tabs"><button class="on">Pending<span class="badge">2</span></button><button>Approved</button><button>Rejected</button><button>Suspended</button><button>All</button></div>
+<div style="display:flex;gap:8px;margin-bottom:10px"><input placeholder="Search shop, owner, phone or GSTIN"><select style="max-width:200px"><option>All stores</option></select></div>
+<table><thead><tr><th>Shop</th><th>GSTIN</th><th>Store</th><th>Status</th><th class="r">Submitted</th><th class="r">Waiting</th></tr></thead><tbody onclick="v('detail')">${rows}</tbody></table>`;
+const gst=`<div class="card"><h4>GST check</h4><div style="font-size:.74rem;color:var(--text-secondary)">Automatic checks - these do not verify the business.</div>
+<div class="ck ok">✓ Format and checksum OK</div><div class="ck ok">✓ State Bihar matches address state</div><div class="ck wn">⚠ PAN part also used by Sample Medical Hall (Pending)</div>
+<div class="kv"><span class="mono">10ABCDE1234F1Z5</span><span><button class="btn ghost">Copy</button> <button class="btn ghost">GST portal ↗</button></span></div>
+<label class="ck"><input type="checkbox" style="width:auto" id="gc" onchange="document.getElementById('ap').disabled=!this.checked"> I checked the legal name and active status on the GST portal</label></div>`;
+function detail(rej){return `<div class="ov"><div class="md"><div style="display:flex;justify-content:space-between"><div><b style="font-size:1.05rem">Madhur Kirana Store</b> <span class="pill p-w">Pending</span><div class="sub" style="margin:.2rem 0 .8rem">Applied 31 Oct 2026 - Patna Central</div></div><button class="btn ghost">✕</button></div>
+<div class="cols"><div><div class="card"><h4>Application</h4><div class="kv"><span>Legal name</span><span>Madhur Kirana Store</span></div><div class="kv"><span>Owner</span><span>Test Owner</span></div><div class="kv"><span>Type</span><span>Kirana</span></div><div class="kv"><span>Phone</span><span>9XXXXXXXXX</span></div><div class="kv"><span>Address</span><span style="text-align:right">Sample Road, Patna 800001</span></div></div>${gst}</div>
+<div><div class="card"><h4>Documents</h4><div class="ph">Shop photo (click to enlarge)</div><div class="ph" style="height:70px;margin-top:8px">GST certificate - Open PDF</div><small style="color:var(--text-secondary)">Private. Don't download or share.</small></div>
+<div class="card"><h4>History</h4><div class="tl"><div><b>Submitted</b><small>31 Oct 2026, 14:05 - customer</small></div></div></div></div></div>
+${rej?`<div class="card"><h4>Reject application</h4><label class="lbl">Reason (required)</label><select><option>Photo isn't clear</option></select><label class="lbl">Note to customer</label><textarea rows="2">The signboard is not readable.</textarea><small style="color:var(--text-secondary)">The customer will see: "Photo isn't clear - The signboard is not readable."</small></div><div class="ft"><button class="btn ghost">Cancel</button><button class="btn danger">Reject application</button></div>`:`<div class="ft"><button class="btn ghost" style="color:var(--danger)" onclick="v('reject')">Reject</button><button class="btn" id="ap" disabled title="Tick the GST check first">Approve</button></div>`}</div></div>`}
+function pay(ro){return `<div class="ov"><div class="md" style="width:520px"><b>Madhur Kirana Store</b> <span class="pill p-ok">Approved</span><div class="card" style="margin-top:12px"><h4>Payment options ${ro?'🔒':''}</h4>
+<div class="sw"><div>Cash on delivery for wholesale orders<small>Retail-only orders keep cash on delivery as normal.</small></div><div class="tg"></div></div>
+<div class="sw"><div>Pay later (credit) [P2]<small>Starts at Rs 0 until a limit is set.</small></div><div class="tg on"></div></div>
+<label class="lbl">Credit limit (Rs)</label><input value="50000" style="text-align:right" ${ro?'disabled':''}><label class="lbl">Payment period (days)</label><input placeholder="Default: 15 days" ${ro?'disabled':''}>
+${ro?'<div class="bn">Only a super admin can change this.</div>':'<small style="color:var(--text-secondary)">Takes effect on the next checkout. Orders already placed are unchanged.</small><div class="ft"><button class="btn">Save payment options</button></div>'}</div>
+<div class="ft"><button class="btn ghost">Suspend</button></div></div></div>`}
+const packs=`<div class="ov"><div class="md"><b>Edit size group - Maggi Noodles</b>
+<table style="margin-top:.8rem"><thead><tr><th>#</th><th>Item</th><th>Type</th><th>Label</th><th class="r">Per 100 g / piece</th><th>Default</th></tr></thead><tbody>
+<tr><td>1</td><td>Maggi 70 g</td><td></td><td><input value="70 g"></td><td class="r">Rs 20.00</td><td><input type="radio" checked style="width:auto"></td></tr>
+<tr><td>2</td><td>Maggi 70 g x 100<br><small style="color:var(--text-secondary)">Pack of: Maggi 70 g 🔒</small></td><td><span class="pill" style="background:var(--accent-soft);color:var(--accent-text);border-color:transparent">WHOLESALE x100</span></td><td><input value="Pack of 100"></td><td class="r">Rs 11.50 / piece</td><td><input type="radio" disabled style="width:auto" title="A wholesale pack can't be the default size"></td></tr></tbody></table>
+<div class="card" style="margin-top:12px"><h4>Add wholesale pack</h4><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px"><div><label class="lbl">Base item</label><select><option>Maggi 70 g</option></select></div><div><label class="lbl">Units per pack</label><input value="1000" style="text-align:right"></div><div><label class="lbl">Label</label><input value="Pack of 1000"></div><div><label class="lbl">Pack price (Rs)</label><input value="11000" style="text-align:right"></div></div>
+<div style="font-size:.78rem;color:var(--text-secondary);margin-top:.5rem">1 pack = 1000 x Maggi 70 g. With 250 in stock this shows 0 packs.</div>
+<div class="bn">Base item has less than 1000 in stock - the pack will show as sold out.</div><small style="color:var(--text-secondary)">The pack is created as soon as you click; it joins the group when you save the group.</small><div class="ft"><button class="btn ghost">Create pack now</button></div></div>
+<div class="ft"><button class="btn ghost">Cancel</button><button class="btn">Save group</button></div></div></div>`;
+const loading=`<h1>Retailers</h1><p class="sub">Shop owners who buy wholesale</p>${'<div class="sk"></div>'.repeat(6)}`;
+function v(k){const a=document.getElementById('app'),l=document.getElementById('layer');l.innerHTML='';a.innerHTML=list;
+ if(k=='detail')l.innerHTML=detail(0);if(k=='reject')l.innerHTML=detail(1);if(k=='pay')l.innerHTML=pay(0);if(k=='payro')l.innerHTML=pay(1);if(k=='packs')l.innerHTML=packs;if(k=='loading')a.innerHTML=loading}
+v('list');
+</script></body></html>
