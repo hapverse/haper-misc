@@ -39,7 +39,7 @@ Routes: `/#/print` (upload + options), `/#/print/review` (address, wallet, pay),
 27. Desktop >= 768 px: two columns (preview sticky left, options + price + Continue right); mobile: sticky bar with Printing price and Continue above the bottom nav. ✅
 
 ## Review & pay
-28. Continue -> Review shows address (default selected, Change goes to /addresses), file summary (Edit returns with options intact), Price details with delivery charge and total (GST shown as "Includes GST"), notice "Your file is deleted 24 hours after delivery.", "Payment is online only for print orders." No COD row. ✅
+28. Continue -> Review shows address (default selected, Change goes to /addresses), file summary (Edit returns with options intact), Price details with delivery charge and total (GST shown as "Includes GST"), notice "Your file is deleted 24 hours after delivery.", the payment line: "Payment is online only for print orders." when the server has COD off or sends no `codAvailable` (old backend), no COD row; with COD on see steps 54-66. ✅
 29. Pay with Razorpay (test card) -> success toast, "Payment received" screen with order number, View order opens print tracking. Grocery cart is NOT cleared. ✅
 30. Wallet toggle: wallet Rs 100 on Rs 40 order -> button "Pay Rs 0 with wallet", order is OPEN immediately, no Razorpay sheet. Wallet Rs 100 on Rs 42.50 -> wallet Rs 41, Razorpay Rs 1.50. ✅
 31. Close the Razorpay sheet / failed card -> red banner "Payment didn't go through. You haven't been charged...", Pay button works again, the unpaid order is cancelled and the file is reusable. ❌/✅
@@ -53,7 +53,7 @@ Routes: `/#/print` (upload + options), `/#/print/review` (address, wallet, pay),
 37. Paid order WITH `print.stage`: stepper is Uploaded > Paid > Printing > Packed > Out for delivery > Delivered. stage QUEUED -> current step Paid; PRINTING/PRINTED -> Printing; then Packed etc. follow order status. Order with no `print` key (old order) -> the old 5 steps, no Printing. ✅
 38. Unpaid (PAYMENT_INITIATED) order: "Confirming your payment..." polls every 3 s up to ~1 min, then "Check again"; Complete payment re-opens the Razorpay sheet; Cancel order cancels. ✅
 39. Admin rejects the job -> order shows Rejected card "We couldn't print this file", refund line with the wallet amount, "Upload a new file" -> /print. If `print.rejectReason` is present it shows as "Reason: ..." above the refund line; absent/blank -> card as before. ✅
-40. Line shows file name, pages, copies, sides, "B&W A4" and the printing amount; bill shows Printing, Print delivery charge, Wallet, Paid online. No cost price anywhere. ✅
+40. Line shows file name, pages, copies, sides, "B&W A4" and the printing amount; bill shows Printing, Print delivery charge, Wallet, Paid online (COD orders: see step 63). No cost price anywhere. ✅
 41. 24 h after delivery the file note switches to "File deleted for your privacy." when `print.filesPurged` is true. If `filesPurged` is absent (old backend) it falls back to the 24 h-after-delivery guess from updatedAt; if it is `false` the normal 24-hour note shows even after 24 h. ✅
 42. Orders list shows the print line by its generic name, opens the print detail; grocery orders and their detail page are unchanged. ✅
 
@@ -71,3 +71,17 @@ Routes: `/#/print` (upload + options), `/#/print/review` (address, wallet, pay),
 51. 21st upload in an hour -> `RATE_LIMITED`. File over 20 MB -> `FILE_TOO_LARGE`. ❌ expected
 52. Old server with no `reason`: errors still classify by HTTP status (415/413/422/429/503). ✅
 53. Quote returns `BUSY` / `FILE_TOO_COMPLEX` -> inline price error with the matching friendly copy; other quote failures unchanged. ❌ expected
+
+## Cash on delivery (needs backend print-cod deployed; store COD ON; example max Rs 300, fictional users)
+54. Eligible user, total Rs 62 -> "Payment" group with Pay online (selected by default) and Cash on delivery; line under it reads "You can pay online or in cash to the rider." Button stays "Pay Rs 62". ✅
+55. Tab into the group -> focus lands on the selected row only; Arrow keys move and select; screen reader says "Payment method, radio group", rows "checked/not checked". Selected row also has a thicker border, not colour alone. ✅
+56. Choose Cash on delivery -> button "Place order · pay Rs 62 in cash". Place order -> NO Razorpay sheet, toast "Order placed", lands on the print order page: header "Confirmed", line "Pay Rs 62 in cash on delivery", step list "Uploaded > Confirmed > ...", bill last row "Pay on delivery  Rs 62". Order is OPEN in the admin print queue. ✅
+57. Wallet Rs 50 on a Rs 320 order is over the limit (step 59). Use Rs 62 order, wallet Rs 20, COD -> split card "Order total Rs 62 / Wallet coins -Rs 20 / Pay in cash on delivery Rs 42"; button "pay Rs 42 in cash". Wallet Rs 50 on Rs 62.50 -> coins Rs 50 (whole rupees), cash Rs 12.50, button "pay Rs 12.50 in cash". ✅
+58. Wallet covers everything (Rs 100 coins, Rs 40 order) -> the whole Payment group and COD line disappear; button "Pay Rs 0 with wallet", order saved as WALLET. ✅
+59. Total Rs 320 (over limit 300) -> no choice, line "Cash on delivery is available up to Rs 300. Pay online for this order." Total exactly Rs 300 -> COD offered. Compare is on the printout total even if coins reduce the cash part. ✅
+60. New customer (no delivered order) -> no choice, quiet line "Cash on delivery opens up after your first delivered order." No disabled COD row. ✅
+61. `codMaxOrderAmount` null / `codAvailable` missing -> behaves exactly like today (online-only line). ✅
+62. Mid-session failures (turn COD OFF in admin, or lower the limit, then Place order): 409 (COD_LIMIT / COD_NOT_ELIGIBLE / COD_OPEN_LIMIT "you already have a COD print order in progress") -> red banner with the server message, selection resets to Pay online, choice re-fetched (hidden if gone), address + consent kept, focus moves to the banner; one tap on Pay then pays online. 400 with reason COD_OFF -> banner "Cash on delivery isn't available right now. Please pay online." (not the raw server text), selection resets to online. Any other 400 (e.g. address no longer available, out of delivery area) -> that error's own message in the banner, COD selection kept. Offline -> existing generic banner, selection kept. ❌ expected
+63. Order page for COD: delivered -> last row "Paid in cash  Rs 62" and no pay line. Admin rejects -> "Nothing was charged." (never a refund of price + wallet); only if coins were returned: "Rs 20 wallet coins returned". Undelivered -> "Not delivered" header + "We couldn't deliver this order. Nothing was charged." Cancelled -> "This order was cancelled. Nothing was charged." Bill shows "Nothing was charged" instead of a total. Online orders unchanged ("Paid online", refund copy). ✅
+64. Submit button spinner while placing; rows disabled while submitting; double-tap places one order. ✅
+65. Known gap: no browser run was done when this was written; run 54-63 once on dev.

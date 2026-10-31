@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Print COD samples (fictional data)</title>
+<style>
+:root{--ink1:#1F332B;--ink2:#5A7268;--green-price:#2F8163;--green-action:#257056;--green-deep:#20654E;--mint:#E7F3EC;--hair:#E5EFE9;--app:#F5FAF7;--warn-s:#FBF0DC;--warn-t:#8A5A12;--danger-s:#FDF1F3;--danger:#C9506C;
+--w-soft:rgba(180,83,9,.10);--w-text:#92400e;--w-border:rgba(180,83,9,.35)}
+body{margin:0;font:14px/1.4 system-ui,sans-serif;background:#ddd;color:var(--ink1);display:flex;flex-wrap:wrap;gap:24px;padding:24px}
+h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;margin:0 0 8px;color:#444;width:100%}
+.phone{width:340px;background:var(--app);border-radius:20px;padding:16px;display:grid;gap:12px;align-content:start}
+.panel{background:#fff;border:1px solid var(--hair);border-radius:16px;padding:12px 14px;min-height:56px;display:flex;gap:11px;align-items:center}
+.panel.sel{background:var(--mint);border:1.5px solid var(--green-price)}
+.panel b{display:block;font-size:14px}.panel small{font-size:11.5px;color:var(--ink2)}
+.radio{width:22px;height:22px;border-radius:50%;border:2px solid var(--green-price);flex:none;display:grid;place-items:center}
+.sel .radio::after{content:"";width:10px;height:10px;border-radius:50%;background:var(--green-price)}
+.lbl{font-size:12px;font-weight:600;color:var(--ink2)}
+.row{display:flex;justify-content:space-between;font-size:13px;padding:2px 0}.row.tot{border-top:1px solid var(--hair);margin-top:6px;padding-top:8px;font-weight:700}
+.note{background:var(--warn-s);color:var(--warn-t);border-radius:16px;padding:12px;font-size:12.5px}
+.banner{background:var(--danger-s);color:#7a2a3c;border-radius:12px;padding:10px 12px;font-size:12.5px;border:1px solid #F6DBE0}
+.btn{background:var(--green-action);color:#fff;border-radius:16px;height:54px;display:grid;place-items:center;font-weight:700}
+.admin{width:560px;background:#fff;border-radius:12px;padding:16px;display:grid;gap:10px;align-content:start;border:1px solid #ddd}
+.chip{display:inline-flex;gap:4px;align-items:center;font-size:11.5px;font-weight:600;padding:2px 8px;border-radius:999px;background:var(--w-soft);color:var(--w-text);border:1px solid var(--w-border)}
+.sw{width:40px;height:22px;border-radius:11px;background:var(--green-action);position:relative;flex:none}.sw::after{content:"";position:absolute;right:2px;top:2px;width:18px;height:18px;border-radius:50%;background:#fff}
+.sw.off{background:#bbb}.sw.off::after{right:auto;left:2px}
+.dis{opacity:.55}.inp{border:1px solid #ccc;border-radius:8px;padding:8px 10px;min-height:20px}
+.hint{font-size:12px;color:#555}
+</style></head><body>
+<div style="width:100%"><h2>1. Customer review, COD offered, selected, wallet on (₹320 order, ₹50 coins)</h2></div>
+<div class="phone">
+ <div class="panel"><div style="flex:1"><b>Use wallet balance</b><small>₹120.00 available · -₹50.00 on this order</small></div><div class="sw"></div></div>
+ <div class="lbl">Payment</div>
+ <div class="panel"><div class="radio"></div><div><b>Pay online</b><small>UPI, card or net banking</small></div></div>
+ <div class="panel sel" role="radio" aria-checked="true"><div class="radio"></div><div><b>Cash on delivery</b><small>Pay the rider when it arrives</small></div></div>
+ <div class="panel" style="display:block"><div class="row"><span>Order total</span><span>₹320.00</span></div><div class="row"><span>Wallet coins</span><span style="color:var(--green-price)">-₹50.00</span></div><div class="row tot"><span>Pay in cash on delivery</span><span>₹270.00</span></div></div>
+ <div class="note"><b>Your file is deleted 24 hours after delivery.</b><br>You can pay online or in cash to the rider.</div>
+ <div class="btn">Place order · pay ₹270 in cash</div>
+</div>
+<div class="phone">
+ <h2 style="margin:0">2. After 409 COD_LIMIT: back to online</h2>
+ <div class="banner" role="alert">Cash on delivery is available for print orders up to ₹300. Please pay online.</div>
+ <div class="note"><b>Your file is deleted 24 hours after delivery.</b><br>Cash on delivery is available up to ₹300. Pay online for this order.</div>
+ <div class="btn">Pay ₹320</div>
+ <h2 style="margin:8px 0 0">3. Not eligible (quiet reason, no extra control)</h2>
+ <div class="note"><b>Your file is deleted 24 hours after delivery.</b><br>Cash on delivery opens up after your first delivered order.</div>
+</div>
+<div class="admin">
+ <h2 style="margin:0">4. Admin card sub-section (super admin) and non-super-admin</h2>
+ <b>Cash on delivery</b><span class="hint">Let customers pay the rider in cash for print orders.</span>
+ <div style="display:flex;justify-content:space-between;align-items:center;border:1px solid #ddd;border-radius:8px;padding:10px"><span>Allow cash on delivery<br><span class="hint">Off by default.</span></span><div class="sw"></div></div>
+ <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><div>Max COD order total<div class="inp">₹ 300</div><span class="hint">Largest print order total allowed on cash.</span></div><div>Min delivered orders<div class="inp">1 orders</div><span class="hint">0 = anyone.</span></div></div>
+ <hr style="width:100%;border:0;border-top:1px solid #ddd">
+ <b>🔒 Cash on delivery</b><span class="hint">Only a super admin can change cash on delivery.</span>
+ <div class="dis" style="display:flex;justify-content:space-between;align-items:center;border:1px solid #ddd;border-radius:8px;padding:10px"><span>Allow cash on delivery</span><div class="sw off"></div></div>
+ <hr style="width:100%;border:0;border-top:1px solid #ddd">
+ <h2 style="margin:0">5. Print queue row</h2>
+ <div><b>#10482</b> &nbsp;<span class="chip" aria-label="Cash on delivery, collect 270 rupees">▣ Cash ₹270</span> &nbsp;<b style="font-weight:600">thesis-final.pdf</b><div class="hint">B&amp;W · single-sided = 150 sides</div><div class="hint">1.2 MB · Placed 31 Oct, 10:42 · Waiting 6 min</div></div>
+</div>
+</body></html>
