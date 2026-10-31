@@ -356,3 +356,27 @@ window, the future-cutover warning, never writing a today row).
 | Recompute returns 403 for an admin who can see the Profits page | Only **super admin** may write money numbers; the read permission is not enough |
 | A past day's figure went **down** after the backfill | An order counted back then has since been refunded or un-delivered. Check the dry-run table for that day |
 | Profit figures disagree with the dashboard order tiles / COGS report | Expected and pre-existing — those reports still count by order date. Only the Profits page uses the new rule |
+
+---
+
+## Recompute specific days only (`npm run profit:days`)
+
+Use after correcting a few orders' `costPrice` so the affected days' `profit_snapshots` rows
+match. Prefer this over `npm run profit`, which also back-fills order lines and rebuilds every day.
+
+```bash
+cd haper-backend
+npm run profit:days -- 2026-10-01 2026-10-02            # DRY RUN: prints current rows only
+npm run profit:days -- 2026-10-01 2026-10-02 --apply    # recompute + print before/after
+```
+
+- Days are `YYYY-MM-DD` (IST). Always dry-run first and check the banner `DB HOST` / `DB NAME`.
+- During the dry run, confirm the `CUTOVER` shown in the banner matches prod's
+  (`PROFIT_ATTRIBUTION_CUTOVER` is read from the machine running the script; a mismatch recomputes days under the wrong rule).
+- Compare per store: `revenue`, `costTotal`, `profit` before vs after. Expect `costTotal` to move
+  by the corrected cost x qty and `profit` to move by the opposite amount; `revenue` should not change.
+- ✅ Re-running gives identical "after" numbers (idempotent).
+- ❌ Refused with exit 1 before any DB connection: bad format, unknown `--` flag, today/future, or a day before the
+  attribution cutover.
+- One failing day is reported and the rest still run (exit 2 at the end). If a day reports FAILED, just re-run that day.
+- Use the Node version the backend runs on (the newest local Node crashes loading `shared`).
