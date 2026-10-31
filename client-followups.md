@@ -595,6 +595,72 @@ Old builds never send the header, so the server never returns them to them. Stil
 - Item created by hand in a store (admin item-create) does **not** inherit its size group until re-assigned (L3, plan §16).
 - Detail "related" rail: a grouped card shows as a plain card and ADD adds that size directly. It does **not** open the size sheet (Android code). Intent to confirm.
 
+## CH-17 to CH-22 · Retailer / wholesale Phase 1 and print cash on delivery (2026-10-31)
+**Plan:** `haper-backend/docs/plans/retailer-wholesale.md`, `print-cod.md`. **Durable summaries:** `haper-backend/docs/reference/retailer-wholesale.md`, `print-cod.md`. **Runbook (user-run steps before switching on):** `runbook-wholesale-rollout.md`.
+**Status key here:** built/committed = in the repo history on `dev` (not pushed unless you did it). built/uncommitted = files are in the working tree only. **No row below has been tested on a device or browser; that box stays unchecked until someone does it.**
+**Backend for all of CH-17 to CH-22 is built but UNCOMMITTED in `haper-backend`.** Nothing is deployed. Wholesale stays OFF per store, and applications stay off (`RETAILER_APPLICATIONS_ENABLED`) until the runbook is done.
+
+### CH-17 · Retailer apply + status (become a retailer)
+| Client | What | Status |
+|---|---|---|
+| backend | `/user/retailer/me`, `/application` (apply, resubmit, withdraw); `/admin/retailer` verify/reject/suspend/settings. Test guides: `test-retailer-wholesale.md`, `-admin.md` | built/uncommitted |
+| admin | Retailers list + detail modal (verify, reject, suspend, payment options) | built/committed (the blocked-GSTIN additions are CH-22) |
+| android | Apply form, status screen, Profile entry (hidden while the program is off). `test-retailer-wholesale-android.md` | built/committed, not device-tested |
+| ios | Same. `test-retailer-wholesale-ios.md` | built/committed, not device-tested |
+| web | `/retailer/apply`, `/retailer/status`. `test-retailer-wholesale-web.md` | built/committed, not browser-tested |
+| delivery | Not affected | — |
+| picker | Not affected | — |
+
+### CH-18 · Wholesale display + checkout options
+Packs show a "Wholesale" pill and per-piece price for approved retailers; cart returns `paymentOptions`; checkout hides COD for a wholesale cart when the retailer's COD switch is off; errors `RETAILER_COD_DISABLED` / `RETAILER_WHOLESALE_NOT_ALLOWED` (HTTP 400).
+| Client | What | Status |
+|---|---|---|
+| backend | `wholesale` block on items, `paymentOptions` on cart, checkout rules, B2B order lines. Guides: `test-retailer-wholesale-cart.md`, `-checkout.md`, `-orderlines.md`, `-discounts.md` | built/uncommitted |
+| admin | Create pack from a product (pack mini form), retailer badge on orders. `test-retailer-wholesale-admin-packs.md` | built/uncommitted |
+| android | Pill, per-piece line, hide COD, banner for refusals. `test-retailer-wholesale-android-shop.md` | built/uncommitted, not device-tested |
+| ios | Same. `test-retailer-wholesale-ios-shop.md` | built/uncommitted, not device-tested |
+| web | Pill, per-piece line, checkout options. No size sheet for packs. `test-retailer-wholesale-web-shop.md` | built/uncommitted, not browser-tested |
+| delivery | Not affected (riders never receive the retailer snapshot) | — |
+| picker | See CH-20 | — |
+Not built: a wholesale rail/list screen (no endpoint), credit / pay later.
+
+### CH-19 · Print cash on delivery
+| Client | What | Status |
+|---|---|---|
+| backend | COD for print orders per store; gates `COD_OFF` (400), `COD_LIMIT`, `COD_NOT_ELIGIBLE`, `COD_OPEN_LIMIT` (409). Guides: `test-print-checkout.md`, `test-print-admin.md` | built/uncommitted |
+| admin | COD controls on the Print service card, Cash chip in the print queue | built/committed |
+| android | Payment choice, COD copy, reasons mapped (no server field names). `test-print-customer-android.md` | built/committed, not device-tested |
+| ios | Same. `test-print-customer-ios.md` | built/committed, not device-tested |
+| web | Same; after a COD order it goes to `/orders/:id` (no success screen). `test-print-customer-web.md` | built/committed, not browser-tested |
+| delivery | No release: rider reads the existing `paymentMethod` and `price` | — |
+| picker | Not affected | — |
+
+### CH-20 · Picker pack lines (HARD GATE for wholesale)
+Old picker builds match the first line with a scanned barcode, so a pack and its single can be confused. Do not switch wholesale on for any store until the new picker build is out.
+| Client | What | Status |
+|---|---|---|
+| backend | Pick-task lines carry `unitsPerPack` / `baseItemId` / `baseName`; `looseUnitsFound` on short-pick/OOS. `test-retailer-wholesale-pack-ops.md` | built/uncommitted |
+| picker | Pack pill "= N pcs", scan-anything picks the first NOT-done line, loose-pieces field. `test-picker-pack-lines.md` | built/uncommitted, not device-tested |
+| admin / web / android / ios / delivery | Not affected | — |
+
+### CH-21 · Invoice download: no redirect, header stripping kept
+The API now answers every invoice request with 200 + the PDF (no redirect, no link). Same endpoints. Clients need no change; the header stripping stays as defence in depth.
+| Client | What | Status |
+|---|---|---|
+| backend | Streamed from private storage, `Cache-Control: private, no-store`; admin invoice search store-scoped, limit at most 50. `test-retailer-wholesale-invoice.md` | built/uncommitted |
+| admin | No change (PDF button and search table unchanged) | — |
+| android | Invoice client strips `x-*` / `Content-Type` on cross-host hops (kept). `InvoiceRedirectHeadersTest` | built/uncommitted, not device-tested |
+| ios | `InvoiceDownloader` session strips login/device headers on cross-host redirects (kept). `InvoiceRedirectPolicyTests` | built/uncommitted, not device-tested |
+| web | No change | — |
+| delivery / picker | Not affected | — |
+
+### CH-22 · Blocked-GSTIN admin card
+| Client | What | Status |
+|---|---|---|
+| backend | `blockedGstins` on the retailer profile; `POST /admin/retailer/:id/unblock-gstin` (super admin) | built/uncommitted |
+| admin | "Blocked GSTINs" card on the retailer detail; reject reason `GSTIN_NOT_OWNED`. `test-retailer-wholesale-admin.md` section 9 | built/uncommitted |
+| android / ios / web / delivery / picker | Not affected (customers only see 409 `GSTIN_BLOCKED` on apply) | — |
+
 ---
 
 ## Future changes
