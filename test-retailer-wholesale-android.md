@@ -72,6 +72,16 @@ How to simulate: Developer options > "Don't keep activities" ON (camera steps), 
 - [ ] User who already applied on another phone (status Under review) and was restored onto the form: the app moves to the Status screen by itself.
 - [ ] Cache check (debug, optional): `adb shell run-as com.bheldi ls cache/retailer` after a fresh app start shows no old `img_`/`cert_` files; a pending `cam_` file is only kept until the photo is read (or for 24 h if abandoned).
 
+## 6. Document uploads (shop photo + GST certificate)
+Regression: every image used to be rejected with "Photo is too large or not an image".
+- [ ] Camera shop photo: Take photo, confirm. The photo shows in the tile, no error.
+- [ ] Gallery shop photo (large, 12 MP+): picks fine, shows in the tile, submit uploads it.
+- [ ] Image GST certificate (JPG/PNG from gallery or files): accepted, shows in the certificate tile.
+- [ ] PDF GST certificate (under 10 MB): accepted with its file name; over 10 MB shows the too-large message.
+- [ ] Non-image file (e.g. .txt, .zip) picked as shop photo or certificate: rejected with "Photo is too large or not an image" (certificate: unsupported message), nothing attached.
+- [ ] Portrait phone photo keeps its orientation after upload (EXIF rotation).
+- [ ] Automated: `./gradlew connectedDebugAndroidTest --tests '*RetailerDocsInstrumentedTest'` (needs an emulator/device).
+
 ## Edge cases to try
 - Kill the app while on the form: typed text is lost (not restored after process death yet); only the status-based prefill and a pending camera photo come back.
 - Server-side FIELD_INVALID / file rejection (413/415/422) shows a general banner (the server sends no field name); GSTIN_TAKEN/GSTIN_INVALID still mark the GSTIN field.
