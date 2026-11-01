@@ -177,3 +177,49 @@ Example: R's prepaid order (₹90 card + ₹68 wallet) was delivered with a GST 
 - `packages/delivery/__tests__/order-undelivered-retailer-refund-hold.test.js` (6 tests: delivered-on and invoice-number holds, replay + concurrent hold once, nothing owed = no row, never-delivered retailer + consumer refunded as before).
 - `packages/user/__tests__/invoice-model.test.js` (adds bare-id refusal), `packages/picking/__tests__/retailer-delivered-pick-lock.test.js` (now also pins the `{ code: 409, data: null }` envelope).
 - Deploy: backend only (delivery + user + admin services share `packages/shared`).
+
+## Business mode update (2026-11-01)
+
+Plain example: Ravi (fictional "Sharma Kirana") pays for a 12-pack Business cart of Maggi Pack of 100 (Rs 1,150, tier 10+ = 2% off). He pays Rs 1,127 a pack, Rs 13,524 for the line. The full walkthrough is `test-b2b-business-mode.md` (section T6).
+
+**What changed**
+- Checkout reads the cart you are paying from, by its own type. A Business cart uses the wholesale view. A Haper cart uses the retail view. Before this change checkout always used the wholesale view.
+- A legacy mixed Haper cart (packs and retail in one cart, made before the change) charges **only the visible retail lines**. Hidden pack lines are not charged, and the whole cart is cleared after the order.
+- Bulk tiers are applied after the coupon / automatic-discount step, on pack lines only. Order lines keep `salePrice` = the paid price.
+
+**Order line for the 12-pack example**
+
+| Field | Value |
+|---|---|
+| `salePrice` | 1127 (paid) |
+| `originalSalePrice` | 1150 |
+| `discountAmount` | 23 (per pack) |
+| `appliedDiscounts` | one entry: `{kind:"WHOLESALE_TIER", minQty:10, type:"PERCENT", value:2, amount:23}` |
+| `discountTotal` | includes 276 (23 x 12) |
+| `costPrice` | the cost at sale time, unchanged |
+
+**New checks**
+- ✅ Business cart, 12 packs, pay online → order line matches the table above. The charged total equals the cart's `finalPrice`.
+- ✅ Same cart, scheduled order with a slot → same numbers. A refused booking takes no slot.
+- ❌ The stored order line has no `tierSource` key.
+- ✅ Suspended retailer with the Business cart → checkout refused, no order, no stock taken.
+- ✅ Haper cart holding a legacy pack line → only the retail lines are charged. Nothing for the hidden pack.
+- ✅ Admin order edit lowers the 12-pack line to 9 → the line keeps Rs 1,127 a pack (see known notes in `test-b2b-business-mode.md`).
+
+**Automated (2026-11-01):** `packages/user/__tests__/wholesale-tier-checkout.test.js` (T6 parity, cost untouched, invoice at paid price, order edit keeps the tier, refund at paid price) and `retailer-checkout.test.js` (legacy mixed Haper cart; Business cart refused for a suspended retailer). Both green.
+
+## Double-submit protection (2026-11-01)
+
+Two simultaneous "Place order" requests for the same cart used to create two orders (stock, wallet coins and a slot seat taken twice). Now `POST /user/order/place` takes a per-cart lock (TTL 120 s; released as soon as the request ends, also on error. 120 s is only the longest it can be held if the server dies mid-request).
+
+**Checks** (immediate and scheduled, COD and online)
+- ✅ Two simultaneous requests for one cart → exactly one 200, the other gets HTTP 422 with `code: "ORDER_IN_PROGRESS"` ("Your order is already being placed"). One order, stock taken once, one slot seat.
+- ✅ Placement fails (e.g. out of stock) → lock is released; fixing the cause and retrying succeeds straight away.
+- ✅ Online payment fails at the gateway → tapping Pay again works.
+- ✅ Submit again after the first finished (cart cleared) → refused as before, never 422.
+- ✅ Business cart and Haper cart have different cart ids, so placing one does not block the other.
+- ❌ Not covered: for ONLINE payment the cart is not cleared until payment, so a second tap AFTER the first request finished (before paying) is not blocked by this lock; the existing "supersede unpaid order" logic handles it.
+
+Status code is 422 (not 409) on purpose: shipped apps treat 409 from this endpoint as "store under maintenance".
+
+Automated: `packages/user/__tests__/order-place-concurrency.test.js` and the double-tap cases in `wholesale-tier-edge.test.js`.

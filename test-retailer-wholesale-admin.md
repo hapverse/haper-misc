@@ -88,3 +88,18 @@ Use fictional test shops only (e.g. "Sample Kirana", GSTIN 10ABCDE1234F1Z5). App
 - ✅ Network tab: POST `/admin/retailer/:id/unblock-gstin` body `{ rev, gstin, reason }`; the full GSTIN appears only in that body, never in URL, page text, titles or aria-labels.
 - ❌ Stale (409 STALE) -> Reload banner, actions locked. ❌ 409 GSTIN_NOT_BLOCKED -> toast "That GSTIN is no longer blocked." and list refreshes.
 - Needs backend `unblock-gstin` deployed (dev). Automated: `npx vitest run src/pages/Retailers`.
+
+## 10. Bulk discounts (Products > edit or new product)
+Plan: plan-b2b-business-mode.md (T1-T3). Super admin only (product master API).
+- ✅ Product with "Wholesale-only item" unticked: no Bulk discounts block. Tick it -> block appears with "No bulk discounts yet..." and "+ Add tier". A pack master shows the block without ticking.
+- ✅ Add rows ("From [qty] units -> [x] % off"); counter "n of 5 tiers"; "+ Add tier" disabled at 5. Remove a row with the x button (no confirm).
+- ❌ Errors show under the row and Save is disabled with "Fix the errors above to save.": qty blank/1/100001/2.5 -> "Whole number from 2 to 100000"; % 0 or above 50 -> "Use a percent above 0 up to 50"; 3 decimals -> "Use at most 2 decimals"; qty not above the row above; same qty twice -> "Two tiers can't start at the same quantity"; % not above the row above.
+- ✅ Saved product with clean tiers: preview table appears (about half a second after typing) with a store select; bands "1 to 9 units", "10 to 14 units", "15+ units"; switch store -> prices change. Network: POST `/admin/product/:id/wholesale-tiers/preview` body `{ wholesaleTiers: [{ minQty, percent }] }`. Preview failure -> "Couldn't load the preview. Retry".
+- ✅ New (unsaved) product: tiers can be typed and saved; preview says it is available once the product is saved.
+- ✅ Save with tiers: PATCH body has `wholesaleTiers` (numbers). Reopen the product: rows are prefilled.
+- ❌ Tiers that price a store below its cost: warning "Some stores would sell below cost" with a Store / Tier / Tier price / Cost / Short by table (5 rows, then "and N more"), checkbox "I understand these tiers sell below cost in the stores above". Save disabled ("Tick the box above to save.") until ticked; then body has `acknowledgeBelowCost: true`. Editing any tier clears the tick. A server 409 `TIERS_BELOW_COST` (cost changed after the preview) shows the same warning with the server's rows.
+- ❌ Server 400 `TIERS_INVALID` / `TIERS_NEED_WHOLESALE` -> message shown in the block, rows kept.
+- ✅ Untick "Wholesale-only item" on a product that has tiers: dialog "Remove the bulk discounts too?" with "Keep wholesale-only" (default focus) / "Remove discounts". Keep -> still ticked, rows intact. Remove -> unticked, block hidden; Save sends `wholesaleOnly: false` and `wholesaleTiers: []`; reopen the product: no tiers. No dialog when there are no tiers.
+- ✅ Product that never had tiers: Save body has no `wholesaleTiers` key (unchanged from before).
+- Dark and light themes readable; keyboard order qty -> % -> remove per row, then Add tier, preview store select, tick, Save.
+- Needs backend `wholesaleTiers` + `/wholesale-tiers/preview` on dev. Automated: `npx vitest run src/pages/Products`.

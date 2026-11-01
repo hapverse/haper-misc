@@ -45,3 +45,23 @@ Automated: `packages/user/__tests__/wholesale-commercial-rules.test.js`, `packag
 ## Edge cases
 - ✅ A pack line whose "wholesale" marker is missing but which still has "pack of" data is treated as wholesale everywhere above.
 - ✅ Free-delivery threshold and platform fee still use the whole order (unchanged by design).
+
+## Business mode update (2026-11-01)
+
+Plain example: in the Business shop a pack gets **one** discount, the bulk tier. Packs never get coupons, store-wide automatic discounts, free-gift credit or referral money.
+
+**Why the old mixed example is now a legacy case.** Haper and Business have separate carts. A coupon and a pack can no longer sit in the same cart. The "2 x Maggi 70 g + 1 x Pack of 100" example above applies only to a legacy mixed Haper cart, where the pack is hidden and not charged.
+
+**The bulk tier (new, the one allowed discount on a pack).**
+- Tier rule per product, set by the super admin in the product form: 10 packs = 2% off, 15 packs = 5% off. The rule counts packs in one cart line.
+- Example: Maggi Pack of 100 at Rs 1,150. 12 packs = Rs 1,127 each (Rs 23 off each, Rs 276 for 12). 15 packs = Rs 1,092.50 each (Rs 57.50 off each, Rs 862.50 for 15).
+
+**New checks**
+- ✅ Business cart, 12 packs, coupon "10% off" typed → refused with the usual "We couldn't apply this coupon right now — try another one?". A pack-only cart never says "wholesale".
+- ✅ Business cart, 12 packs, store "10% off everything" rule on → the pack line shows only "2% OFF bulk". No automatic discount is added.
+- ✅ Business cart, 9 packs → no discount (no tier yet).
+- ✅ Business cart, 15 packs → 5% off, `discountedPrice` 1092.5, `discount.total` 862.5.
+- ✅ Normal customer and Haper cart with retail items and a coupon → unchanged from before.
+- ❌ A pack line never gets a coupon share, an automatic discount, a free-gift credit or referral money, with or without a tier.
+
+**Automated (2026-11-01):** `packages/user/__tests__/wholesale-tier-utils.test.js` (rounding, boundaries, floor, malformed tiers) and `wholesale-tier-checkout.test.js`. Both green.

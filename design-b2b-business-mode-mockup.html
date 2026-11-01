@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Haper Business mode - Android + haper-admin mockup (P0)</title>
+<style>
+/* Customer tokens = Color.kt names. BusinessDeep is the ONE new token (#4A2580). */
+:root{--gl:#5BB78E;--gp:#2F8163;--ga:#257056;--gd:#20654E;--ink:#1F332B;--ink2:#5A7268;--ink3:#93A79C;--app:#F5FAF7;--hair:#E5EFE9;--mint:#E7F3EC;--chip:#E2F6EC;--add:#E58124;--addtxt:#A85212;--danger:#C9506C;--dsurf:#FDF1F3;--warn:#8A5A12;--wsurf:#FBF0DC;--plum:#EADFF7;--wi:#6B3FA6;--bd:#4A2580;--sunk:#EDF5F0;--teal:#14867F}
+*{box-sizing:border-box;margin:0}
+body{font-family:Poppins,system-ui,sans-serif;background:#d9e4de;color:var(--ink);padding:16px;display:flex;flex-direction:column;align-items:center;gap:12px}
+.hd,.pr,h2,h3{font-family:Quicksand,Poppins,system-ui,sans-serif}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;justify-content:center}
+.tabs button,.mini button{border:1px solid #9bb7a9;background:#fff;border-radius:99px;padding:7px 14px;font:600 12.5px Poppins,sans-serif;cursor:pointer}
+.tabs button.on,.mini button.on{background:var(--gd);color:#fff;border-color:var(--gd)}
+.cap{font-size:12px;color:#33493f;text-align:center;max-width:860px}
+.stage{display:flex;gap:28px;flex-wrap:wrap;justify-content:center;align-items:flex-start}
+.col{display:flex;flex-direction:column;align-items:center;gap:8px}.col>b{font-size:12px}
+.phone{width:390px;height:780px;background:var(--app);border-radius:34px;position:relative;overflow:hidden;border:6px solid #fff;box-shadow:0 20px 50px rgba(20,72,56,.35)}
+.scr{height:100%;overflow-y:auto;padding:0 0 120px}
+.pad{padding:0 16px}
+h2{font:700 18px Quicksand;padding:14px 16px 8px}
+.eyebrow{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#4FA383;margin:16px 0 8px}
+/* hero */
+.hero{padding:18px 20px 18px;color:#fff;position:relative;transition:background .2s}
+.hero.h{background:linear-gradient(155deg,#84D2AC 0%,#3D9574 46%,#20654E 100%)}
+.hero.b{background:linear-gradient(155deg,#6B3FA6 0%,#4A2580 100%)}
+.nm{-webkit-animation:none}
+.seg{display:flex;height:36px;border-radius:99px;padding:3px;gap:2px;margin-bottom:14px}
+.h .seg{background:var(--gd)}.b .seg{background:var(--bd)}
+.seg span{flex:1;border-radius:99px;display:flex;align-items:center;justify-content:center;gap:5px;font:600 13px Poppins;color:#fff}
+.seg span.sel{background:#fff}.h .seg span.sel{color:var(--gd)}.b .seg span.sel{color:var(--wi)}
+.eb{font-size:11px;font-weight:700;letter-spacing:.08em;opacity:.9}
+.dl{font-size:11px;opacity:.9;letter-spacing:.06em;margin-top:2px}.ad{font:700 17px Quicksand;margin:2px 0 12px}
+.search{background:#fff;border-radius:18px;height:46px;display:flex;align-items:center;padding:0 14px;color:var(--ink2);font-size:13.5px}
+.wal{margin:12px 16px 0;background:#fff;border:1px solid var(--hair);border-radius:16px;padding:10px 14px;display:flex;justify-content:space-between;font-size:13px}
+.sec{display:flex;justify-content:space-between;align-items:baseline;padding:16px 16px 8px}.sec b{font:700 16px Quicksand}.sec a{font-size:12.5px;color:var(--ga);font-weight:600}
+.cats{display:flex;gap:10px;padding:0 16px;overflow:hidden}.cat{width:76px;text-align:center;font-size:11px}.cat i{display:block;height:64px;border-radius:20px;margin-bottom:4px}
+.rail{display:flex;gap:10px;padding:0 16px}.pc{width:150px;background:#fff;border:1px solid var(--hair);border-radius:18px;padding:8px;flex:none}
+.pc .im{height:92px;border-radius:12px;background:#f3f7f4;margin-bottom:6px}.pc b{font-size:12.5px;display:block}.pc small{font-size:11px;color:var(--ink2)}.pc .p{font:800 15px Quicksand;color:var(--gp);margin:3px 0}
+.pc .add{width:100%;margin-top:4px}
+.pill{font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;background:var(--plum);color:var(--wi);border-radius:99px;padding:3px 8px;display:inline-flex;gap:3px;align-items:center;height:20px}
+.hid{border:1.5px dashed #c9b8e4;border-radius:14px;margin:12px 16px 0;padding:8px 12px;font-size:11.5px;color:#4a3a66;background:#faf6ff}
+.add{border:1.5px solid var(--add);color:var(--addtxt);border-radius:12px;min-width:74px;height:34px;font:700 13px Poppins;background:#fff;padding:0 10px}
+.bar{position:absolute;left:0;right:0;bottom:0;background:#fff;border-top:1px solid var(--hair);padding:12px 16px;z-index:3}
+.cta{height:52px;border-radius:16px;background:linear-gradient(#5BB78E,#2F8163,#215F49);color:#fff;font:700 15px Poppins;display:flex;align-items:center;justify-content:center;border:0;width:100%}
+.cta2{height:52px;border-radius:18px;background:var(--mint);color:var(--ga);font:600 14px Poppins;display:flex;align-items:center;justify-content:center;width:100%;margin-top:10px}
+.cta.dis{background:var(--mint);color:var(--ink3)}
+/* cart bar */
+.cbar{position:absolute;left:12px;right:12px;bottom:14px;height:58px;border-radius:22px;display:flex;align-items:center;justify-content:space-between;padding:0 16px;z-index:3;box-shadow:0 8px 20px rgba(20,60,40,.3)}
+.cbar.h{background:linear-gradient(#3D9574,#215F49);color:#fff}
+.cbar.b{background:#fff;border:1.5px solid var(--wi);color:var(--bd)}
+.cbar .chp{background:var(--plum);color:var(--wi);font:800 11px Poppins;border-radius:99px;padding:3px 9px}
+.cbar .vc{font:700 14px Poppins}
+/* sheets */
+.scrim{position:absolute;inset:0;background:rgba(16,44,36,.46);z-index:5}
+.sheet{position:absolute;left:0;right:0;bottom:0;z-index:6;background:#fff;border-radius:30px 30px 0 0;padding:10px 20px 22px}
+.grab{width:36px;height:4px;border-radius:9px;background:#d5e3db;margin:0 auto 14px}
+.sheet h3{font:700 19px Quicksand}.sheet p{font-size:14px;color:var(--ink2);margin:6px 0 12px}
+.ic{width:56px;height:56px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:26px;margin-bottom:10px;background:var(--plum)}
+.bul{list-style:none;padding:0;margin:0 0 14px}.bul li{display:flex;gap:10px;font-size:14px;padding:6px 0}.bul li:before{content:"\2713";color:var(--wi);font-weight:800}
+.prm{height:52px;border-radius:16px;background:linear-gradient(155deg,#6B3FA6,#4A2580);color:#fff;font:700 15px Poppins;display:flex;align-items:center;justify-content:center;width:100%}
+.sec2{height:48px;border-radius:16px;background:var(--mint);color:var(--ga);font:600 14px Poppins;display:flex;align-items:center;justify-content:center;width:100%;margin-top:8px}
+.mini{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;max-width:760px}
+.mini button{font-size:11.5px;padding:5px 11px}
+/* item page */
+.hero-img{height:230px;background:linear-gradient(#eef6f1,#dcebe2);display:flex;align-items:center;justify-content:center;color:var(--ink3);font-size:13px}
+.card{background:#fff;border:1px solid var(--hair);border-radius:20px;padding:14px;margin:12px 16px 0}
+.tt{width:100%;border-collapse:collapse;font-size:13px}
+.tt td{padding:9px 0;border-top:1px solid var(--hair);vertical-align:middle}.tt tr:first-child td{border-top:0}
+.tt .q{font-weight:600}.tt .o{color:var(--gp);font-weight:700}.tt .u{text-align:right;font-variant-numeric:tabular-nums}.tt .bt{text-align:right;width:84px}
+.tt tr.cur td:first-child{box-shadow:inset 3px 0 0 var(--wi);padding-left:8px}
+.add.sm{min-width:64px;height:32px;font-size:12.5px}
+.note{background:var(--mint);border-radius:14px;padding:10px 12px;font-size:12px;color:var(--ink2);margin:8px 0}
+/* cart */
+.cl{background:#fff;border-radius:18px;border:1px solid var(--hair);padding:12px;margin:0 16px 10px}
+.cl .top{display:flex;gap:10px;align-items:flex-start}.th{width:56px;height:56px;border-radius:14px;background:var(--mint);flex:none}
+.cl b{font-size:13.5px}.cl small{font-size:11px;color:var(--ink3)}
+.stp{display:flex;align-items:center;border:1.5px solid var(--add);border-radius:12px;height:34px;overflow:hidden}
+.stp span{width:34px;text-align:center;font:700 16px Poppins;color:var(--addtxt)}.stp .n{width:auto;min-width:44px;font-size:14px;border-left:1px solid #f3d3b3;border-right:1px solid #f3d3b3;padding:0 6px;text-decoration:underline dotted;text-underline-offset:3px}
+.pr{font-weight:800}.strike{text-decoration:line-through;color:var(--ink3);font-size:12px;font-weight:500}
+.lbl{display:inline-block;background:var(--wsurf);color:var(--warn);font:700 11px Poppins;border-radius:8px;padding:2px 8px;margin-top:6px}
+.nudge{font-size:12px;color:var(--ink2);margin-top:4px}
+.bill{margin:0 16px;background:#fff;border:1px solid var(--hair);border-radius:20px;padding:12px 14px;font-size:13px}.bill div{display:flex;justify-content:space-between;padding:3px 0}.bill .sv{color:var(--teal)}
+.in{background:#fff;border:1.5px solid #20B4AC;border-radius:18px;height:56px;padding:0 16px;display:flex;align-items:center;font:700 22px Quicksand;justify-content:space-between}
+.in.err{border-color:var(--danger)}
+.em{font-size:12px;color:var(--danger);margin-top:6px}
+.hint{font-size:12px;color:var(--ink2);margin-top:6px}
+/* states */
+.sk{background:linear-gradient(90deg,#E8F0EB,#F4F8F5,#E8F0EB);background-size:200% 100%;border-radius:8px;height:14px;animation:s 1.2s infinite}@keyframes s{50%{opacity:.5}}
+@media (prefers-reduced-motion:reduce){.sk{animation:none}.hero{transition:none}}
+.empty{text-align:center;padding:50px 30px}.empty .w{width:96px;height:96px;border-radius:50%;background:var(--sunk);margin:0 auto 16px;display:flex;align-items:center;justify-content:center;font-size:40px}
+.empty h3{font:700 18px Quicksand}.empty p{font-size:13.5px;color:var(--ink2);margin:6px 0 16px}
+.snack{position:absolute;left:12px;right:12px;bottom:84px;background:#1F332B;color:#fff;border-radius:14px;padding:12px 14px;font-size:13px;z-index:7;display:flex;justify-content:space-between}
+.snack a{color:#bfeadb;font-weight:700}
+.errb{margin:12px 16px;background:var(--dsurf);border-radius:14px;padding:12px;font-size:13px;display:flex;gap:8px}
+/* ADMIN (admin mockup variables) */
+.adm{--bg-primary:#0a0a0a;--bg-secondary:#1a1a1a;--bg-panel:#242424;--text-primary:#fff;--text-secondary:#a0a0a0;--accent-primary:#5b57e8;--accent-text:#a5b4fc;--accent-soft:rgba(91,87,232,.16);--border-color:#333;--danger:#ef4444;--success:#22c55e;--warning-text:#fbbf24;--warning-soft:rgba(217,119,6,.14);--warning-border:rgba(251,191,36,.4);--bar:#2d2d2d;
+ width:100%;max-width:980px;background:var(--bg-primary);color:var(--text-primary);font:14px system-ui,sans-serif;border-radius:12px;padding:16px;border:1px solid #555}
+.adm.light{--bg-primary:#f4f5f7;--bg-secondary:#fff;--bg-panel:#fff;--text-primary:#111827;--text-secondary:#6b7280;--accent-text:#4f46e5;--accent-soft:rgba(91,87,232,.10);--border-color:#e5e7eb;--success:#16a34a;--warning-text:#92400e;--warning-soft:rgba(180,83,9,.10);--warning-border:rgba(180,83,9,.35);--bar:#e5e7eb}
+.adm *{margin:0}.adm .btn{padding:.5rem .85rem;border-radius:8px;border:none;background:var(--accent-primary);color:#fff;font:500 .8rem system-ui;cursor:pointer}.adm .btn.ghost{background:transparent;border:1px solid var(--border-color);color:var(--text-secondary)}.adm .btn.danger{background:var(--danger)}.adm .btn[disabled]{opacity:.45;cursor:not-allowed}
+.adm input,.adm select{padding:.5rem .6rem;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-primary);color:var(--text-primary);font:inherit;font-size:.85rem;width:100%}
+.adm input.er{border-color:var(--danger)}.adm .num{text-align:right;font-variant-numeric:tabular-nums}
+.adm .panel{background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:10px;padding:.9rem;margin-top:12px}
+.adm h4{font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--text-secondary);margin-bottom:.4rem}
+.adm .sub{font-size:.78rem;color:var(--text-secondary)}.adm .err{font-size:.75rem;color:var(--danger);margin-top:3px}
+.adm .trow{display:grid;grid-template-columns:auto 110px auto 90px auto 28px;gap:8px;align-items:center;margin-bottom:8px;font-size:.85rem}
+.adm .trow .t{color:var(--text-secondary);white-space:nowrap}
+.adm table{width:100%;border-collapse:collapse}.adm th{text-align:left;padding:.45rem .6rem;font-size:.7rem;text-transform:uppercase;letter-spacing:.04em;color:var(--text-secondary);border-bottom:1px solid var(--border-color)}.adm td{padding:.45rem .6rem;font-size:.83rem;border-bottom:1px solid var(--border-color)}.adm th.r,.adm td.r{text-align:right;font-variant-numeric:tabular-nums}
+.adm .bn{border:1px solid var(--warning-border);background:var(--warning-soft);color:var(--warning-text);border-radius:8px;padding:.6rem .8rem;font-size:.8rem;margin-top:10px}
+.adm .bn.red{border-color:var(--danger);background:rgba(239,68,68,.10);color:var(--text-primary)}
+.adm .sw{display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:.85rem}.adm .tg{width:36px;height:20px;border-radius:99px;background:var(--bar);position:relative;flex:none}.adm .tg.on{background:var(--accent-primary)}.adm .tg:after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff}.adm .tg.on:after{left:18px}
+.adm .ck{display:flex;gap:8px;align-items:center;font-size:.82rem;margin-top:8px}.adm .ck input{width:auto}
+.adm .ft{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:12px;border-top:1px solid var(--border-color);padding-top:.7rem;position:sticky;bottom:0;background:var(--bg-secondary)}
+.adm .pill{padding:.12rem .5rem;border-radius:99px;font-size:.7rem;font-weight:600;background:var(--accent-soft);color:var(--accent-text)}
+.adm .skl{height:14px;border-radius:6px;background:var(--bar);margin:.5rem 0;animation:s 1.2s infinite}
+.adm .dlg{background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:10px;padding:1rem;max-width:420px;margin:12px auto 0;box-shadow:0 8px 30px rgba(0,0,0,.4)}
+</style></head><body>
+<div class="tabs" id="tabs"></div>
+<div class="cap" id="cap"></div>
+<div id="mini" class="mini"></div>
+<div class="stage" id="stage"></div>
+<script>
+const ST='<span style="font-size:14px">&#9635;</span>';
+const hero=(m,extra='')=>{const b=m=='b';return `<div class="hero ${m}">
+<div class="seg" role="tablist"><span class="${b?'':'sel'}" role="tab" aria-selected="${!b}">Haper</span><span class="${b?'sel':''}" role="tab" aria-selected="${b}">${ST} Haper Business</span></div>
+${b?'<div class="eb">HAPER BUSINESS</div>':''}<div class="dl">DELIVERING TO</div><div class="ad">Sample Road, Patna &#9662;</div>
+<div class="search">&#128269;&nbsp; ${b?'Search wholesale items...':'Search for atta, milk, snacks...'}</div></div>`};
+const wallet='<div class="wal"><span>Wallet</span><b>Rs 120</b></div>';
+const cats=`<div class="cats"><div class="cat"><i style="background:#F5E3CD"></i>Staples</div><div class="cat"><i style="background:#FADEE4"></i>Snacks</div><div class="cat"><i style="background:#D5EDE9"></i>Beverages</div><div class="cat"><i style="background:#F7EBCF"></i>Oil &amp; ghee</div></div>`;
+const card=(n,u,p,pill)=>`<div class="pc"><div class="im"></div><b>${n}</b><small>${u}</small>${pill?`<div><span class="pill">${ST} Wholesale</span></div>`:''}<div class="p">${p}</div><button class="add">ADD</button></div>`;
+const homeH=()=>`${hero('h')}${wallet}<div class="hid" style="border-color:#bcd;background:#f4f9f6;color:#37524a">Banner carousel, Offers, Print tile, free-gift bar: shown as today</div><div class="sec"><b>Shop by category</b><a>See all</a></div>${cats}<div class="sec"><b>Fresh picks</b><a>See all</a></div><div class="rail">${card('Fresh Tomato','500 g','Rs 28')}${card('Toned Milk','500 ml','Rs 30')}</div>`;
+const homeB=()=>`${hero('b')}${wallet}<div class="hid">Hidden in Business: banner carousel, Print tile, Offers entry, free-gift progress</div><div class="sec"><b>Shop by category</b><a>See all</a></div>${cats}<div class="sec"><b>Wholesale for your shop</b><a>See all</a></div><div class="rail">${card('Maggi 70 g','Pack of 100','Rs 1,150',1)}${card('Sample Atta 10 kg','Pack of 4','Rs 1,720',1)}</div><div class="cbar b"><span class="vc"><span class="chp">Business cart</span> &nbsp;2 items</span><b>Rs 13,524</b></div>`;
+const phone=(inner,over='')=>`<div class="phone"><div class="scr">${inner}</div>${over}</div>`;
+const col=(t,p)=>`<div class="col"><b>${t}</b>${p}</div>`;
+const dim=(inner)=>`<div class="scrim"></div>`;
+const sheetStates={
+none:['NONE (never applied)',`<div class="ic">&#127978;</div><h3>Haper Business is for shop owners</h3><p>A separate shop for verified retailers. Your regular Haper shopping stays the same.</p><ul class="bul"><li>Wholesale packs at trade prices</li><li>Bulk discounts on bigger orders</li><li>GST invoice with your GSTIN</li></ul><div class="prm">Apply now</div><div class="sec2">Not now</div>`],
+pending:['PENDING',`<div class="ic" style="background:var(--wsurf)">&#8987;</div><h3>Your application is under review</h3><p>We're checking your details. We'll notify you when it's done. Regular Haper shopping works as usual.</p><div class="prm">View status</div><div class="sec2">Not now</div>`],
+rejected:['REJECTED',`<div class="ic" style="background:var(--dsurf)">&#10005;</div><h3>Your application needs changes</h3><p>Last time: Shop photo isn't clear. Fix it and send it again.</p><div class="prm">Fix and resubmit</div><div class="sec2">Not now</div>`],
+susp:['SUSPENDED',`<div class="ic" style="background:var(--mint)">&#128274;</div><h3>Haper Business is on hold for your account</h3><p>Your retailer account is paused. Regular shopping is not affected.</p><div class="prm">Contact support</div><div class="sec2">Not now</div>`],
+nostore:['APPROVED, store has wholesale off',`<div class="ic">&#128205;</div><h3>Haper Business isn't available at this store yet</h3><p>It may be available at another delivery address. You can keep shopping on Haper.</p><div class="prm">OK</div>`],
+ok:['APPROVED, available (no sheet: switches)',null]};
+const sheetView=k=>{const s=sheetStates[k];const base=homeH();
+ if(!s[1])return col(s[0],phone(homeB(),`<div class="snack"><span>You're in Haper Business. Only wholesale items here.</span></div>`));
+ return col(s[0],phone(base,`<div class="scrim"></div><div class="sheet" role="dialog"><div class="grab"></div>${s[1]}</div>`))};
+const tierRows=cur=>[[10,'2%','Rs 1,127'],[15,'5%','Rs 1,092.50'],[25,'8%','Rs 1,058']].map(r=>`<tr class="${cur==r[0]?'cur':''}"><td class="q">${r[0]}+ packs</td><td class="o">${r[1]} off</td><td class="u">${r[2]} each</td><td class="bt"><button class="add sm" aria-label="Add ${r[0]} packs">Add ${r[0]}</button></td></tr>`).join('');
+const item=(state)=>`<div class="hero-img">Maggi 70 g - Pack of 100</div><div class="pad" style="padding-top:12px"><span class="pill">${ST} Wholesale</span><h2 style="padding:6px 0 0">Maggi Noodles 70 g</h2><small style="color:var(--ink2);font-size:12px">Pack of 100 &middot; 100 pcs</small><div class="pr" style="font-size:22px;margin-top:6px;color:var(--gp)">Rs 1,150 <span class="strike">per pack</span></div><div style="font-size:12px;color:var(--ink2)">Rs 11.50 per piece &middot; Inclusive of all taxes</div></div>
+${state=='load'?`<div class="card"><div class="sk" style="width:40%;margin-bottom:12px"></div><div class="sk" style="height:34px;margin-bottom:8px"></div><div class="sk" style="height:34px;margin-bottom:8px"></div><div class="sk" style="height:34px"></div></div>`:state=='none'?`<div class="note" style="margin:12px 16px">GST invoice with your GSTIN. No coupons apply to wholesale items.</div>`:`<div class="card" role="group" aria-label="Bulk price"><div style="display:flex;justify-content:space-between;align-items:baseline"><b class="hd" style="font-size:15px;color:var(--wi)">Bulk price</b><small style="font-size:11px;color:var(--ink2)">Per pack</small></div><div class="hint" style="margin:2px 0 4px">Buy more, pay less on every pack.</div><table class="tt"><tbody>${tierRows(state=='cur'?15:0)}</tbody></table></div>${state=='cur'?`<div class="note" style="margin:8px 16px 0">You have 15 in your Business cart. 5% off applied.</div>`:''}`}
+<div class="bar"><button class="cta" style="background:linear-gradient(#5BB78E,#2F8163,#215F49)">${state=='cur'?'Update cart':'Add to Business cart'}</button></div>`;
+const cartLine=(q,unit,strike,lab,nudge,tot)=>`<div class="cl"><div class="top"><div class="th"></div><div style="flex:1"><b>Maggi Noodles</b><br><small>Pack of 100</small> <span class="pill">${ST} Wholesale</span></div><div style="text-align:right"><div class="pr">${tot}</div><small>${strike?`<span class="strike">${strike}</span> `:''}${unit} each</small></div></div>
+<div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px"><div><span class="lbl">${lab}</span><div class="nudge">${nudge}</div></div><div class="stp"><span aria-label="Decrease">&minus;</span><span class="n" aria-label="Quantity ${q}, tap to set quantity">${q}</span><span aria-label="Increase">+</span></div></div></div>`;
+const cartScr=()=>`<h2>Business cart</h2>${cartLine(12,'Rs 1,127','Rs 1,150','2% OFF bulk','Add 3 more for 5% off','Rs 13,524')}${cartLine(40,'Rs 1,058','Rs 1,150','8% OFF bulk','Best bulk price applied','Rs 42,320')}
+<div class="note" style="margin:0 16px 10px">${ST} Wholesale items don't get coupons or offers. Delivery fee works as usual.</div>
+<div class="bill"><div><span>Item total</span><span>Rs 60,120</span></div><div class="sv"><span>Bulk discount</span><span>&minus;Rs 4,276</span></div><div><span>Delivery</span><span>FREE</span></div><div style="border-top:1px solid var(--hair);margin-top:4px;padding-top:8px"><b>To pay</b><b>Rs 55,844</b></div></div>
+<div class="bar"><button class="cta">Pay Rs 55,844</button></div>`;
+const qtySheet=(err)=>`<div class="scrim"></div><div class="sheet" role="dialog" aria-label="Set quantity"><div class="grab"></div><h3>Set quantity</h3><p style="margin-bottom:10px">Maggi Noodles &middot; Pack of 100</p><div class="in ${err?'err':''}"><span>${err?'45':'25'}</span><span style="font:12px Poppins;color:var(--ink3)">packs</span></div>${err?`<div class="em">&#9888; Only 40 packs available</div>`:`<div class="hint">Up to 40 packs available. 25+ packs: 8% off, Rs 1,058 each.</div>`}
+<div style="display:flex;justify-content:space-between;margin:12px 0;font-size:13.5px"><span>${err?'':'25 packs'}</span><b>${err?'':'Rs 26,450'}</b></div><div class="${err?'prm':'prm'}" style="${err?'background:var(--mint);color:var(--ink3)':''}">Update</div><div class="sec2" style="color:var(--danger)">Remove from cart</div></div>`;
+const homeBskel=()=>`${hero('b')}<div class="sec"><b>Shop by category</b></div><div class="cats">${'<div class="cat"><div class="sk" style="height:64px;border-radius:20px;margin-bottom:4px"></div><div class="sk" style="height:10px"></div></div>'.repeat(4)}</div><div class="sec"><b>Wholesale for your shop</b></div><div class="rail">${'<div class="pc"><div class="sk" style="height:92px;margin-bottom:8px"></div><div class="sk" style="width:80%;margin-bottom:6px"></div><div class="sk" style="width:50%"></div></div>'.repeat(2)}</div>`;
+const homeBempty=()=>`${hero('b')}${wallet}<div class="empty"><div class="w">${ST}</div><h3>No wholesale items here yet</h3><p>Check back soon, or keep shopping on Haper.</p><div class="sec2" style="max-width:240px;margin:0 auto">Back to Haper</div></div>`;
+const homeBerr=()=>`${hero('b')}<div class="empty"><div class="w" style="background:var(--dsurf)">&#9888;</div><h3>Couldn't load wholesale items</h3><p>Check your connection and try again.</p><div class="prm" style="max-width:200px;margin:0 auto">Retry</div></div>`;
+const cartEmpty=()=>`<h2>Business cart</h2><div class="empty"><div class="w">&#128722;</div><h3>Your Business cart is empty</h3><p>Add wholesale packs to get bulk prices. Your Haper cart is separate and unchanged.</p><div class="prm" style="max-width:240px;margin:0 auto">Browse wholesale items</div></div>`;
+/* ADMIN */
+const tiersBlock=(mode)=>{const bad=mode=='err';const rows=bad?[[10,2,''],[10,5,'Quantity must be higher than the row above'],[20,60,'Use a percent above 0 up to 50']]:mode=='cost'?[[10,2],[20,8],[25,12]]:[[10,2],[15,5]];
+ return `<div class="panel" id="bulk"><div style="display:flex;justify-content:space-between;align-items:baseline"><h4>Bulk discounts</h4><span class="sub">${rows.length} of 5 tiers</span></div><div class="sub" style="margin-bottom:10px">Retailers get a lower price on each unit when they buy at least this many in one cart line. Highest matching tier wins. Wholesale lines never get coupons or sale discounts.</div>
+ ${rows.map((r,i)=>`<div class="trow" role="group" aria-label="Tier ${i+1}"><span class="t">From</span><input class="num ${bad&&i>0?'er':''}" value="${r[0]}" aria-label="Minimum units, tier ${i+1}"><span class="t">units &rarr;</span><input class="num ${bad&&i==2?'er':''}" value="${r[1]}" aria-label="Percent off, tier ${i+1}"><span class="t">% off</span><button class="btn ghost" aria-label="Remove tier ${i+1}" style="padding:.3rem .5rem">&#10005;</button></div>${bad&&r[2]?`<div class="err" role="alert" style="margin:-4px 0 8px 40px">${r[2]}</div>`:''}`).join('')}
+ <button class="btn ghost" ${rows.length>=5?'disabled':''}>+ Add tier</button>
+ <div class="sub" style="margin-top:12px">Preview &middot; store <select style="display:inline;width:auto"><option>Sample Patna Central</option></select> selling price Rs <b>1,150</b></div>
+ <table style="margin-top:6px"><thead><tr><th>Quantity</th><th class="r">Discount</th><th class="r">Unit price</th><th class="r">Line total</th></tr></thead><tbody>
+ <tr><td>1 to ${rows[0][0]-1} units</td><td class="r">&mdash;</td><td class="r">Rs 1,150</td><td class="r">Rs 1,150 to ${(1150*(rows[0][0]-1)).toLocaleString('en-IN')}</td></tr>
+ ${mode=='cost'?`<tr><td>10+ units</td><td class="r">2%</td><td class="r">Rs 1,127</td><td class="r">from Rs 11,270</td></tr><tr><td>20+ units</td><td class="r">8%</td><td class="r">Rs 1,058</td><td class="r">from Rs 21,160</td></tr><tr><td>25+ units</td><td class="r">12%</td><td class="r">Rs 1,012</td><td class="r">from Rs 25,300</td></tr>`:`<tr><td>10 to 14 units</td><td class="r">2%</td><td class="r">Rs 1,127</td><td class="r">Rs 11,270 to 15,778</td></tr><tr><td>15+ units</td><td class="r">5%</td><td class="r">Rs 1,092.50</td><td class="r">from Rs 16,387.50</td></tr>`}</tbody></table>
+ <div class="sub" style="margin-top:6px">Prices follow each store's own selling price. Pick another store to compare.</div>
+ ${mode=='cost'?`<div class="bn red" role="alert"><b>Some stores would sell below cost</b><table style="margin-top:8px"><thead><tr><th>Store</th><th>Tier</th><th class="r">Tier price</th><th class="r">Cost</th><th class="r">Short by</th></tr></thead><tbody><tr><td>Sample Patna East</td><td>20+ units, 8%</td><td class="r">Rs 1,058</td><td class="r">Rs 1,070</td><td class="r">Rs 12</td></tr><tr><td>Sample Patna East</td><td>25+ units, 12%</td><td class="r">Rs 1,012</td><td class="r">Rs 1,070</td><td class="r">Rs 58</td></tr></tbody></table><label class="ck"><input type="checkbox" id="ack" onchange="document.getElementById('sv').disabled=!this.checked"> I understand these tiers sell below cost in the stores above</label></div>`:''}
+ </div>`};
+const adminForm=(mode,theme)=>`<div class="adm ${theme}"><div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:1.15rem">Edit product &middot; Maggi Noodles 70 g</b><span class="sub">Wholesale section</span></div>
+<div class="panel"><div class="sw"><div><b>Wholesale-only item</b><div class="sub">Hidden from the normal Haper shop. Only approved retailers see it in Haper Business.</div></div><div class="tg on" role="switch" aria-checked="true" aria-label="Wholesale-only item"></div></div></div>
+${mode=='load'?`<div class="panel"><h4>Bulk discounts</h4>${'<div class="skl"></div>'.repeat(4)}</div>`:mode=='empty'?`<div class="panel"><h4>Bulk discounts</h4><div class="sub">No bulk discounts yet. Retailers pay the full price at any quantity.</div><button class="btn ghost" style="margin-top:10px">+ Add tier</button></div>`:mode=='off'?`<div class="dlg" role="alertdialog"><b>Remove the bulk discounts too?</b><div class="sub" style="margin:6px 0 12px">This product has 2 bulk discount tiers. Without Wholesale-only they can't apply, so they will be removed when you save.</div><div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn ghost">Keep wholesale-only</button><button class="btn danger">Remove discounts</button></div></div>`:mode=='saveerr'?`${tiersBlock('ok')}<div class="bn red" role="alert">Couldn't save the product. Your discounts are still here. <a style="text-decoration:underline">Retry</a></div>`:tiersBlock(mode)}
+${mode=='off'||mode=='load'?'':`<div class="ft"><span class="sub">${mode=='err'?'Fix the errors above to save.':mode=='cost'?'Tick the box above to save.':mode=='empty'?'':'All changes valid'}</span><div style="display:flex;gap:8px"><button class="btn ghost">Cancel</button><button class="btn" id="sv" ${mode=='err'||mode=='cost'?'disabled':''}>Save product</button></div></div>`}</div>`;
+let theme='';
+const V={
+home:['1 Home: Haper vs Business','Same screen, two modes. The plum header, eyebrow, hidden sections and "Wholesale for your shop" rail are the cues. Switch track is a solid deep fill so labels pass AA at the light end of the green gradient.',()=>col('Haper mode',phone(homeH()))+col('Haper Business mode',phone(homeB()))],
+sheet:['2 Business sheet (6 states)','Tap "Haper Business" when not eligible: mode does not change. Choose a state below.',()=>{const k=window.sk||'none';return sheetView(k)},()=>Object.keys(sheetStates).map(k=>`<button data-k="${k}" class="${(window.sk||'none')==k?'on':''}">${sheetStates[k][0]}</button>`).join('')],
+item:['3 Item page: Bulk price','Table rows are buttons. "Add N" sets the cart quantity to N. Current tier row is highlighted when in cart.',()=>col('Not in cart',phone(`<div class="scr" style="padding:0">${item('x')}</div>`))+col('15 in cart (tier highlighted)',phone(`<div class="scr" style="padding:0">${item('cur')}</div>`))+col('Loading tiers',phone(`<div class="scr" style="padding:0">${item('load')}</div>`))+col('No tiers on this item',phone(`<div class="scr" style="padding:0">${item('none')}</div>`))],
+cart:['4 Business cart + Set quantity','Tier label, nudge, tap the quantity to set it. Error state shown on the right.',()=>col('Cart',phone(cartScr()))+col('Set quantity',phone(cartScr(),qtySheet(0)))+col('Set quantity: over stock',phone(cartScr(),qtySheet(1)))],
+bar:['5 Floating cart bar','Business mode: white bar, plum outline, "Business cart" chip. Haper mode bar stays green and unchanged.',()=>col('Haper',phone(homeH(),`<div class="cbar h"><span class="vc">2 items</span><b>Rs 58</b></div>`))+col('Business',phone(homeB()))],
+states:['6 States: loading, empty, error, fallback','Skeleton over spinner. Empty and error give a way out. Fallback snackbar appears when the server answers x-shop-mode: retail.',()=>col('Loading',phone(homeBskel()))+col('Empty (no wholesale items)',phone(homeBempty()))+col('Error',phone(homeBerr()))+col('Cart empty',phone(cartEmpty()))+col('Fallback to Haper',phone(homeH(),`<div class="snack"><span>Haper Business isn't available right now.</span></div>`))],
+adm:['7 Admin: Bulk discounts','haper-admin product form, Wholesale section. Dark and light via the existing CSS variables.',()=>{const m=window.am||'ok';return `<div style="width:100%;display:flex;flex-direction:column;align-items:center;gap:8px">${adminForm(m,theme)}</div>`},()=>[['ok','Valid, 2 tiers'],['empty','Empty'],['load','Loading'],['err','Validation errors'],['cost','Below-cost warning + tick'],['off','Untick wholesale dialog'],['saveerr','Save error'],['th','Toggle light/dark']].map(a=>`<button data-a="${a[0]}">${a[1]}</button>`).join('')]
+};
+const tabs=document.getElementById('tabs'),stage=document.getElementById('stage'),cap=document.getElementById('cap'),mini=document.getElementById('mini');
+function show(k){window.cur=k;[...tabs.children].forEach(b=>b.classList.toggle('on',b.dataset.k==k));stage.innerHTML=V[k][2]();cap.textContent=V[k][1];mini.innerHTML=V[k][3]?V[k][3]():'';
+ mini.querySelectorAll('button').forEach(b=>b.onclick=()=>{if(b.dataset.k)window.sk=b.dataset.k;if(b.dataset.a=='th')theme=theme?'':'light';else if(b.dataset.a)window.am=b.dataset.a;show(k)})}
+for(const k in V){const b=document.createElement('button');b.textContent=V[k][0];b.dataset.k=k;b.onclick=()=>show(k);tabs.appendChild(b)}
+show('home');
+</script></body></html>

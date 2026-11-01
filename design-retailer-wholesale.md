@@ -210,3 +210,102 @@ Credit tab states: loading KPI + 6 skeleton rows; empty ledger "No credit activi
 
 ## New things introduced (full list)
 Tokens: `WholesaleInk` #6B3FA6 (customer). Customer components: `RetailerApplyScreen`, `RetailerStatusScreen`, `WholesalePill` (marker, 3 places), `PaymentOptionRow` (extract of the existing selectable row; Pay-later disabled state), [P2] `RetailerAccountScreen`, `PaySheet`. Admin: `Retailers` page + detail modal, `GstCheckCard`, `PaymentOptionsCard`, extensions to `VariantGroups` modal (pack mini-form, Type column) and product form (Wholesale section, HSN); [P2] `CreditLedgerTable`, `RecordPaymentModal`.
+
+
+---
+# 12. Haper Business mode (v1, 2026-11-01) - Android first; admin Bulk discounts
+Plan (authoritative for behaviour): `/Users/office/Documents/haper/haper-misc/plan-b2b-business-mode.md` (approved; §3.6 note is superseded by this section where they differ - see 12.1). Mockup: `/Users/office/Documents/haper/haper-misc/design-b2b-business-mode-mockup.html` (7 tabs; admin tab toggles dark/light). All shop names/numbers fictional. This section does NOT change §1-§11 except where stated.
+
+## 12.1 Tokens
+- ONE new customer token: `BusinessDeep` = **#4A2580** (confirmed). Use: second (dark) stop of the Business header gradient, the Business switch track, the "Business cart" text on the floating bar. Reason: the plum family needs a dark end so white text keeps >= 7:1 across the whole 155deg gradient; `WholesaleInk` (#6B3FA6) alone is too flat for a header and `AccentPlum` (#9A6FD0) is too light.
+- Business header gradient: `linear-gradient(155deg, WholesaleInk 0%, BusinessDeep 100%)` (same angle as the green hero so the shape reads as "same screen, other shop"). Decorative circles in the hero (white 8% / 10%) stay.
+- Contrast (computed, WCAG 2.x):
+  | Pair | Ratio | Use |
+  |---|---|---|
+  | White on BusinessDeep #4A2580 | 11.24:1 | header text, switch labels on Business track |
+  | White on WholesaleInk #6B3FA6 | 7.27:1 | light end of header (worst case; passes AAA) |
+  | BusinessDeep on AccentPlumContainer | 8.78:1 | "Business cart" chip text option |
+  | WholesaleInk on AccentPlumContainer | 5.68:1 | WHOLESALE pill (unchanged) |
+  | WholesaleInk on white | 7.27:1 | selected switch label (Business), "Bulk price" title, 1.5dp outlines (3:1 needed, 7.27) |
+  | GreenDeep #20654E on white | 6.92:1 | selected switch label (Haper) |
+  | White on GreenDeep | 6.92:1 | unselected switch label on Haper track |
+  | InkSecondary on white | 5.2:1 | nudge "Add 3 more for 5% off" 12sp |
+  | WarningText #8A5A12 on WarningSurface | 5.24:1 | "2% OFF bulk" label |
+  | GreenPrice on white | 4.73:1 | tier price text (13sp bold; keep on WHITE cards only: on `AccentPlumContainer` it is 3.69, on a plum tint 4.27 - both fail) |
+  | A85212 on white | 5.41:1 | "Add N" ghost button text (matches the orange-small-text rule; border is `AddButtonMid`) |
+  Rejected: `Warning` #C98A2E as text (2.93:1) and `TealText` for the bulk label on white (4.42:1, fails for 11sp).
+- Everything else reuses Color.kt/Type.kt/Dimens.kt: `AccentPlumContainer`, `WholesaleInk`, `WarningSurface/WarningText`, `InkSecondary`, `SurfaceMint`, `BorderHairline`, `AddButtonMid`, sheet top corners `Dimens.sheetTopCorners` (30dp), `HaperPrimaryButton`, `HaperSecondaryButton`, `HaperEmptyState`, `WholesalePill`.
+- **Correction to plan §3.6 (switch contrast):** the plan's "white 18% glass track + white 85% unselected label" FAILS: the green hero starts at GreenMint #84D2AC (white on it = 1.78:1, 18% glass track gives 1.49:1) and even on plum the label is 3.9:1. Spec: the track is a SOLID fill of the current mode's deep token (Haper: `GreenDeep`; Business: `BusinessDeep`), unselected label white 100% (6.92 / 11.24:1), selected segment = white fill with label `GreenDeep` (Haper) or `WholesaleInk` (Business) (6.92 / 7.27:1). Still 36dp tall, radius full, 3dp inner padding, labels Poppins SemiBold 13sp. Note for siddhart: the existing hero eyebrow / "DELIVERING TO" at white 72-80% already sits on the light mint end in Haper mode - pre-existing, out of scope, but do not copy that recipe for new text.
+- Admin: NO new tokens. Reuse `--accent-*`, `--danger`, `--warning-*`, `--border-color`, `--bar`. Below-cost banner = `--danger` outline + 10% red tint with `--text-primary` text (never red-on-red text).
+
+## 12.2 Home switch and Business header (Android)
+- Switch: top of `HomeHeroCard`, above "DELIVERING TO", full width inside `screenHorizontalHomeHeader` (20dp), 14dp gap below. Two segments equal width: "Haper" | storefront icon 14dp + "Haper Business". Touch height 48dp via padding on each segment (visual 36dp). Role.Tab pair.
+- Shown only when `programEnabled` (plan H1). Otherwise absent; header is exactly today's.
+- Business header: eyebrow "HAPER BUSINESS" (Poppins Bold 11sp, +0.08em, white 90%, >= 6.5:1 on the whole plum gradient) directly under the switch; then "DELIVERING TO" + address as today; search placeholder "Search wholesale items...". Wallet strip stays.
+- Hidden in Business: banner carousel, Print tile, Offers entry, free-gift progress. Section title "Fresh picks" -> "Wholesale for your shop". "Shop by category" tiles only for categories with wholesale items.
+- Transition: header gradient crossfade 200ms ease-out (FastOutSlowIn); lists swap to skeletons (no spinner); no blocking dialog; **reduced motion: instant swap, skeletons still shown, no crossfade**. TalkBack: polite announcement "Haper Business, wholesale shop" / "Haper, normal shop".
+- Edge: back button on Home in Business mode behaves as today (exits app); mode is not changed by back.
+- iOS/web follow-up: same switch + sheet; iOS = HIG sheet detents (medium), web = dialog.
+
+## 12.3 Sheet for non-eligible taps (6 states, plan §3.6 table)
+Shell: existing bottom sheet (30dp top corners, grab handle, 20dp padding, scrim = existing 46% dark green). Icon circle 56dp, title Quicksand 19sp Bold, body Poppins 14sp InkSecondary, buttons stacked: primary 52dp (plum gradient WholesaleInk -> BusinessDeep, white label 7.27+:1; this is the ONLY place a plum primary is used - it signals "Business" action), secondary `HaperSecondaryButton` 48dp "Not now". Swipe-down / scrim tap / back dismisses = "Not now". Mode never changes.
+| State | Icon well | Title | Body | Primary -> | Secondary |
+|---|---|---|---|---|---|
+| NONE | storefront / AccentPlumContainer | Haper Business is for shop owners | A separate shop for verified retailers. Your regular Haper shopping stays the same. + 3 bullets: Wholesale packs at trade prices / Bulk discounts on bigger orders / GST invoice with your GSTIN | Apply now -> `RetailerApplyScreen` | Not now |
+| PENDING | hourglass / WarningSurface | Your application is under review | We're checking your details. We'll notify you when it's done. Regular Haper shopping works as usual. | View status -> `RetailerStatusScreen` | Not now |
+| REJECTED | x / DangerSurface | Your application needs changes | Last time: {rejection.label}. Fix it and send it again. | Fix and resubmit -> apply form prefilled | Not now |
+| SUSPENDED | lock / SurfaceMint | Haper Business is on hold for your account | Your retailer account is paused. Regular shopping is not affected. | Contact support -> support screen | Not now |
+| APPROVED, `business.available` false | pin / AccentPlumContainer | Haper Business isn't available at this store yet | It may be available at another delivery address. You can keep shopping on Haper. | OK (dismiss) | none |
+| APPROVED, available | no sheet | switches immediately; snackbar "You're in Haper Business. Only wholesale items here." (4s, shown once per install) | | | |
+States: sheet content comes from cached `GET /user/retailer/me` (no spinner). Loading (me in flight, first tap): show NONE-shaped sheet skeleton (icon + 2 bars + button) max 1s then resolve; error / me failed: switch is hidden anyway (fail closed), so no sheet error state exists. Disabled: n/a (every button is live). A11y: sheet `paneTitle` = title; focus lands on title, then primary; TalkBack reads icon as decorative.
+
+## 12.4 Cart cues, fallback, empty/error/loading
+- Floating cart bar (Business): white bar, 1.5dp `WholesaleInk` outline, `AccentPlumContainer` chip "Business cart" (WholesaleInk 11sp ExtraBold) + "{n} items" left, total right in `BusinessDeep`; Haper bar unchanged (green). Cart screen title "Business cart". Never show both mode carts' counts together.
+- Fallback: server echoes `x-shop-mode: retail` after the app asked Business -> flip UI to Haper (crossfade as 12.2) + snackbar "Haper Business isn't available right now." (5s, no action; polite announce). Mode persisted as Haper.
+- Business Home empty: `HaperEmptyState` icon storefront, "No wholesale items here yet" / "Check back soon, or keep shopping on Haper." + secondary "Back to Haper".
+- Business Home error: "Couldn't load wholesale items" / "Check your connection and try again." + primary "Retry". Never show empty on error.
+- Business Home loading: 4 category skeleton tiles + 2 rail-card skeletons under the plum header (header itself is never skeletoned). Reduced motion: static `#E8F0EB` bars, no shimmer/pulse.
+- Business cart empty: "Your Business cart is empty" / "Add wholesale packs to get bulk prices. Your Haper cart is separate and unchanged." + "Browse wholesale items". Business cart error / loading: reuse existing cart patterns.
+- Success: switching and add-to-cart already acknowledge within 100ms (header/stepper change); no extra toast beyond the first-switch snackbar.
+
+## 12.5 Item page: Bulk price table
+- Card (white, radius 20dp, 14dp pad, `BorderHairline`) placed directly under the price block, only when the item has `wholesale.tiers`. Title "Bulk price" (Quicksand 15sp Bold, WholesaleInk) + right caption "Per pack" (11sp InkSecondary); subtitle "Buy more, pay less on every pack." (12sp InkSecondary).
+- Row (min 48dp, hairline between): `{minQty}+ packs` (Poppins SemiBold 13sp Ink) | `{p}% off` (GreenPrice Bold 13sp) | `Rs {unit} each` (right-aligned, tabular figures, Ink) | ghost button "Add {minQty}" (min 64dp x 40dp touch, 1.5dp `AddButtonMid` border, A85212 12.5sp Bold, radius 12dp). Unit label follows the item's unit ("packs" for packs, "units" otherwise). Prices from the server only; client never computes.
+- Tapping "Add N" sets the cart line quantity to exactly N (not +N); button label stays "Add N" when the cart has fewer; when the cart already has exactly N or more in that tier the row shows 3dp WholesaleInk left bar (no tint - tinted rows break GreenPrice contrast) and the button becomes a non-interactive "In cart" label. Stock below N: button disabled (45% opacity) with sub "Only {stock} available".
+- Sticky bar: "Add to Business cart" (existing CTA recipe); when in cart "Update cart".
+- States: loading = card with 3 skeleton rows; no tiers = card not rendered (price block + existing wholesale note only); error = tiers omitted silently, price block still shows base price (never block buying); disabled = per row above.
+- A11y: card is a group "Bulk price"; each row reads "10 or more packs, 2 percent off, 1,127 rupees each, button Add 10".
+
+## 12.6 Cart line: tier label, nudge, Set quantity
+- Line (existing wholesale cart line): right block = line total (Quicksand ExtraBold), under it struck original `Rs 1,150` (InkTertiary 12sp) + `Rs 1,127 each`. Below the name row: label chip `{p}% OFF bulk` (WarningSurface fill, WarningText 11sp Bold, radius 8dp) and the nudge `Add 3 more for 5% off` (InkSecondary 12sp). At the top tier the nudge reads "Best bulk price applied". No tier = no label, nudge for first tier ("Add 5 more for 2% off").
+- Nudge tap = sets quantity to the next tier (same as "Add N"); it is a text-link row with 48dp touch height, underline on focus only.
+- Stepper: +/- 34dp visual, 48dp touch. The number between them is tappable (dotted underline, 48dp min, `Role.Button`, description "Quantity 12, tap to set quantity") and opens the Set quantity sheet. Wholesale lines are exempt from the 6-line cap on every add path; at stock cap "+" dims 40% and tap shows snackbar "Only {N} packs available".
+- Set quantity sheet: title "Set quantity", sub "{label} - {pack}" , numeric keyboard (`KeyboardType.Number`, auto-focus, select-all), input 56dp Quicksand 22sp Bold with unit suffix "packs"; helper "Up to {stock} packs available. {tierMin}+ packs: {p}% off, Rs {unit} each." (updates live to the tier the typed number reaches); live summary row "{q} packs" left, line total right; primary "Update", secondary text button "Remove from cart" (DangerDeep text). Validation: empty/0 -> Update disabled; > stock -> input border `DangerDeep` 1.5dp + "Only {stock} packs available", Update disabled (SurfaceMint fill, InkTertiary label - existing disabled idiom); non-numeric blocked by keyboard. Update applies optimistically (line total from server tier prices after response; sheet closes at once, line shows skeleton price for the ~100-400ms) and reverts with snackbar "Couldn't update quantity. Try again." on failure.
+- Bill: add row "Bulk discount" `-Rs 276` in `TealText`-sign-and-word (minus sign + words, not colour alone), included in the existing Discount total.
+- Note under lines (existing): "Wholesale items don't get coupons or offers. Delivery fee works as usual."
+- A11y: nudge + label read as part of the line description: "Maggi Noodles, Pack of 100, wholesale, 12 packs, 2 percent bulk discount, 1,127 rupees each, 13,524 rupees. Add 3 more for 5 percent off."
+
+## 12.7 Admin: "Bulk discounts" block (haper-admin product form)
+- Location: product master form, "Wholesale" section, directly under the "Wholesale-only item" switch (helper: "Hidden from the normal Haper shop. Only approved retailers see it in Haper Business."). Block appears when the switch is on or the product is a pack; otherwise absent (not disabled).
+- Layout (panel: `--bg-secondary`, 1px `--border-color`, radius 10px, 0.9rem pad). Header row: h4 "Bulk discounts" + right "{n} of 5 tiers". Helper: "Retailers get a lower price on each unit when they buy at least this many in one cart line. Highest matching tier wins. Wholesale lines never get coupons or sale discounts."
+- Tier row (grid, gap 8px): "From" | [qty input 110px, right-aligned, inputmode numeric] | "units ->" | [percent input 90px, right-aligned, inputmode decimal, 2dp max] | "% off" | remove (x ghost, 32px). "+ Add tier" ghost button below; disabled at 5 rows. Each row `role=group` "Tier N"; inputs labelled "Minimum units, tier N" / "Percent off, tier N".
+- Validation (inline under the row, `--danger` 0.75rem, `role=alert`, field `aria-invalid`; blocking = Save disabled with footer text "Fix the errors above to save."): "Whole number from 2 to 100000" / "Use a percent above 0 up to 50" / "Quantity must be higher than the row above" / "Discount must be higher than the row above" / "Two tiers can't start at the same quantity" / "Up to 5 tiers".
+- **Live preview table** (below rows, always visible when >= 1 valid row): line "Preview - store [select] selling price Rs {price}" (store select defaults to the first store; price = that store's selling price, super admin can switch store). Columns: Quantity | Discount | Unit price | Line total; numbers right-aligned, tabular, Indian grouping. Rows: "1 to 9 units  -  Rs 1,150  Rs 1,150 to 10,350", "10 to 14 units  2%  Rs 1,127  Rs 11,270 to 15,778", "15+ units  5%  Rs 1,092.50  from Rs 16,387.50". Footer sub: "Prices follow each store's own selling price. Pick another store to compare." `aria-live=polite`; invalid rows are skipped in the preview.
+- **Below-cost warning** (on save attempt and live when computable): `--danger`-outline banner "Some stores would sell below cost" + table Store | Tier | Tier price | Cost | Short by (right-aligned numbers), max 5 rows then "and {n} more" link; below, checkbox "I understand these tiers sell below cost in the stores above". Save stays disabled (footer: "Tick the box above to save.") until ticked; ticking is audited (super admin only). Editing any tier clears the tick. This is a warning, not a clamp.
+- Untick Wholesale-only with tiers present: `ConfirmDialog` (danger) "Remove the bulk discounts too?" / "This product has {n} bulk discount tiers. Without Wholesale-only they can't apply, so they will be removed when you save." buttons "Keep wholesale-only" (default focus) / "Remove discounts".
+- States: loading = 4 skeleton bars in the panel (light mode bars use `--bar`, visible); empty = "No bulk discounts yet. Retailers pay the full price at any quantity." + "+ Add tier"; error on save = inline `--danger` banner "Couldn't save the product. Your discounts are still here. Retry" (form content kept); success = existing product-saved toast; disabled (non-super-admin) = block shown read-only with lock icon "Only a super admin can change bulk discounts". Dark + light both via vars; check `--text-secondary` helper text on `--bg-secondary` in light (6b7280 on white = 4.83:1 OK).
+- Keyboard: Enter in a % field adds no row; Tab order qty -> % -> remove per row, then Add tier, preview store select, acknowledge checkbox, Save. Destructive remove of a row needs no confirm (undo = re-type; change is unsaved until Save).
+
+## 12.8 Copy strings (final list)
+Switch: "Haper", "Haper Business" (content desc "Haper, normal shop" / "Haper Business, wholesale shop"). Header: "HAPER BUSINESS", "Search wholesale items...", "Wholesale for your shop". Snackbars: "You're in Haper Business. Only wholesale items here." / "Haper Business isn't available right now." / "Only {N} packs available" / "Couldn't update quantity. Try again." Sheet titles: "Haper Business is for shop owners" / "Your application is under review" / "Your application needs changes" / "Haper Business is on hold for your account" / "Haper Business isn't available at this store yet". Buttons: "Apply now", "View status", "Fix and resubmit", "Contact support", "OK", "Not now". Empty/error: "No wholesale items here yet", "Check back soon, or keep shopping on Haper.", "Back to Haper", "Couldn't load wholesale items", "Retry", "Your Business cart is empty", "Browse wholesale items". Item: "Bulk price", "Per pack", "Buy more, pay less on every pack.", "10+ packs", "2% off", "Rs 1,127 each", "Add 10", "In cart". Cart: "Business cart", "2% OFF bulk", "Add 3 more for 5% off", "Best bulk price applied", "Set quantity", "Update", "Remove from cart", "Bulk discount". Admin: "Bulk discounts", "From [ ] units -> [ ] % off", "+ Add tier", "Some stores would sell below cost", "I understand these tiers sell below cost in the stores above", "Remove the bulk discounts too?", "Keep wholesale-only", "Remove discounts".
+
+## 12.9 Accessibility and motion summary
+- Touch targets >= 48dp on switch segments, "Add N", quantity number, nudge, sheet buttons. Admin controls >= 32px (admin density).
+- Focus order: Home = switch, address, Help, search, wallet, content; the switch is the FIRST focus stop. Switch is a tab pair announcing "selected". Sheets trap focus; dismiss returns focus to the "Haper Business" segment.
+- Mode is never colour-only: eyebrow text + switch label + "Business cart" text all repeat it.
+- Reduced motion (`Settings.Global.ANIMATOR_DURATION_SCALE == 0` / system setting): no crossfade, no sheet slide (fade 100ms), no shimmer; admin skeleton pulse disabled via `prefers-reduced-motion`. Standard motion: sheet slide 250ms cubic-bezier(.2,.8,.2,1), crossfade 200ms, press feedback within 100ms (PressScale).
+- 200% font: switch grows in height (labels wrap to 2 lines before truncating "Business"), tier rows wrap the "each" price under the %; quantities never truncate.
+- Theme: customer app light-only (as §0); admin both themes.
+
+## 12.10 New things introduced
+Token `BusinessDeep` #4A2580. Components: `ShopModeSwitch` (hero segment), `BusinessGateSheet` (6-state sheet), `BulkPriceCard`, `CartLineTierInfo` (label + nudge), `SetQuantitySheet`, plum variant of the floating cart bar; admin `BulkDiscountsBlock` (rows + preview table + `BelowCostWarning`). Open items for the user: (a) confirm the solid-track switch (this section) replacing the glass recipe in plan §3.6; (b) "In cart" lock-in for tier rows is a design choice - drop if backend cannot give current line quantity cheaply (app already has it from the cart).

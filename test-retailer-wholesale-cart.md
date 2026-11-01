@@ -29,7 +29,7 @@ Backend only (user service). No migration. Nothing changes while every store has
 ## Steps
 
 ### Non-audience customer (normal / PENDING / REJECTED / SUSPENDED, or store flag OFF)
-1. ✅ `POST /user/cart/CART {itemId:<pack id>, quantity:1}` → `400 "Item not found or out of stock"`, the same
+1. ✅ `POST /user/cart/CART {itemId:<pack id>, quantity:1}` → `404 "Item not found or out of stock"` (see the 2026-11-01 update below), the same
    body as for a random id. ❌ Must not mention the pack name or its stock.
 2. ✅ Same for the +/- delta add on a pack line the customer already holds (`quantity: 1` or `-1`).
 3. ✅ `GET /user/cart/?type=CART&page=1` → no pack id anywhere; totals count retail lines only; **no** `paymentOptions` key.
@@ -82,3 +82,23 @@ Backend only (user service). No migration. Nothing changes while every store has
 - A cart made only of lines for deleted items (nothing visible at all) is not swept on `GET /user/cart`; it just
   answers `Cart empty` until it expires (unchanged from before).
 - The hidden pack line stays in Redis until the cart is emptied, placed, or expires (12 h).
+
+## Business mode update (2026-11-01)
+
+Plain example: Ravi (fictional "Sharma Kirana") is an approved retailer. Packs no longer sit in his normal shop. They live in **Haper Business**, a separate shop with its own cart. The full walkthrough is `test-b2b-business-mode.md`.
+
+**What changes in the steps above**
+- Steps 1-2: the refusal is **404**, not 400. The code returns 404 (`CartRepository.add`). The 400 wording in those steps was wrong.
+- Steps 8-10d and 11-16 describe the **Business view**. The app asks for it with the header `x-shop-mode: business` (sent when the Haper Business switch is on). Without the header, a retailer gets the normal-customer answers in steps 1-7.
+- Every cart response carries `x-shop-mode: business` or `x-shop-mode: retail`. That is what the server actually served.
+- `type=CART` means the **Haper cart** in the Haper view and the **Business cart** in the Business view. Packs are only in the Business cart. A pack added before this change stays in the old cart, hidden in the Haper view (step 14 still covers that).
+- `paymentOptions` (step 9) is returned in the Business view only. In the Haper view it is absent, like for any customer.
+- The gift offer (step 10d) is always empty in the Business view.
+- Coupons and automatic discounts (10a-10c) are unchanged: a wholesale line never takes them. The bulk tier is the only discount a pack line can take (see `test-retailer-wholesale-discounts.md`).
+
+**New checks**
+- ✅ Haper view, retailer: `POST /user/cart/CART {itemId:<pack id>}` → 404, cart unchanged.
+- ✅ Business view (`x-shop-mode: business`): the same add → added. `GET /user/cart/?type=CART&page=1` with the header shows the pack. The same GET without the header does not.
+- ✅ Suspend the retailer while a pack is in the Business cart: within about 60 s the header answers `retail`. The Business cart is no longer shown. The Haper cart is unchanged.
+- ✅ Normal customer sending the header: `x-shop-mode: retail`, cart exactly as step 3.
+- ❌ `POST /user/cart/3` (client trying to name the Business cart by number) → refused by the validator (403). No cart is created.

@@ -57,3 +57,31 @@ Test data (fictional): retailer "Test Kirana" (APPROVED, store wholesale ON), it
 ## Invoice download (Android)
 - The API no longer redirects: every invoice GET answers 200 with the PDF bytes (`application/pdf`, attachment filename, `Cache-Control: private, no-store`). The invoice client still strips `x-*` and `Content-Type` on non-API-host hops, kept as defence in depth in case a redirect ever returns. Unit test: `InvoiceRedirectHeadersTest`.
 - Manual: order detail -> Download Invoice -> PDF opens, no redirect in the network log. Download twice: both succeed. API-host calls keep all headers.
+
+## Business mode update (2026-11-01)
+
+Plain example: Test Retailer One does not see packs in the normal Haper shop any more. He taps **Haper Business** on the Home switch. The packs appear there, with their own cart. Section B-E above apply **in Haper Business**. The full walkthrough is `test-b2b-business-mode.md`.
+
+**What changed**
+- In normal Haper mode a retailer sees exactly what a normal customer sees. No pack in the size sheet, the detail tiles, the cart or the checkout options.
+- Home switch "Haper | Haper Business" at the top of the green header. Shown only when the retailer program is on for the store.
+- Tapping "Haper Business" when you are not allowed opens a sheet (apply, status, fix and resubmit, on hold, or "not available at this store yet"). The mode does not change.
+- Haper Business: plum header, "HAPER BUSINESS" eyebrow, "Search wholesale items..." hint, "Business cart" title.
+- The mode is remembered per user and per phone. Logout returns to Haper.
+
+**Checks**
+- [ ] Retailer in Haper: no pack in the size sheet, the detail tiles or the cart.
+- [ ] Tap "Haper Business": packs return, plum header, "Business cart" title, one snackbar "You're in Haper Business. Only wholesale items here."
+- [ ] Tap "Haper": back to the green header and "Fresh picks".
+- [ ] Normal customer taps "Haper Business": the "Apply now" sheet opens and the mode stays Haper.
+- [ ] Retailer suspended while in Business: the next Business call switches the app to Haper with "Haper Business isn't available right now."
+- [ ] Program off for the store: no switch at all.
+- [ ] Kill and reopen in Business: still Business. Log out: opens in Haper.
+
+**NOT BUILT YET on Android (backend is ready):**
+- Bulk price table on the item page.
+- "2% OFF bulk" label, "Add N more for X% off" nudge, and the Set-quantity sheet in the cart.
+- The wholesale 6-per-line cap exemption. Today the app stops every line at 6, including packs, so 10+ packs cannot be bought in the app yet.
+Test those through the API until they land (`test-b2b-business-mode.md`, section 10).
+
+**Automated (2026-11-01):** `./gradlew :app:testDebugUnitTest` for `ShopModeStateTest`, `ShopModeEchoTest`, `BusinessSwitchSheetTest`, `DeepLinkShopModeTest` (20 tests, green).
