@@ -74,3 +74,17 @@ Needs: backend deploy only (user + admin API).
     - Rejected -> `stage: null`, `rejectReason: "Pages are blurred"`, `rejectCode: "UNREADABLE"` (UNREADABLE | PROHIBITED_CONTENT | OTHER).
     - No storage keys, hash, cost or staff id inside `print`. ✅
 23. Store config with a per-side price of 0 (set directly in the DB) -> the quote uses the default price instead, total is never Rs 0; a total of Rs 0 can never become a free WALLET order. ✅
+
+## Order-level quote for several files + per-order limits in config
+Needs: backend deploy only (user API). Old apps keep sending `{ jobId, ... }` and see no change.
+
+Q1. `POST /user/print/quote` with `{ jobId, copies: 2 }` (3-page file) -> exactly as before: `data: { jobId, pageCount, pageRange, copies, quote }`, quote has no `lines`, total 40. ✅
+Q2. `{ jobs: [{ jobId, copies, sides, pageRange }] }` (1 to 10 files) -> 200, `data: { quote }` with one `lines[]` entry per file in request order, each carrying `jobId` and `subtotal` (that file's real printing price). Top-level `printSubtotal`, `minimumTopUp`, `printAmount`, `deliveryCharge` (once), `total`. ✅
+Q3. Two tiny files (1 page + 2 pages, single, 1 copy, Rs 2/side): subtotals Rs 2 and Rs 4, `minimumTopUp` Rs 14, `printAmount` 20, delivery 20, total 40. Lines' `amount` is 16 / 4 (top-up folded into the first line, same as the stored order) — apps show `subtotal` per file and `minimumTopUp` as its own row. ✅
+Q4. 11 files, a repeated `jobId`, both `jobId` and `jobs`, `jobs: []`, or `copies` next to `jobs` -> 400 `reason: INVALID_REQUEST`. Empty body -> 400 `"jobId" is required` (unchanged). ❌ expected
+Q5. Another customer's file in `jobs` -> 404 `reason: NOT_FOUND`, `jobId` of that file; identical to a made-up id. ❌ expected
+Q6. File from another store -> 409 `JOB_OTHER_STORE`; rejected/purged file -> 409 `JOB_UNAVAILABLE`; file expiring within the payment window -> 409 `JOB_EXPIRING`; file already in an order -> 409 `JOB_ALREADY_ORDERED`. Every one carries the failing `jobId`. `orderId` appears ONLY on `JOB_ALREADY_ORDERED`, and only when all the already-ordered files are in one order (files spread over two orders -> no `orderId`). A file from another store that is also attached to an order -> `JOB_OTHER_STORE` with no `orderId`. ❌ expected
+Q7. Two 200-page files x 2 copies (800 sides) -> 400 "An order can have at most 500 printed sides", same message as placing the order, and NO `jobId` (it is the whole order, not one file). ❌ expected
+Q7b. Three 3-page files, the 2nd with `pageRange: "2-9"` -> 400 `reason: INVALID_REQUEST`, message "Page 9 is beyond the last page (3)" (unchanged) plus `jobId` of the 2nd file so the app can mark that row. Same for bad copies or too many pages on one file. Placing that order -> same 400 and message, body unchanged (no `jobId`, no `errorType`). ❌ expected
+Q8. Place the order right after the quote with `expectedTotal = quote.total` -> 200, no `PRICE_CHANGED`; order lines match the quote lines. ✅
+Q9. `GET /user/print/config` -> also `maxFilesPerOrder: 10` and `maxPrintedSidesPerOrder` (store setting, default 500; admin change to 300 shows 300). ✅
