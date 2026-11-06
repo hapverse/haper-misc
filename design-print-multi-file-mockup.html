@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Print: several files in one order (mockup)</title>
+<style>
+:root{--app:#F5FAF7;--white:#fff;--hair:#E5EFE9;--mint:#E7F3EC;--sunken:#EDF5F0;--price:#2F8163;--action:#257056;--deep:#20654E;--ink:#1F332B;--ink2:#5A7268;--danger:#DC5F78;--dangersf:#FDF1F3;--warnsf:#FBF0DC;--warn:#8A5A12}
+*{box-sizing:border-box}
+body{margin:0;padding:24px;background:#d9e3dd;font-family:"Quicksand",system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--ink)}
+h1{font-size:20px;margin:0 0 4px}
+.lead{font-size:13px;color:#33463d;margin:0 0 20px;max-width:760px}
+.row{display:flex;flex-wrap:wrap;gap:28px;align-items:flex-start}
+.cap{font-size:12.5px;font-weight:700;margin:0 0 8px;max-width:360px;color:#24362e}
+.cap small{display:block;font-weight:500;color:#44574e;margin-top:2px}
+.phone{width:360px;height:760px;background:var(--app);border-radius:28px;border:8px solid #1c2a24;display:flex;flex-direction:column;overflow:hidden;position:relative}
+.top{height:52px;flex:none;display:flex;align-items:center;gap:8px;padding:0 8px;background:var(--white);border-bottom:1px solid var(--hair);font-weight:700;font-size:16px}
+.back{width:44px;height:44px;display:grid;place-items:center;font-size:20px}
+.body{flex:1;overflow:auto;padding:12px 16px;display:flex;flex-direction:column;gap:12px}
+.bar{flex:none;background:var(--white);border-top:1px solid var(--hair);padding:10px 16px 14px;display:flex;align-items:center;gap:12px}
+.bar .t{flex:1}.bar .t b{font-size:16px;display:block}.bar .t span{font-size:11.5px;color:var(--ink2)}
+.btn{min-height:54px;border:0;border-radius:18px;background:linear-gradient(150deg,var(--price),var(--deep));color:#fff;font:700 15px inherit;font-family:inherit;padding:0 20px}
+.btn.off{background:#B9CBC1;color:#fff}
+.btn.sec{background:var(--mint);color:var(--deep)}
+.sec-l{display:flex;justify-content:space-between;align-items:center;font-size:12px;font-weight:600;color:var(--ink2)}
+.sec-l a{color:var(--action);font-weight:700;min-height:32px;display:inline-flex;align-items:center}
+.panel{background:var(--white);border:1px solid var(--hair);border-radius:16px;padding:12px 14px}
+.file{display:grid;grid-template-columns:36px 1fr auto;gap:2px 10px;align-items:start}
+.chip{width:36px;height:36px;border-radius:12px;background:var(--sunken);display:grid;place-items:center;font-size:10px;font-weight:800;color:var(--deep)}
+.chip.bad{background:var(--dangersf);color:#8a2b3f}
+.nm{font-size:14px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.meta{font-size:11.5px;color:var(--ink2);line-height:1.45}
+.price{font-size:13px;font-weight:700;text-align:right;font-variant-numeric:tabular-nums}
+.x{width:44px;height:44px;margin:-8px -10px 0 0;display:grid;place-items:center;color:var(--ink2);font-size:16px}
+.stat{grid-column:2/4;margin-top:4px;font-size:12px;display:flex;align-items:center;gap:6px;color:var(--ink)}
+.stat .ok{color:var(--price);font-weight:700}
+.prog{grid-column:2/4;height:4px;border-radius:2px;background:var(--sunken);margin-top:6px;overflow:hidden}
+.prog i{display:block;height:100%;background:var(--price)}
+.prog.ind i{width:40%;opacity:.6}
+.err{grid-column:2/4;margin-top:6px;font-size:12.5px;line-height:1.4;display:flex;gap:6px}
+.err .ic{color:var(--danger);font-weight:800}
+.acts{grid-column:2/4;display:flex;gap:4px}
+.acts a{color:var(--action);font-weight:700;font-size:13px;min-height:44px;display:inline-flex;align-items:center;padding-right:14px}
+.edit{color:var(--action);font-weight:700}
+.add{border:1.5px dashed #BBD2C6;border-radius:16px;min-height:56px;display:flex;align-items:center;justify-content:center;gap:8px;color:var(--action);font-weight:700;font-size:14px;background:var(--app)}
+.add.dis{color:var(--ink2);border-color:var(--hair)}
+.note{background:var(--mint);border-radius:14px;padding:10px 14px;font-size:12.5px;line-height:1.45;display:flex;gap:10px;justify-content:space-between}
+.note a{color:var(--action);font-weight:700;white-space:nowrap}
+.warn{background:var(--warnsf);border-radius:14px;padding:10px 14px;font-size:12.5px;line-height:1.45;color:#5b3a07}
+.sw{display:flex;justify-content:space-between;align-items:center;min-height:44px;font-weight:700;font-size:14px}
+.tog{width:46px;height:28px;border-radius:14px;background:var(--price);position:relative}
+.tog:after{content:"";position:absolute;right:3px;top:3px;width:22px;height:22px;border-radius:50%;background:#fff}
+.tog.off{background:#B9CBC1}.tog.off:after{right:auto;left:3px}
+.ctl{display:flex;gap:10px;margin-top:8px;align-items:center;font-size:13px;flex-wrap:wrap}
+.step{display:flex;border:1px solid var(--hair);border-radius:12px;overflow:hidden}
+.step span{min-width:40px;height:40px;display:grid;place-items:center;font-weight:700}
+.seg{display:flex;background:var(--sunken);border-radius:12px;padding:3px}
+.seg span{padding:0 12px;height:34px;display:grid;place-items:center;font-size:12.5px;font-weight:600;border-radius:10px}
+.seg .on{background:#fff;font-weight:700}
+.sum{display:flex;justify-content:space-between;font-size:13px;padding:3px 0}
+.sum.b{font-weight:700;font-size:15px;border-top:1px solid var(--hair);margin-top:6px;padding-top:8px}
+.sum.s{color:var(--ink2);font-size:12px}
+.sheet{position:absolute;left:0;right:0;bottom:0;background:#fff;border-radius:22px 22px 0 0;padding:18px 16px 18px;box-shadow:0 -8px 30px rgba(0,0,0,.25)}
+.dim{position:absolute;inset:0;background:rgba(20,30,25,.45)}
+.sheet h3{margin:0 0 6px;font-size:16px}.sheet p{margin:0 0 12px;font-size:13px;color:var(--ink2);line-height:1.45}
+.sheet .btns{display:flex;gap:10px}.sheet .btns .btn{flex:1;padding:0 8px}
+.pill{display:inline-block;background:var(--warnsf);color:var(--warn);font-weight:700;font-size:11.5px;border-radius:99px;padding:3px 10px}
+.pillg{display:inline-block;background:var(--mint);color:var(--deep);font-weight:700;font-size:11.5px;border-radius:99px;padding:3px 10px}
+.ok-circle{width:64px;height:64px;border-radius:50%;background:var(--mint);color:var(--price);display:grid;place-items:center;font-size:30px;margin:6px auto 0}
+.center{text-align:center}
+.legend{margin-top:22px;font-size:12.5px;max-width:760px;color:#24362e;line-height:1.5}
+</style>
+</head>
+<body>
+<h1>Print: several files in one order</h1>
+<p class="lead">Android-style frames at 360 wide (iOS and web use the same layout). Made-up data. Spec: design-print-multi-file.md.</p>
+
+<div class="row">
+
+<!-- A: mid upload -->
+<div>
+<p class="cap">A. Files are uploading (2 at a time)<small>Continue is off until every file has finished. One file failed; one is too big and was never sent.</small></p>
+<div class="phone">
+ <div class="top"><span class="back">&larr;</span>Print documents</div>
+ <div class="body">
+  <div class="sec-l"><span>Your files</span><span>5 of 10</span></div>
+
+  <div class="panel file" role="group" aria-label="Invoice-March.pdf, 12 pages, ready">
+   <div class="chip">PDF</div><div><div class="nm">Invoice-March.pdf</div><div class="meta">12 pages &middot; 1.4 MB</div><div class="meta">1 copy &middot; One side &middot; All pages <span class="edit">Edit</span></div></div>
+   <div><div class="x">&#128465;</div></div>
+   <div class="stat"><span class="ok">&#10003; Ready</span><span style="margin-left:auto" class="price">&#8377;24.00</span></div>
+  </div>
+
+  <div class="panel file">
+   <div class="chip">PDF</div><div><div class="nm">Report-Final.pdf</div><div class="meta">Uploading 45%</div></div>
+   <div><div class="x">&#10005;</div></div>
+   <div class="prog"><i style="width:45%"></i></div>
+  </div>
+
+  <div class="panel file">
+   <div class="chip">JPG</div><div><div class="nm">Poster.jpg</div><div class="meta">Checking your file</div></div>
+   <div><div class="x">&#10005;</div></div>
+   <div class="prog ind"><i></i></div>
+  </div>
+
+  <div class="panel file">
+   <div class="chip bad">PDF</div><div><div class="nm">Notes-Ravi-Sharma.pdf</div></div>
+   <div><div class="x">&#128465;</div></div>
+   <div class="err"><span class="ic">!</span><span>Upload stopped. Check your connection.</span></div>
+   <div class="acts"><a>Retry</a><a>Remove</a></div>
+  </div>
+
+  <div class="panel file">
+   <div class="chip bad">PDF</div><div><div class="nm">Old-Scan-Archive.pdf</div></div>
+   <div><div class="x">&#128465;</div></div>
+   <div class="err"><span class="ic">!</span><span>This file is 34 MB. The limit is 20 MB. Try a smaller file or fewer pages.</span></div>
+   <div class="acts"><a>Remove</a></div>
+  </div>
+
+  <div class="add">+ Add another file</div>
+ </div>
+ <div class="bar"><div class="t"><b>&#8377;24.00</b><span>1 file ready</span></div><button class="btn off">Uploading 1 of 4&hellip;</button></div>
+</div>
+</div>
+
+<!-- B: all ready, shared settings -->
+<div>
+<p class="cap">B. All ready, shared settings on<small>Copies and sides are shared. Page range is set per file (Report-Final has Pages 3-12). One quote, one delivery fee.</small></p>
+<div class="phone">
+ <div class="top"><span class="back">&larr;</span>Print documents</div>
+ <div class="body">
+  <div class="sec-l"><span>Your files</span><span>3 of 10</span></div>
+
+  <div class="panel file">
+   <div class="chip">PDF</div><div><div class="nm">Invoice-March.pdf</div><div class="meta">12 pages &middot; 1.4 MB</div><div class="meta">2 copies &middot; Both sides &middot; All pages <span class="edit">Edit</span></div></div>
+   <div><div class="x">&#128465;</div></div>
+   <div class="stat"><span class="ok">&#10003; Ready</span><span style="margin-left:auto" class="price">&#8377;36.00</span></div>
+  </div>
+  <div class="panel file">
+   <div class="chip">JPG</div><div><div class="nm">Poster.jpg</div><div class="meta">1 page &middot; 0.9 MB</div><div class="meta">2 copies &middot; Both sides <span class="edit">Edit</span></div></div>
+   <div><div class="x">&#128465;</div></div>
+   <div class="stat"><span class="ok">&#10003; Ready</span><span style="margin-left:auto" class="price">&#8377;6.00</span></div>
+  </div>
+  <div class="panel file">
+   <div class="chip">PDF</div><div><div class="nm">Report-Final.pdf</div><div class="meta">40 pages &middot; 3.2 MB</div><div class="meta">2 copies &middot; Both sides &middot; Pages 3-12 <span class="edit">Edit</span></div></div>
+   <div><div class="x">&#128465;</div></div>
+   <div class="stat"><span class="ok">&#10003; Ready</span><span style="margin-left:auto" class="price">&#8377;30.00</span></div>
+  </div>
+  <div class="add">+ Add another file</div>
+
+  <div class="panel">
+   <div class="sw"><span>Same settings for all files</span><span class="tog"></span></div>
+   <div class="ctl"><span>Copies</span><div class="step"><span>&minus;</span><span>2</span><span>+</span></div>
+    <div class="seg"><span>One side</span><span class="on">Both sides</span></div></div>
+   <div class="meta" style="margin-top:8px">Copies and sides apply to every file. Page range is set for each file.</div>
+  </div>
+
+  <div class="panel">
+   <div class="sum"><span>Invoice-March.pdf</span><span>&#8377;36.00</span></div>
+   <div class="sum"><span>Poster.jpg</span><span>&#8377;6.00</span></div>
+   <div class="sum"><span>Report-Final.pdf</span><span>&#8377;30.00</span></div>
+   <div class="sum"><span>Delivery charge</span><span>&#8377;20.00</span></div>
+   <div class="sum s"><span>Includes GST (18%)</span><span>&#8377;13.12</span></div>
+   <div class="sum b"><span>Total</span><span>&#8377;92.00</span></div>
+  </div>
+ </div>
+ <div class="bar"><div class="t"><b>&#8377;92.00</b><span>3 files &middot; 23 pages</span></div><button class="btn">Continue</button></div>
+</div>
+</div>
+
+<!-- C: partial confirm sheet -->
+<div>
+<p class="cap">C. Continue with one file failed<small>Ready files can be ordered after an explicit choice. Nothing is dropped silently.</small></p>
+<div class="phone">
+ <div class="top"><span class="back">&larr;</span>Print documents</div>
+ <div class="body">
+  <div class="note"><span>You can print up to 10 files in one order. We added 7 of the 9 you picked. Place this order first, then add the rest.</span><a>Got it</a></div>
+  <div class="sec-l"><span>Your files</span><a>Retry all</a></div>
+  <div class="panel file"><div class="chip">PDF</div><div><div class="nm">Invoice-March.pdf</div><div class="meta">12 pages &middot; 1.4 MB</div></div><div class="price">&#8377;24.00</div></div>
+  <div class="panel file"><div class="chip">PDF</div><div><div class="nm">Report-Final.pdf</div><div class="meta">40 pages &middot; 3.2 MB</div></div><div class="price">&#8377;80.00</div></div>
+  <div class="panel file"><div class="chip bad">PDF</div><div><div class="nm">Notes-Ravi-Sharma.pdf</div></div><div></div>
+   <div class="err"><span class="ic">!</span><span>We couldn't open this file. If it has a password, remove it and upload again.</span></div></div>
+ </div>
+ <div class="bar"><div class="t"><b>&#8377;124.00</b><span>2 files &middot; 52 pages</span></div><button class="btn">Continue with 2 files</button></div>
+ <div class="dim"></div>
+ <div class="sheet" role="dialog" aria-label="1 file won't be printed">
+  <h3>1 file won't be printed</h3>
+  <p>Notes-Ravi-Sharma.pdf<br>You can still place the order with the other 2 files.</p>
+  <div class="btns"><button class="btn sec">Go back</button><button class="btn">Continue without it</button></div>
+ </div>
+</div>
+</div>
+
+<!-- D: review COD over cap -->
+<div>
+<p class="cap">D. Review: total is above the cash limit<small>Cash choice is hidden; the note says why and offers a way back to the files.</small></p>
+<div class="phone">
+ <div class="top"><span class="back">&larr;</span>Review order</div>
+ <div class="body">
+  <div class="sec-l"><span>Files (3)</span><a>Edit files</a></div>
+  <div class="panel">
+   <div class="sum"><span class="nm" style="max-width:190px">Invoice-March.pdf</span><span>12 pages &middot; &#8377;120.00</span></div>
+   <div class="meta">5 copies &middot; One side &middot; All pages</div>
+   <div class="sum" style="margin-top:6px"><span class="nm" style="max-width:190px">Poster.jpg</span><span>1 page &middot; &#8377;10.00</span></div>
+   <div class="meta">5 copies &middot; One side</div>
+   <div class="sum" style="margin-top:6px"><span class="nm" style="max-width:190px">Report-Final.pdf</span><span>10 pages &middot; &#8377;100.00</span></div>
+   <div class="meta">5 copies &middot; One side &middot; Pages 3-12</div>
+  </div>
+  <div class="panel">
+   <div class="sum"><span>Printing (23 pages, 3 files)</span><span>&#8377;230.00</span></div>
+   <div class="sum"><span>Delivery charge</span><span>&#8377;20.00</span></div>
+   <div class="sum s"><span>Includes GST (18%)</span><span>&#8377;35.08</span></div>
+   <div class="sum b"><span>Total</span><span>&#8377;250.00</span></div>
+  </div>
+  <div class="panel sw"><span>Use wallet balance</span><span class="tog off"></span></div>
+  <div class="warn">Your files are deleted from our servers after printing.<br><b>Cash on delivery is available up to &#8377;200. This order is &#8377;250. Remove a file or pay online.</b> <a style="color:var(--action);font-weight:700">Edit files</a></div>
+  <div class="panel"><div class="sw"><span>I agree to the print terms</span><span class="tog"></span></div></div>
+ </div>
+ <div class="bar"><button class="btn" style="flex:1">Place order &middot; pay &#8377;250</button></div>
+</div>
+</div>
+
+<!-- E: order detail -->
+<div>
+<p class="cap">E. Order placed / order detail<small>Same screen shape as today with a files list. Long lists show 3 rows then "Show all".</small></p>
+<div class="phone">
+ <div class="top"><span class="back">&larr;</span>Order #4821</div>
+ <div class="body">
+  <div class="center"><div class="ok-circle">&#10003;</div><div style="font-weight:700;font-size:18px;margin-top:8px">Order placed</div>
+   <div class="meta" style="font-size:13px">3 files &middot; 23 pages</div>
+   <div style="margin-top:8px"><span class="pill">Pay &#8377;92 in cash on delivery</span></div></div>
+  <div class="sec-l"><span>Your files</span><span></span></div>
+  <div class="panel">
+   <div class="sum"><span class="nm" style="max-width:170px">Invoice-March.pdf</span><span>12 pages</span></div>
+   <div class="meta">2 copies &middot; Both sides &middot; All pages</div>
+   <div class="sum" style="margin-top:6px"><span class="nm" style="max-width:170px">Poster.jpg</span><span>1 page</span></div>
+   <div class="meta">2 copies &middot; Both sides</div>
+   <div class="sum" style="margin-top:6px"><span class="nm" style="max-width:170px">Report-Final.pdf</span><span>10 pages</span></div>
+   <div class="meta">2 copies &middot; Both sides &middot; Pages 3-12</div>
+  </div>
+  <div class="panel">
+   <div class="sum"><span>Printing</span><span>&#8377;72.00</span></div>
+   <div class="sum"><span>Delivery charge</span><span>&#8377;20.00</span></div>
+   <div class="sum b"><span>Pay on delivery</span><span>&#8377;92.00</span></div>
+  </div>
+  <div class="panel"><div class="meta" style="font-size:12.5px">After printing, file names are removed from our servers. They then show as Document 1, Document 2, Document 3.</div></div>
+ </div>
+</div>
+</div>
+
+</div>
+<p class="legend">Status is always shown as text plus an icon, never colour alone. Error text uses the main ink colour; the red-pink is only for the small icon.</p>
+</body>
+</html>

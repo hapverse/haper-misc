@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Haper - retailer / wholesale (customer, Android)</title>
+<style>
+:root{--gl:#5BB78E;--gp:#2F8163;--ga:#257056;--gd:#20654E;--ink:#1F332B;--ink2:#5A7268;--ink3:#93A79C;--app:#F5FAF7;--hair:#E5EFE9;--mint:#E7F3EC;--chip:#E2F6EC;--add:#E58124;--danger:#C9506C;--dsurf:#FDF1F3;--warn:#8A5A12;--wsurf:#FBF0DC;--plum:#EADFF7;--wh:#6B3FA6;--sunk:#EDF5F0}
+*{box-sizing:border-box;margin:0}
+body{font-family:Poppins,system-ui,sans-serif;background:#d9e4de;color:var(--ink);padding:16px;display:flex;flex-direction:column;align-items:center;gap:12px}
+.hd,.pr{font-family:Quicksand,Poppins,system-ui,sans-serif}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;justify-content:center}
+.tabs button{border:1px solid #9bb7a9;background:#fff;border-radius:99px;padding:7px 14px;font:600 12.5px Poppins,sans-serif;cursor:pointer}
+.tabs button.on{background:var(--gd);color:#fff;border-color:var(--gd)}
+.phone{width:390px;height:780px;background:var(--app);border-radius:34px;position:relative;overflow:hidden;border:6px solid #fff;box-shadow:0 20px 50px rgba(20,72,56,.35)}
+.scr{height:100%;overflow-y:auto;padding:14px 16px 110px}
+h2{font:700 18px Quicksand;padding:6px 0 10px}
+.eyebrow{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#4FA383;margin:16px 0 8px}
+.menu{background:#fff;border-radius:20px;border:1px solid var(--hair)}
+.mi{display:flex;align-items:center;gap:12px;padding:12px 14px;min-height:56px;border-bottom:1px solid var(--hair)}.mi:last-child{border:0}
+.ic{width:36px;height:36px;border-radius:12px;background:var(--mint);display:flex;align-items:center;justify-content:center;font-size:16px}
+.mi b{font-size:14px;display:block}.mi small{font-size:12px;color:var(--ink2)}.mi .g{flex:1}
+.chev{color:var(--ink3)}
+.pill{font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;background:var(--plum);color:var(--wh);border-radius:99px;padding:3px 8px;display:inline-flex;gap:3px;align-items:center;height:20px}
+.st{font-size:11px;font-weight:700;border-radius:99px;padding:3px 9px}
+.st.w{background:var(--wsurf);color:var(--warn)}.st.d{background:var(--dsurf);color:var(--ink)}
+label{font:600 13px Poppins;display:block;margin:14px 0 6px}
+.in{background:#fff;border:1px solid var(--hair);border-radius:18px;height:52px;padding:0 14px;display:flex;align-items:center;font-size:14px;justify-content:space-between}
+.in.err{border:1.5px solid var(--danger)}.in.ok{border:1.5px solid #20B4AC}
+.mono{font-family:ui-monospace,monospace;letter-spacing:.5px}
+.em{font-size:12px;color:var(--danger);margin-top:5px}.hint{font-size:12px;color:var(--ink2);margin-top:5px}
+.chips{display:flex;gap:8px;flex-wrap:wrap}.chp{border:1px solid var(--hair);background:#fff;border-radius:99px;padding:9px 14px;font-size:13px;min-height:40px}.chp.on{background:var(--chip);border:1.5px solid var(--gp);font-weight:600}
+.up{border:1.5px dashed #c9dcd1;background:var(--sunk);border-radius:18px;height:120px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font-size:13px;color:var(--ink2)}
+.bar{position:absolute;left:0;right:0;bottom:0;background:#fff;border-top:1px solid var(--hair);padding:12px 16px}
+.cta{height:52px;border-radius:16px;background:linear-gradient(#5BB78E,#2F8163,#215F49);color:#fff;font:700 15px Poppins;display:flex;align-items:center;justify-content:center;border:0;width:100%}
+.cta2{height:52px;border-radius:18px;background:var(--mint);color:var(--ga);font:600 14px Poppins;display:flex;align-items:center;justify-content:center;width:100%;margin-top:10px}
+.shell{text-align:center;padding-top:30px}
+.circ{width:88px;height:88px;border-radius:50%;margin:0 auto 16px;display:flex;align-items:center;justify-content:center;font-size:38px}
+.shell h3{font:700 22px Quicksand}.shell p{font-size:14px;color:var(--ink2);margin:6px 8px 16px}
+.gc{background:#fff;border-radius:20px;border:1px solid var(--hair);padding:14px;text-align:left;font-size:13px;margin-bottom:14px}
+.gc .r{display:flex;justify-content:space-between;padding:4px 0}.gc .r span:first-child{color:var(--ink2)}
+.scrim{position:absolute;inset:0;background:rgba(16,44,36,.46);z-index:5}
+.sheet{position:absolute;left:0;right:0;bottom:0;z-index:6;background:#fff;border-radius:24px 24px 0 0;max-height:600px;overflow:auto}
+.sheet h3{font:700 16px Quicksand;padding:18px 16px 8px}
+.row{display:flex;gap:10px;padding:12px 16px;border-top:1px solid var(--hair);min-height:72px}
+.th{width:56px;height:56px;border-radius:14px;background:var(--mint);flex:none}
+.row .m{flex:1;font-size:14px;font-weight:600}.row .p{font:800 15px Quicksand;color:var(--gp);margin-top:2px}.row .s{font-size:10.5px;color:var(--ink2);font-weight:400}.row .lw{font-size:11px;color:var(--warn);font-weight:600}
+.add{border:1.5px solid var(--add);color:var(--add);border-radius:12px;width:74px;height:34px;font:700 13px Poppins;background:#fff;align-self:center}
+.pay{background:#fff;border:1px solid var(--hair);border-radius:18px;padding:12px 14px;display:flex;gap:12px;align-items:center;margin-bottom:10px}
+.pay.sel{border:1.5px solid var(--gp);background:#F3FAF6}.pay.dis{opacity:.55}
+.rad{width:20px;height:20px;border-radius:50%;border:2px solid #c9dcd1;flex:none}.sel .rad{border:6px solid var(--gp)}
+.pay b{font-size:14px;display:block}.pay small{font-size:12px;color:var(--ink2)}
+.note{background:var(--mint);border-radius:14px;padding:10px 12px;font-size:12px;color:var(--ink2);margin:8px 0 12px}
+.cl{display:flex;gap:10px;background:#fff;border-radius:16px;border:1px solid var(--hair);padding:10px;margin-bottom:8px;align-items:center}
+.sk{background:linear-gradient(90deg,#E8F0EB,#F4F8F5,#E8F0EB);border-radius:8px;height:14px;animation:s 1.2s infinite}@keyframes s{50%{opacity:.5}}
+.cap{font-size:12px;color:#5A7268;text-align:center;max-width:390px}
+</style></head><body>
+<div class="tabs" id="tabs"></div>
+<div class="cap" id="cap"></div>
+<div class="phone"><div class="scr" id="scr"></div></div>
+<script>
+const T={
+entry:['1 Entry (Profile)','Profile "Your account" card. Row only when programEnabled; APPROVED hides the apply row.',()=>`<h2>Profile</h2>
+<div class="eyebrow">Your account</div><div class="menu">
+<div class="mi"><div class="ic">🏪</div><div class="g"><b>Become a retailer</b><small>Buy in bulk at wholesale prices</small></div><span class="chev">›</span></div>
+<div class="mi"><div class="ic">📍</div><div class="g"><b>Delivery addresses</b><small>Manage where we deliver</small></div><span class="chev">›</span></div>
+<div class="mi"><div class="ic">🎟</div><div class="g"><b>Offers &amp; Coupons</b><small>See what you can save right now</small></div><span class="chev">›</span></div></div>
+<div class="eyebrow">Other states of the first row</div><div class="menu">
+<div class="mi"><div class="ic">🏪</div><div class="g"><b>Retailer application</b><small>Under review</small></div><span class="st w">Under review</span><span class="chev">›</span></div>
+<div class="mi"><div class="ic">🏪</div><div class="g"><b>Retailer application</b><small>Needs your attention</small></div><span class="st d" style="border:1px solid #F6DBE0">Rejected</span><span class="chev">›</span></div>
+<div class="mi"><div class="ic">🔒</div><div class="g"><b>Retailer application</b><small>Account on hold</small></div><span class="st" style="background:var(--mint);color:var(--ink2)">On hold</span><span class="chev">›</span></div></div>
+<p class="hint" style="margin-top:10px">APPROVED: no apply row; a <span class="pill">Retailer</span> chip sits beside the name in the header.</p>`],
+form:['2 Apply form','GSTIN: valid shows state; invalid shows plain message. CTA always enabled, validates on tap.',()=>`<h2>Become a retailer</h2><p class="hint">Tell us about your shop. We verify every application.</p>
+<div class="eyebrow">Shop details</div>
+<label>Shop name</label><div class="in">Madhur Kirana Store</div>
+<label>Business type</label><div class="chips"><span class="chp on">✓ Kirana</span><span class="chp">Medical</span><span class="chp">Cosmetics</span><span class="chp">General store</span></div>
+<div class="eyebrow">GST details</div>
+<label>GSTIN</label><div class="in ok mono">10ABCDE1234F1Z5<span style="color:#20B4AC">✓</span></div><div class="hint" style="color:var(--ga)">Registered in Bihar</div>
+<label>GSTIN (invalid example)</label><div class="in err mono">10ABCDE1234F1Z<span style="font:12px Poppins;color:var(--ink3)">14/15</span></div><div class="em">⚠ That doesn't look like a GSTIN. It has 15 characters.</div>
+<div class="eyebrow">Shop address</div><div class="in">Add shop address<span class="chev">›</span></div>
+<div class="eyebrow">Photos</div><div class="up">📷<b>Add shop photo</b><span style="font-size:11px">Front of the shop with signboard visible</span></div>
+<div class="hint">🔒 Only Haper's verification team can see your photos.</div>
+<div class="bar"><button class="cta">Submit application</button></div>`],
+pending:['3a Pending','Status shell: icon, title, subtitle, card, buttons.',()=>`<h2>Retailer application</h2><div class="shell"><div class="circ" style="background:var(--wsurf)">⏳</div><h3>Under review</h3><p>We're checking your details. We'll notify you when it's done.</p>
+<div class="gc"><div class="r"><span>Shop</span><b>Madhur Kirana Store</b></div><div class="r"><span>GSTIN</span><b class="mono">10ABCDE****Z5</b></div><div class="r"><span>Submitted</span><b>31 Oct 2026</b></div></div>
+<div class="cta2" style="color:var(--danger)">Withdraw application</div></div>`],
+rejected:['3b Rejected','Reason shown in full; re-apply prefilled.',()=>`<h2>Retailer application</h2><div class="shell"><div class="circ" style="background:var(--dsurf)">✕</div><h3>Application not approved</h3><p>You can fix the details and apply again.</p>
+<div class="gc"><b>Shop photo isn't clear</b><div style="margin-top:6px;color:var(--ink)">"The signboard is not readable. Please send a photo taken from outside the shop."</div><div class="hint">2 submissions left this month</div></div>
+<button class="cta">Edit and resubmit</button><div class="cta2">Contact support</div></div>`],
+approved:['3c Approved / Suspended','Approved shows read-only payment options so COD absence is explained.',()=>`<h2>Retailer application</h2><div class="shell"><div class="circ" style="background:linear-gradient(#7DEAE2,#149A93);color:#fff">✓</div><h3>You're a verified retailer</h3><p>Wholesale packs now appear next to regular items.</p>
+<div class="gc"><div class="r"><span>Cash on delivery</span><b>Off</b></div><div class="r"><span>Pay later</span><b>Not enabled</b></div></div><button class="cta">Browse wholesale items</button>
+<p class="hint" style="margin-top:22px">SUSPENDED: lock icon, "Wholesale access on hold", reason card, Contact support only.</p></div>`],
+sheet:['4 Size sheet','Pack rows: WHOLESALE pill, per-piece line replaces Rs/100 g, "Only N packs left".',()=>`<div class="scr" style="filter:blur(1px);opacity:.5"><h2>Maggi 70 g</h2></div><div class="scrim"></div><div class="sheet"><h3>Maggi Noodles</h3>
+<div class="row"><div class="th"></div><div class="m">70 g<div class="p">Rs 14 <span class="s">Rs 20 / 100 g</span></div></div><button class="add">ADD</button></div>
+<div class="row"><div class="th"></div><div class="m">Pack of 100 <span class="pill">▣ Wholesale</span><div class="p">Rs 1,150</div><div class="s">Rs 11.50 per piece</div><div class="lw">Only 2 packs left</div></div><button class="add">ADD</button></div>
+<div class="row"><div class="th" style="filter:grayscale(1)"></div><div class="m" style="opacity:.55">Pack of 1000 <span class="pill">▣ Wholesale</span><div class="p" style="color:var(--ink3)">Rs 11,000</div><div class="s">Rs 11 per piece</div></div><b style="align-self:center;color:var(--danger);font-size:11px">Sold out</b></div></div>`],
+cart:['5 Cart + checkout','Cart note for wholesale lines; COD hidden with reason; Pay later [P2] disabled with reason.',()=>`<h2>Cart</h2>
+<div class="cl"><div class="th" style="width:46px;height:46px"></div><div style="flex:1;font-size:13px"><b>Maggi Noodles</b><br><span style="font-size:11px;color:var(--ink3)">Pack of 100</span> <span class="pill">▣ Wholesale</span></div><b class="pr" style="font-size:14px">Rs 2,300</b></div>
+<div class="note">▣ Wholesale items don't get coupons or offers. Delivery fee works as usual.</div>
+<div class="eyebrow">Payment</div>
+<div class="pay sel"><div class="rad"></div><div><b>Pay online</b><small>UPI, cards, netbanking</small></div></div>
+<div class="note">Cash on delivery isn't enabled for wholesale orders on your account. Pay online.</div>
+<div class="pay dis"><div class="rad"></div><div><b>Pay later (credit)</b><small style="color:var(--warn);font-weight:600">Order Rs 42,000 is above your available limit Rs 38,000. Reduce the cart or pay online.</small></div></div>
+<div class="bar"><button class="cta">Pay Rs 2,350</button></div>`],
+load:['States','Loading skeleton / error / offline',()=>`<h2>Retailer application</h2><div class="shell"><div class="circ sk" style="background:#E8F0EB"></div><div class="sk" style="width:60%;height:22px;margin:0 auto 10px"></div><div class="sk" style="width:80%;margin:0 auto 18px"></div><div class="sk" style="height:110px;border-radius:20px"></div></div>
+<div class="gc" style="margin-top:20px"><b>Couldn't load your application</b><div class="hint">Showing last saved status. Retry</div></div>
+<div class="note" style="background:var(--dsurf)">⚠ Couldn't submit. Check your connection and try again.</div>`]
+};
+const tabs=document.getElementById('tabs'),scr=document.getElementById('scr'),cap=document.getElementById('cap');
+function show(k){[...tabs.children].forEach(b=>b.classList.toggle('on',b.dataset.k==k));scr.innerHTML=T[k][2]();cap.textContent=T[k][1];scr.scrollTop=0}
+for(const k in T){const b=document.createElement('button');b.textContent=T[k][0];b.dataset.k=k;b.onclick=()=>show(k);tabs.appendChild(b)}
+show('entry');
+</script></body></html>

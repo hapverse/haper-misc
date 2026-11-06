@@ -561,6 +561,127 @@ barcode, the picker can only "confirm without scan" until a super admin / wareho
 
 ---
 
+## CH-16 · Size variants: one card per product, sizes picked in a sheet — backend built (dev, UNCOMMITTED); admin built; Android built (NOT device-tested, NOT released)
+**Plan:** `haper-backend/docs/plans/product-size-variants.md` (build log §16). **Test guide:** `test-product-size-variants.md` (Backend, Admin, Android sections).
+**Plain summary:** a store can group the same product in several sizes (e.g. "Premium Sugar" 500 g / 1 kg / 5 kg).
+In the customer app that group shows as **one card**. Tapping ADD opens a size sheet. Old apps and stores with the
+switch OFF see exactly what they saw before.
+
+**Three things must all be true** for a customer to see grouped cards: (1) the store's **Size variants** switch is ON
+(`config.variantsEnabled`, default OFF); (2) the app sends `x-client-features: variants-v1`; (3) the group is active and has
+at least 2 sizes in stock at that store.
+
+| Client | What to do | Status |
+|---|---|---|
+| **backend (do FIRST)** | Additive only: `variantGroup` + `variants` keys on list/search/detail items when the header is sent and the switch is ON; the 3 raw keys (`variantGroupId`, `variantLabel`, `variantRank`) are stripped for legacy responses. New admin routes `/admin/variant-group`. Migration scripts (`build-variant-indexes.js`, `report-variant-candidates.js`, `seed-variant-groups.js`). | 🟡 built on `dev`, **UNCOMMITTED** (plan §16). Item-create inheritance (L3) **NOT built** |
+| **admin** | "Size groups" screen (create / edit / dissolve, validation and "Save anyway" warnings), **Size variants** switch on the store config, Product Master badge. | ✅ built (lead-reported; not re-checked in this docs pass) |
+| **android** | Sends the header on the main, invoice and print-upload clients (not the token-refresh client). Size sheet, picker-mode cards, de-dup by group on Home/Aisle/Search, "Select Unit" tiles on detail, rail hides same-group items. | 🟡 built, **NOT device-tested, NOT released**. QA steps: `test-product-size-variants.md` Android section |
+| **ios** | Not started. Plan Phase 5 (I1–I7). Needs the Android QA pass first. Never trigger the iOS pipeline. | ⏳ to do |
+| **web** | Not started. Plan Phase 6 (W1–W6). | ⏳ to do |
+| **delivery** | Not affected (riders do not browse items). | — |
+| **picker** | Not affected by the browse change. Barcode and pick flow unchanged by this feature. | — |
+
+**Backend deploy order (dev; from plan §10):**
+0. **Hard step first (user-run, dev DB only):** `node scripts/migrations/build-variant-indexes.js` (dry run), then `--apply`. The cron reconcile change must **not** ship before `items.idx_items_iid` exists.
+1. Backend to dev (cron, admin and user on the same `shared` version), switch **OFF** everywhere. Check old apps on dev are unchanged.
+2. Admin to dev. Then the read-only `report-variant-candidates.js` for the pilot store. Then groups (admin screen, or `seed-variant-groups.js` dry run then `--apply`). Fix brands first.
+3. Turn **Size variants** ON for the **dev store only**. Test with a new Android dev build.
+4. Android → iOS → web. Prod is user-driven; none of this runs on prod without the user.
+
+**Decode-safety (Android / iOS):** the new keys are optional and nullable on the item model (`variantGroup`, `variants`).
+Old builds never send the header, so the server never returns them to them. Still: never declare them non-null.
+
+**Known gaps (decide before Android QA signs off):**
+- Item created by hand in a store (admin item-create) does **not** inherit its size group until re-assigned (L3, plan §16).
+- Detail "related" rail: a grouped card shows as a plain card and ADD adds that size directly. It does **not** open the size sheet (Android code). Intent to confirm.
+
+## CH-17 to CH-22 · Retailer / wholesale Phase 1 and print cash on delivery (2026-10-31)
+**Plan:** `haper-backend/docs/plans/retailer-wholesale.md`, `print-cod.md`. **Durable summaries:** `haper-backend/docs/reference/retailer-wholesale.md`, `print-cod.md`. **Runbook (user-run steps before switching on):** `runbook-wholesale-rollout.md`.
+**Status key here:** built/committed = in the repo history on `dev` (not pushed unless you did it). built/uncommitted = files are in the working tree only. **No row below has been tested on a device or browser; that box stays unchecked until someone does it.**
+**Backend for all of CH-17 to CH-22 is built but UNCOMMITTED in `haper-backend`.** Nothing is deployed. Wholesale stays OFF per store, and applications stay off (`RETAILER_APPLICATIONS_ENABLED`) until the runbook is done.
+
+### CH-17 · Retailer apply + status (become a retailer)
+| Client | What | Status |
+|---|---|---|
+| backend | `/user/retailer/me`, `/application` (apply, resubmit, withdraw); `/admin/retailer` verify/reject/suspend/settings. Test guides: `test-retailer-wholesale.md`, `-admin.md` | built/uncommitted |
+| admin | Retailers list + detail modal (verify, reject, suspend, payment options) | built/committed (the blocked-GSTIN additions are CH-22) |
+| android | Apply form, status screen, Profile entry (hidden while the program is off). `test-retailer-wholesale-android.md` | built/committed, not device-tested |
+| ios | Same. `test-retailer-wholesale-ios.md` | built/committed, not device-tested |
+| web | `/retailer/apply`, `/retailer/status`. `test-retailer-wholesale-web.md` | built/committed, not browser-tested |
+| delivery | Not affected | — |
+| picker | Not affected | — |
+
+### CH-18 · Wholesale display + checkout options
+Packs show a "Wholesale" pill and per-piece price for approved retailers; cart returns `paymentOptions`; checkout hides COD for a wholesale cart when the retailer's COD switch is off; errors `RETAILER_COD_DISABLED` / `RETAILER_WHOLESALE_NOT_ALLOWED` (HTTP 400).
+| Client | What | Status |
+|---|---|---|
+| backend | `wholesale` block on items, `paymentOptions` on cart, checkout rules, B2B order lines. Guides: `test-retailer-wholesale-cart.md`, `-checkout.md`, `-orderlines.md`, `-discounts.md` | built/uncommitted |
+| admin | Create pack from a product (pack mini form), retailer badge on orders. `test-retailer-wholesale-admin-packs.md` | built/uncommitted |
+| android | Pill, per-piece line, hide COD, banner for refusals. `test-retailer-wholesale-android-shop.md` | built/uncommitted, not device-tested |
+| ios | Same. `test-retailer-wholesale-ios-shop.md` | built/uncommitted, not device-tested |
+| web | Pill, per-piece line, checkout options. No size sheet for packs. `test-retailer-wholesale-web-shop.md` | built/uncommitted, not browser-tested |
+| delivery | Not affected (riders never receive the retailer snapshot) | — |
+| picker | See CH-20 | — |
+Not built: a wholesale rail/list screen (no endpoint), credit / pay later.
+
+### CH-19 · Print cash on delivery
+| Client | What | Status |
+|---|---|---|
+| backend | COD for print orders per store; gates `COD_OFF` (400), `COD_LIMIT`, `COD_NOT_ELIGIBLE`, `COD_OPEN_LIMIT` (409). Guides: `test-print-checkout.md`, `test-print-admin.md` | built/uncommitted |
+| admin | COD controls on the Print service card, Cash chip in the print queue | built/committed |
+| android | Payment choice, COD copy, reasons mapped (no server field names). `test-print-customer-android.md` | built/committed, not device-tested |
+| ios | Same. `test-print-customer-ios.md` | built/committed, not device-tested |
+| web | Same; after a COD order it goes to `/orders/:id` (no success screen). `test-print-customer-web.md` | built/committed, not browser-tested |
+| delivery | No release: rider reads the existing `paymentMethod` and `price` | — |
+| picker | Not affected | — |
+
+### CH-20 · Picker pack lines (HARD GATE for wholesale)
+Old picker builds match the first line with a scanned barcode, so a pack and its single can be confused. Do not switch wholesale on for any store until the new picker build is out.
+| Client | What | Status |
+|---|---|---|
+| backend | Pick-task lines carry `unitsPerPack` / `baseItemId` / `baseName`; `looseUnitsFound` on short-pick/OOS. `test-retailer-wholesale-pack-ops.md` | built/uncommitted |
+| picker | Pack pill "= N pcs", scan-anything picks the first NOT-done line, loose-pieces field. `test-picker-pack-lines.md` | built/uncommitted, not device-tested |
+| admin / web / android / ios / delivery | Not affected | — |
+
+### CH-21 · Invoice download: no redirect, header stripping kept
+The API now answers every invoice request with 200 + the PDF (no redirect, no link). Same endpoints. Clients need no change; the header stripping stays as defence in depth.
+| Client | What | Status |
+|---|---|---|
+| backend | Streamed from private storage, `Cache-Control: private, no-store`; admin invoice search store-scoped, limit at most 50. `test-retailer-wholesale-invoice.md` | built/uncommitted |
+| admin | No change (PDF button and search table unchanged) | — |
+| android | Invoice client strips `x-*` / `Content-Type` on cross-host hops (kept). `InvoiceRedirectHeadersTest` | built/uncommitted, not device-tested |
+| ios | `InvoiceDownloader` session strips login/device headers on cross-host redirects (kept). `InvoiceRedirectPolicyTests` | built/uncommitted, not device-tested |
+| web | No change | — |
+| delivery / picker | Not affected | — |
+
+### CH-22 · Blocked-GSTIN admin card
+| Client | What | Status |
+|---|---|---|
+| backend | `blockedGstins` on the retailer profile; `POST /admin/retailer/:id/unblock-gstin` (super admin) | built/uncommitted |
+| admin | "Blocked GSTINs" card on the retailer detail; reject reason `GSTIN_NOT_OWNED`. `test-retailer-wholesale-admin.md` section 9 | built/uncommitted |
+| android / ios / web / delivery / picker | Not affected (customers only see 409 `GSTIN_BLOCKED` on apply) | — |
+
+---
+
+## Haper Business mode + wholesale bulk tiers (2026-11-01)
+**Plan:** `haper-misc/plan-b2b-business-mode.md` (approved). **Design:** `haper-misc/design-retailer-wholesale.md` §12. **Test walkthrough:** `haper-misc/test-b2b-business-mode.md` (read it before any client work here).
+**What it is, in plain words:** approved retailers get a second shop, **Haper Business** (wholesale items only, its own cart), reached by a switch on Home. The app sends one header, `x-shop-mode: business`, on every customer call. The server decides the real shop and answers with `x-shop-mode: business` or `x-shop-mode: retail`. If the app asked for Business and got `retail`, it must show Haper. The same change adds bulk tiers (for example Maggi Pack of 100 at Rs 1,150: 10+ packs = 2% off, 15+ packs = 5% off).
+**Status key here:** built/uncommitted = in the working tree only. Nothing is committed, pushed or deployed. **No row has been tested on a device or browser.**
+
+| Client | What to do | Status |
+|---|---|---|
+| backend | Business view (visibility, own cart, banners and coupon list empty in Business, `/user/retailer/me` gets `business.available`), `x-shop-mode` on `home`/`item`/`cart`/`coupon`/`retailer` routes, bulk tiers in cart, checkout, order lines, item JSON `wholesale.tiers`. Admin tiers API + `POST /admin/product/:id/wholesale-tiers/preview`. Deploy backend first. | built/uncommitted |
+| admin | "Bulk discounts" block in the product form (super admin), live per-store preview, below-cost warning with an "I understand" tick. Guide: `test-b2b-business-mode.md` §8 (T1-T3). | built/uncommitted |
+| android | **Built (uncommitted):** Home switch "Haper \| Haper Business" + 6-state sheet, header turns plum (`#6B3FA6` to `#4A2580`), "Business cart" title, `x-shop-mode` on requests, echo check (flips to Haper on `retail`), per-user mode memory, logout reset, deep links into Haper. **Also built:** item-page "Bulk price" table with "Add N" (raise-only, never lowers the cart), cart "2% OFF bulk" chip, struck price, "Line total", "Add N more" nudge, "Set quantity" sheet (can lower; re-reads the server quantity first; waits for an in-flight change), and the **6-per-line cap exemption** for wholesale packs (`util/CartQuantityCap.kt`; retail still 6). Unit tests: `ShopModeStateTest`, `ShopModeEchoTest`, `BusinessSwitchSheetTest`, `DeepLinkShopModeTest` (20, green on 2026-11-01); `BulkTiersTest`, `CartViewModelShopModeTest`, `CartQuantityCapTest` and others exist but were not re-run. **Not device-tested.** Open: with a coupon on a mixed cart the bill shows no separate tier-saving row (`test-b2b-business-mode.md` note 10). | built/uncommitted, not device-tested |
+| ios | ⏳ **To do (not started).** **Send `x-shop-mode: business`** when the Business switch is on. **Read the response header `x-shop-mode`** on every call; if the app asked for Business and got `retail`, switch to Haper and show "Haper Business isn't available right now." once. Tapping Business before the profile has loaded must not switch: show "Please try again in a moment.". Also: Home switch (top of header, segmented, 48pt target, labels `Haper, normal shop` / `Haper Business, wholesale shop`) + the 6-state sheet (copy in design §12.3/§12.8); per-mode cart (Business cart title, separate lines; reload lists and cart on every switch, never show the other mode's list); item-page "Bulk price" table from `wholesale.tiers` ("Add N" is raise-only and never lowers the cart; every tier row the cart already meets shows "In cart"); wholesale lines exempt from the 6-per-line cap (up to stock); "Set quantity" sheet (waits for an in-flight change, re-reads the server quantity before working out the change, failure text "Couldn't update quantity. Try again."); cart tier label from `discountLabel` + "Add N more for X% off" nudge (computed from `wholesale.tiers`). Decoding: every new key is **optional** (`wholesale.tiers`, `/me` `business`, cart `discountLabel`, order line `appliedDiscounts`). A customer's order detail gives `appliedDiscounts` as `{label, amount}` only, so `kind` and `minQty` never reach the app: do not build on them. Place-order can now return **422 `ORDER_IN_PROGRESS`** (show the server message; 422 is not the maintenance screen, 409 is). Cart id for place-order must be 24-hex (cart `_id` already is). Test guide `test-retailer-wholesale-ios-shop.md` needs a Business section when this starts (not updated here). | ⏳ to do |
+| web | ⏳ **To do (not started).** **Send `x-shop-mode: business`** when the Business switch is on, and **read `x-shop-mode`** from each response (same rule as iOS). **CORS:** the user service exposes the header to browsers (`user/index.js`: `exposedHeaders: ["x-shop-mode"]`), and `allowedHeaders` is not set, so the `cors` package reflects the header the browser asks for. The allowed origin comes from `CORS_ORIGIN` (code default is the literal string `*.haper.in`, which the `cors` package sends back as-is; it is not a wildcard match). Before web adopts Business mode, confirm the deployed `CORS_ORIGIN` lists the web origin (not checked in this pass). Business responses carry `Cache-Control: private, no-store`; every response carries `Vary: x-shop-mode`, so HTTP caches keep the two shops apart. Also: Home switch + 6-state sheet; per-mode cart; item-page Bulk price table; cap exemption (packs up to stock); Set quantity (same raise-only "Add N" and stale-safe rules as iOS; the sheet itself can lower); tier nudge; place-order 422 `ORDER_IN_PROGRESS` shows the server message. Test guide `test-retailer-wholesale-web-shop.md` needs a Business section when this starts (not updated here). Note: `haper-web` has no eslint gate; verify with `tsc --noEmit` + `vite build`. | ⏳ to do |
+| delivery | Not affected (riders never receive the retailer snapshot or tiers). | — |
+| picker | Not affected for this change. Picker reads order lines: a tier line is an ordinary line with a paid `salePrice` and a new optional `appliedDiscounts` entry. Verify pick-list parse. | ❓ verify |
+
+**Deploy order (dev):** backend (`user` + `admin`, both ship `packages/shared`) → admin → Android. An old app with no switch sends no header, so a **retailer on that old build sees retail only** (no packs) until updated. Normal customers are unaffected.
+
+---
+
 ## Future changes
 **This file is COMPLETE for inventory-v2** — CH-1…6 cover every shipped backend change (Phases 0–4) with a
 per-client checklist + exact endpoints, and CH-7 covers the one optional P9 item (with its backend prerequisite).

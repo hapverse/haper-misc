@@ -15,7 +15,7 @@ S3 lifecycle backstop: on the print bucket, prefix `print/`, expire current obje
 6a. Assign a rider (Orders page or reassign) to a print order that is still OPEN (not printed), on a store with picking OFF and with picking ON -> 400 `PRINT_NOT_PRINTED` "Mark it printed before assigning a rider"; order stays OPEN. ❌ expected
 6b. Orders page "change status" (`PATCH /admin/order/mark-status-admin`) on a print order that is still OPEN, to Assigned / Processing / Out for delivery / Delivered (CLOSED) / Undelivered / Refund success -> 400 `PRINT_NOT_PRINTED`; order stays OPEN. Cancel (ADMIN_CANCELED) still works. After Mark printed (PACKED) every later status works as for a grocery order. ❌ expected (OPEN) / ✅ (PACKED)
 7. Click Mark printed twice quickly -> both 200, one says `alreadyPrinted: true`, order stays PACKED. ✅
-8. `POST /job/:id/reject {reason, code}` -> order ADMIN_CANCELED, full refund to the customer's wallet (once, even on a double click), customer gets a push with the reason, job REJECTED. ✅
+8. `POST /job/:id/reject {reason, code}` -> order ADMIN_CANCELED, full refund to the customer's wallet for online/wallet orders (once, even on a double click; COD orders: see step 26), customer gets a push with the reason, job REJECTED. ✅
 8a. Double-click Reject: the one response with `alreadyRejected: false` and the single `print.rejected` row in Order Activity both show the full refund amount (never 0), whichever click did the refund. ✅
 9. Reject without a reason (or under 3 characters) -> 400. Reject a printed job -> 409. Reject an order the customer already cancelled -> 409. ❌ expected
 9a. Cancel a print order from the normal Orders page, then Reject its job in the Print Queue -> 409 "already cancelled"; the customer gets NO "print rejected" push. ❌ expected
@@ -71,6 +71,29 @@ Test data: a paid print order (OPEN) for the store, example file `sample_notes.p
 18. Turning the switch ON with a zero price -> "Set the prices first." and Save disabled. ✅
 19. Save sends only changed fields; toast "Print settings saved". Two admins editing at once: second save shows the "changed by someone else" message with Reload; typed values stay until reload. ✅/❌
 20. Prices changed here only affect new quotes; existing paid orders keep their price. ✅
+
+**Cash on delivery settings + Cash badge (backend + admin UI built)**
+API: `GET /admin/print/config/:storeId` returns `config.codEnabled` (default false), `config.codMaxOrderAmount` (default 300), `config.codMinDeliveredOrders` (default 1). `PUT` accepts the same three keys.
+21. Super admin `PUT { codEnabled: true }` -> 200, `configVersion` +1, one audit row `store.print_config.update` with before/after of the changed keys. Turning it OFF again -> 200 and new COD orders stop at once. ✅
+22. Store admin or manager (even with Store config edit) `PUT { codEnabled: true }` -> 403, nothing changes. ❌ expected
+23. Bounds -> 400 and no change: `codEnabled` as the string "true" or 1; `codMaxOrderAmount` 0, 0.5, over 5000, 3 decimals, or a string; `codMinDeliveredOrders` negative, over 50, decimal, or a string. Limits 1 and 5000, min orders 0 and 50 -> 200. ❌ expected / ✅
+23a. Every print setting is strict now: a number or boolean sent as a string (e.g. `pricePerSideSingle: "5"`, `maxCopies: "10"`, `enabled: "true"`) -> 400, nothing saved (before, "5" was stored as text and checkout silently used the default price). The admin screen sends real numbers, so it is unaffected. ❌ expected
+23b. A raw body with a `"__proto__"` key plus an unchanged setting -> "No changes", no `configVersion` bump, no audit row. ❌ expected
+24. Print queue: every `order` row has `paymentMethod` (0 = COD, 1 = Razorpay, 4 = Wallet); the UI shows an amber "Cash ₹X" chip when it is 0 (X = `price`, the cash to collect). ✅
+25. Mark printed on a COD order -> OPEN -> PACKED, then assign a rider as usual. ✅
+26. Reject a COD order -> ADMIN_CANCELED with no refund (refundedAmount 0, wallet unchanged); if the customer used coins (e.g. Rs 15 coins + Rs 25 cash) only the Rs 15 coins go back. The file is rejected as usual. Customer push ends "You have not been charged." (no coins) or "Your wallet coins have been returned." (coins), never "Any payment is being refunded."; prepaid orders keep that old line. ✅
+
+**Cash on delivery: admin screens (Config > Print service, Print queue)**
+27. Config > Print service, super admin, printing ON: a "Cash on delivery" section sits below the price fields with a switch (off by default), "Max COD order total" (default 300) and "Min delivered orders" (default 1). ✅
+28. Store admin / manager: switch and both inputs are disabled, lock icon and "Only a super admin can change cash on delivery." shown; no Save button. ✅
+29. Printing OFF: the section is greyed, controls disabled, hint "Turn on printing to use cash on delivery.". Turn printing on -> controls enable. ✅
+30. Max total 0, 5001, text -> "Enter an amount from ₹1 to ₹5,000."; 10.555 -> "Use at most 2 decimal places."; min delivered 51, 2.5, -1, empty -> "Enter a whole number from 0 to 50." Save disabled while any error shows. ❌ expected
+31. Clear the max total and turn COD ON -> "Set the max COD order total first.", Save disabled. With COD OFF the empty max total is allowed (not sent). ✅/❌
+32. Max total above 1000 -> amber hint "Large cash orders are a bigger loss if refused at the door."; Save still works. ✅
+33. Save sends only changed fields in one PUT (network tab): `codEnabled` is a real boolean (true/false, never "true"), limits are numbers. Reload -> values persist; one audit row. Old server without the keys: fields show 300 / 1 and nothing is sent until you change them. ✅
+34. Print queue: an order with payment method 0 shows an amber "Cash ₹X" chip right after the order number (X = cash to collect, not the big amount when wallet coins were used); hover text "Customer pays the rider in cash. Call before printing a large job."; screen reader hears "Cash on delivery, collect X rupees". No chip for Razorpay (1), wallet (4) or old backend (missing). ✅/❌
+35. COD rows say "Placed {date}" instead of "Paid {date}"; other rows keep "Paid". Empty "To print" tab says "New jobs appear here." ✅
+36. Dark and light theme: chip readable (amber text on soft amber); at 200% text zoom the chip wraps with the title line, never overflows. ✅
 
 Edge: a job whose file is PURGED shows "File deleted" and no Download. Old paid-but-rejected jobs appear under History with the reason.
 Known gaps (need backend): the queue does not return the customer note, customer first name / masked phone, or the name of the admin who downloaded. Those spec items are not shown yet.

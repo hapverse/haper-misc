@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Haper - variant picker: 3 options</title>
+<style>
+:root{--GreenLeaf:#5BB78E;--GreenPrice:#2F8163;--GreenAction:#257056;--GreenDeep:#20654E;--GreenDeepest:#215F49;--ink:#1F332B;--ink2:#5A7268;--ink3:#93A79C;--app:#F5FAF7;--hair:#E5EFE9;--mint:#E7F3EC;--chip:#E2F6EC;--danger:#DC5F78;--dangerS:#FDF1F3;--warnS:#FBF0DC;--warnText:#8A5A12;--saveS:#FDF0E3;--saveInk:#A85212;--addT:#FFC48A;--addM:#E58124;--stepT:#F7B569;--scrim:rgba(16,44,36,.46)}
+*{box-sizing:border-box;margin:0}
+body{font-family:Poppins,system-ui,sans-serif;background:#d9e4de;color:var(--ink);padding:16px;display:flex;flex-direction:column;align-items:center;gap:12px}
+.hd,.pr{font-family:Quicksand,Poppins,system-ui,sans-serif}
+.tabs{display:flex;gap:6px}
+.tabs button,.rst{border:1px solid #9bb7a9;background:#fff;border-radius:99px;padding:7px 16px;font:600 13px Poppins,sans-serif;cursor:pointer}
+.tabs button.on{background:var(--GreenDeep);color:#fff;border-color:var(--GreenDeep)}
+.wrap{display:flex;gap:22px;flex-wrap:wrap;justify-content:center;align-items:flex-start}
+.col{display:flex;flex-direction:column;gap:8px;align-items:center}
+.cap{font:600 12px Poppins;color:var(--ink2)}
+.phone{width:390px;height:780px;background:var(--app);border-radius:34px;position:relative;overflow:hidden;box-shadow:0 20px 50px rgba(20,72,56,.35);border:6px solid #fff}
+.scr{height:100%;overflow-y:auto;padding:14px 12px 90px}
+.scr h2{font-size:17px;padding:4px 4px 10px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.card{background:#fff;border-radius:16px;padding:8px;border:1px solid var(--hair);display:flex;flex-direction:column;position:relative}
+.well{height:104px;border-radius:12px;background:var(--mint);display:flex;align-items:flex-end;justify-content:center;padding-bottom:8px;position:relative}
+.pack{border-radius:8px 8px 5px 5px;background:linear-gradient(#fff,#f1e6cf);border:1px solid #d9c9a5;display:flex;align-items:center;justify-content:center;font:700 9px Quicksand;color:#8a6a2b;text-align:center;line-height:1.1;box-shadow:0 2px 4px rgba(0,0,0,.12)}
+.tag{display:inline-block;background:var(--mint);color:var(--ink2);border-radius:6px;padding:1px 7px;font-size:11px;margin:6px 0 2px;align-self:flex-start}
+.ppu{font-size:10.5px;color:var(--ink2)}
+.price{display:flex;align-items:baseline;gap:5px;margin-top:1px}
+.price b{font:800 15px Quicksand;color:var(--GreenPrice)}
+.mrp{font-size:11px;color:var(--ink3);text-decoration:line-through}
+.off{font-size:10.5px;font-weight:700;color:var(--saveInk)}
+.nm{font-size:12.5px;font-weight:600;line-height:1.25;margin-top:3px;min-height:32px}
+.ctl{margin-top:6px;display:flex;flex-direction:column;align-items:flex-end;min-height:46px;justify-content:flex-end}
+.cc{font-size:10px;color:var(--ink2);margin-top:2px}
+.add{border:1.5px solid var(--addM);background:#fff;color:var(--addM);border-radius:12px;font:700 13px Poppins;width:74px;height:34px;cursor:pointer;transition:transform .1s}
+.add:active{transform:scale(.94)}
+.add[disabled]{border-color:var(--hair);color:var(--ink3);cursor:not-allowed}
+.stp{display:inline-flex;align-items:center;background:linear-gradient(var(--stepT),var(--addM));border-radius:12px;height:34px;color:#fff;font:800 14px Quicksand;overflow:hidden}
+.stp button{background:none;border:0;color:#fff;font:700 18px Poppins;width:28px;height:34px;cursor:pointer}
+.stp button[disabled]{opacity:.4}
+.stp span{min-width:18px;text-align:center}
+.lowt{font-size:10.5px;color:var(--warnText);font-weight:600}
+.oost{font-size:10.5px;color:var(--danger);font-weight:600}
+.dim{opacity:.5}
+.chips{display:flex;gap:5px;overflow-x:auto;margin:6px -2px 2px;padding:2px;scrollbar-width:none}
+.chips::-webkit-scrollbar{display:none}
+.ch{flex:none;border:1.2px solid var(--hair);background:#fff;border-radius:99px;padding:3px 9px;font:600 11px Poppins;color:var(--ink2);cursor:pointer;position:relative;white-space:nowrap}
+.ch.sel{border-color:var(--GreenPrice);background:var(--chip);color:var(--GreenAction)}
+.ch.oo{text-decoration:line-through;color:var(--ink3);background:#f6f8f7}
+.ch i{position:absolute;top:-5px;right:-3px;background:var(--addM);color:#fff;font:700 9px Poppins;border-radius:99px;min-width:15px;height:15px;display:flex;align-items:center;justify-content:center;font-style:normal}
+.bar{position:absolute;left:50%;transform:translateX(-50%);bottom:16px;background:linear-gradient(var(--GreenLeaf),var(--GreenPrice),var(--GreenDeepest));color:#fff;border-radius:99px;padding:6px 18px 6px 8px;display:flex;align-items:center;gap:10px;font:700 14px Poppins;box-shadow:0 6px 16px rgba(33,95,73,.4);z-index:5;white-space:nowrap;cursor:pointer}
+.bar .th{width:34px;height:34px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center}
+.bar small{display:block;font:500 11px Poppins;opacity:.9}
+.scrim{position:absolute;inset:0;background:var(--scrim);z-index:10;animation:f .2s}
+.sheetw{position:absolute;left:0;right:0;bottom:0;z-index:11;display:flex;flex-direction:column;align-items:center;animation:u .25s cubic-bezier(.2,.8,.2,1)}
+@keyframes u{from{transform:translateY(40px);opacity:0}to{transform:none;opacity:1}}@keyframes f{from{opacity:0}}
+@media(prefers-reduced-motion:reduce){.sheetw{animation:f .2s}}
+.x{width:36px;height:36px;border-radius:50%;background:#fff;border:0;box-shadow:0 2px 8px rgba(0,0,0,.2);font-size:16px;margin-bottom:10px;cursor:pointer}
+.sheet{background:#fff;width:100%;border-radius:24px 24px 0 0;max-height:560px;display:flex;flex-direction:column}
+.sheet h3{font:700 16px Quicksand;padding:18px 16px 8px}
+.sh-b{overflow-y:auto;padding:4px 14px 20px}
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.tile{border:1px solid var(--hair);border-radius:14px;padding:8px;position:relative}
+.tile .well{height:96px}
+.tile .ctl{position:absolute;right:14px;top:62px;min-height:0}
+.tile .lb{font:700 13px Quicksand;margin-top:6px}
+.tile .w{font-size:11.5px;color:var(--ink2)}
+.row{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--hair);min-height:72px}
+.row:last-child{border:0}
+.row .well{width:56px;height:56px;flex:none;padding-bottom:5px}
+.row .mid{flex:1;min-width:0}
+.row .sz{font:600 14px Poppins}
+.row .rt{width:86px;display:flex;justify-content:flex-end}
+.pill{background:var(--saveS);color:var(--saveInk);border-radius:6px;padding:0 5px;font-size:10px;font-weight:700}
+.toast{position:absolute;left:50%;transform:translateX(-50%);top:14px;background:var(--ink);color:#fff;font-size:12px;padding:8px 14px;border-radius:12px;z-index:30;opacity:0;transition:opacity .15s;pointer-events:none}
+.toast.on{opacity:1}
+.box{width:820px;max-width:100%;background:#fff;border-radius:16px;padding:16px 20px;display:grid;grid-template-columns:repeat(3,1fr);gap:14px;font-size:13px;line-height:1.45}
+.box h4{font:700 13px Quicksand;color:var(--GreenAction);margin-bottom:3px}
+.box .rec{grid-column:1/-1;background:var(--chip);border-radius:10px;padding:8px 12px;color:var(--GreenDeep);font-weight:600}
+.note{max-width:820px;font-size:12px;color:var(--ink2)}
+</style></head><body>
+<div class="hd" style="font-weight:700;font-size:18px">Haper variant picker - 3 options (clickable)</div>
+<div class="tabs" id="tabs"><button data-o="A">Option A - Tiles sheet</button><button data-o="B">Option B - Rows sheet</button><button data-o="C">Option C - Inline chips</button></div>
+<button class="rst" id="rst">Reset carts</button>
+<div class="wrap" id="wrap"></div>
+<div class="box" id="box"></div>
+<div class="note">Prices for Fortune 10 kg (Rs470/510) and the 5-size Toor Dal are made up for the mock. Per-unit price shown as Rs/kg. Low stock = 5 or fewer. Cart cap per line = min(6, stock). Tiles in A need one image per size; Haper's catalogue currently has one image per item, so the mock draws a scaled pack.</div>
+<script>
+var P=[
+{k:'sugar',n:'Premium Sugar',v:[{id:'s5',l:'500 g',kg:.5,sp:33,mrp:50,st:28},{id:'s1',l:'1 kg',kg:1,sp:65,mrp:80,st:12},{id:'s2',l:'2 kg',kg:2,sp:128,mrp:160,st:0}]},
+{k:'atta',n:'Fortune Chakki Fresh Atta',v:[{id:'a5',l:'5 kg',kg:5,sp:240,mrp:258,st:2},{id:'a10',l:'10 kg',kg:10,sp:470,mrp:510,st:20}]},
+{k:'dal',n:'Premium Toor Dal (Arhar)',v:[{id:'d25',l:'250 g',kg:.25,sp:38,mrp:45,st:30},{id:'d5',l:'500 g',kg:.5,sp:72,mrp:85,st:18},{id:'d1',l:'1 kg',kg:1,sp:138,mrp:160,st:9},{id:'d2',l:'2 kg',kg:2,sp:265,mrp:310,st:0},{id:'d52',l:'5 kg',kg:5,sp:640,mrp:760,st:4}]}
+];
+var PH=[{id:'p1',t:'Sugar + Atta (2-3 sizes)',keys:['sugar','atta']},{id:'p2',t:'Toor Dal (5 sizes)',keys:['dal']}];
+var opt='A',cart={},open={},sel={},last=null,tt={};
+function byK(k){return P.filter(function(p){return p.k===k})[0]}
+function oos(v){return v.st<=0}function low(v){return v.st>0&&v.st<=5}
+function cap(v){return Math.min(6,v.st)}
+function q(v){return cart[v.id]||0}
+function tot(p){return p.v.reduce(function(a,v){return a+q(v)},0)}
+function lines(p){return p.v.filter(function(v){return q(v)>0})}
+function def(p){return p.v.filter(function(v){return !oos(v)})[0]||p.v[0]}
+function selV(p){var i=sel[opt+p.k];return i==null?def(p):p.v[i]}
+function pct(v){return Math.round((1-v.sp/v.mrp)*100)}
+function ppk(v){return 'Rs'+Math.round(v.sp/v.kg)+'/kg'}
+function pack(p,v,big){var i=p.v.indexOf(v),h=(big?34:28)+i*(big?6:4),w=h*.8;return '<div class="pack" style="width:'+w+'px;height:'+h+'px">'+v.l+'</div>'}
+function well(p,v,big){return '<div class="well'+(oos(v)?' dim':'')+'">'+pack(p,v,big)+'</div>'}
+function stepper(v,ph){var n=q(v);return '<div class="stp"><button aria-label="Decrease '+v.l+'" data-a="dec" data-v="'+v.id+'">&minus;</button><span>'+n+'</span><button aria-label="Increase '+v.l+'" data-a="inc" data-v="'+v.id+'"'+(n>=cap(v)?' disabled':'')+'>+</button></div>'}
+function addBtn(v){if(oos(v))return '<button class="add" disabled>Sold out</button>';return '<button class="add" data-a="inc" data-v="'+v.id+'" aria-label="Add '+v.l+'">ADD</button>'}
+function ctl(v){return q(v)>0?stepper(v):addBtn(v)}
+function card(p){
+ var multi=p.v.length>1,d=opt==='C'?selV(p):def(p),h='<div class="card" data-p="'+p.k+'">'+well(p,d,true);
+ if(opt==='C'){h+='<div class="chips" role="radiogroup" aria-label="Size">'+p.v.map(function(v,i){return '<button class="ch'+(v===d?' sel':'')+(oos(v)?' oo':'')+'" role="radio" aria-checked="'+(v===d)+'" data-a="chip" data-p="'+p.k+'" data-i="'+i+'">'+v.l+(q(v)?'<i>'+q(v)+'</i>':'')+'</button>'}).join('')+'</div>'}
+ else h+='<span class="tag">'+d.l+'</span>';
+ h+='<div class="ppu">'+ppk(d)+'</div><div class="price"><b>Rs'+d.sp+'</b><span class="mrp">Rs'+d.mrp+'</span></div><div class="off">'+pct(d)+'% OFF on MRP</div><div class="nm">'+p.n+'</div>';
+ if(oos(d))h+='<div class="oost">Out of stock</div>';else if(low(d))h+='<div class="lowt">Only '+d.st+' left</div>';
+ h+='<div class="ctl">';
+ if(opt==='C'){h+=ctl(d)}
+ else if(!multi){h+=ctl(d)}
+ else{var ls=lines(p),n=tot(p);
+  if(n===0)h+='<button class="add" data-a="open" data-p="'+p.k+'" aria-label="Add, '+p.v.length+' options">ADD</button><div class="cc">'+p.v.length+' options</div>';
+  else if(ls.length===1)h+=stepper(ls[0])+'<div class="cc">'+ls[0].l+' &middot; '+p.v.length+' options</div>';
+  else h+='<div class="stp"><button data-a="open" data-p="'+p.k+'" aria-label="Decrease, choose size">&minus;</button><span>'+n+'</span><button data-a="open" data-p="'+p.k+'" aria-label="Increase, choose size">+</button></div><div class="cc">'+ls.length+' sizes in cart</div>'}
+ return h+'</div></div>'}
+function sheet(p){
+ var h='<div class="scrim" data-a="close"></div><div class="sheetw"><button class="x" data-a="close" aria-label="Close">&#10005;</button><div class="sheet" role="dialog" aria-label="'+p.n+'"><h3>'+p.n+'</h3><div class="sh-b">';
+ if(opt==='A'){h+='<div class="tiles">'+p.v.map(function(v){var o=oos(v);
+  return '<div class="tile"><div class="'+(o?'dim':'')+'">'+well(p,v,true)+'</div><div class="ctl">'+(o?'':ctl(v))+'</div><div class="lb">'+v.l+'</div><div class="price"><b>Rs'+v.sp+'</b><span class="mrp">Rs'+v.mrp+'</span></div><div class="w">'+ppk(v)+'</div>'+(o?'<div class="oost">Out of stock</div>':low(v)?'<div class="lowt">Only '+v.st+' left</div>':'<div class="off">'+pct(v)+'% OFF</div>')+'</div>'}).join('')+'</div>'}
+ else{h+=p.v.map(function(v){var o=oos(v);
+  return '<div class="row"><div class="'+(o?'dim':'')+'">'+well(p,v,false)+'</div><div class="mid"><div class="sz'+(o?' dim':'')+'">'+v.l+'</div><div class="price'+(o?' dim':'')+'"><b>Rs'+v.sp+'</b><span class="mrp">Rs'+v.mrp+'</span><span class="pill">'+pct(v)+'% OFF</span></div><div class="ppu">'+ppk(v)+(low(v)?' &middot; <span class="lowt">Only '+v.st+' left</span>':'')+(o?' &middot; <span class="oost">Out of stock</span>':'')+'</div></div><div class="rt">'+(o?'<button class="add" disabled>Sold out</button>':ctl(v))+'</div></div>'}).join('')}
+ return h+'</div></div></div>'}
+function bar(){var n=0,s=0,lp=null;P.forEach(function(p){p.v.forEach(function(v){var c=q(v);n+=c;s+=c*v.sp;if(c&&(!lp||last===v.id)){lp=[p,v]}})});
+ if(!n)return '';return '<div class="bar" role="button"><div class="th">'+pack(lp[0],lp[1],false).replace('width:','width:0.8*').replace(/width:0\.8\*[\d.]+px;height:[\d.]+px/,'width:18px;height:22px')+'</div><div>View cart<small>'+n+' item'+(n>1?'s':'')+' &middot; Rs'+s+'</small></div></div>'}
+function phone(c){var h='<div class="col"><div class="cap">'+c.t+'</div><div class="phone" id="'+c.id+'"><div class="toast" id="t'+c.id+'"></div><div class="scr"><h2 class="hd">Staples</h2><div class="grid">'+c.keys.map(function(k){return card(byK(k))}).join('')+'</div></div>'+bar();
+ if(open[c.id])h+=sheet(byK(open[c.id]));return h+'</div></div>'}
+var BOX={A:['Closest to the screenshots the user liked. Card: ADD with "N options" caption; sheet: 2-per-row image tiles with ADD at the tile corner, Rs/kg under price.','Familiar from Blinkit-style apps; big visual comparison; ADD is one tap per size.','Needs one image per size (catalogue has one image per item). 5 sizes = 3 rows, scroll. Long names/labels squeeze in a half-width tile. Tile ADD overlaps the image.','Brands with real per-size photos and 2-3 sizes.'],
+B:['Same card as A. Sheet is full-width rows: thumbnail left, size + price + Rs/kg middle, ADD/stepper right.','Scales to 5 sizes; long size labels never truncate; Rs/kg and stock line have room; works with a single shared image; easy to scan a price column.','Slightly less "visual" than tiles; rows are taller so about 4 rows show before scroll.','Haper default: mixed 2-5 sizes, one image per item.'],
+C:['No sheet. Card shows size chips; price, Rs/kg and discount follow the selected chip; normal ADD / stepper acts on that size.','Fastest for 2-3 sizes (1 tap to pick, 1 tap to add); no modal; card stays in list context.','Cards grow taller; 5 chips need horizontal scroll (hidden sizes); chips hard to tap in a 2-col grid (small targets, needs 44px hit area); price on the card changes under the finger, easy to add the wrong size; stepper count shows only the chosen size.','Short lists where nearly all products have 2-3 sizes.']};
+function box(){var b=BOX[opt];document.getElementById('box').innerHTML='<div><h4>What it is / pros</h4>'+b[0]+'<br><br><b>Pros:</b> '+b[1]+'</div><div><h4>Cons</h4>'+b[2]+'</div><div><h4>Best when</h4>'+b[3]+'</div><div class="rec">Recommendation: Option B (same familiar card as A, rows sheet) - handles 5 sizes and one-image-per-item; switch to A only if per-size photos get added.</div>'}
+function draw(){document.getElementById('wrap').innerHTML=PH.map(phone).join('');
+ [].forEach.call(document.querySelectorAll('#tabs button'),function(b){b.className=b.dataset.o===opt?'on':''});box()}
+function toast(pid,m){var e=document.getElementById('t'+pid);if(!e)return;e.textContent=m;e.className='toast on';clearTimeout(tt[pid]);tt[pid]=setTimeout(function(){e.className='toast'},1600)}
+function find(id){var r=null;P.forEach(function(p){p.v.forEach(function(v){if(v.id===id)r=v})});return r}
+document.getElementById('wrap').addEventListener('click',function(e){
+ var t=e.target.closest('[data-a]');if(!t)return;var a=t.dataset.a,ph=t.closest('.phone'),pid=ph&&ph.id,v=t.dataset.v&&find(t.dataset.v);
+ if(a==='open'){open[pid]=t.dataset.p}
+ else if(a==='close'){open[pid]=null}
+ else if(a==='chip'){sel[opt+t.dataset.p]=+t.dataset.i}
+ else if(a==='inc'){if(q(v)>=cap(v)){toast(pid,v.st<6?'Only '+v.st+' available':'Max 6 per order');return}cart[v.id]=q(v)+1;last=v.id}
+ else if(a==='dec'){cart[v.id]=Math.max(0,q(v)-1)}
+ var top=ph?ph.querySelector('.scr').scrollTop:0,sb=ph&&ph.querySelector('.sh-b'),sbt=sb?sb.scrollTop:0;draw();
+ if(ph){var n=document.getElementById(pid);n.querySelector('.scr').scrollTop=top;var s2=n.querySelector('.sh-b');if(s2)s2.scrollTop=sbt}});
+document.getElementById('tabs').addEventListener('click',function(e){if(e.target.dataset.o){opt=e.target.dataset.o;open={};draw()}});
+document.getElementById('rst').onclick=function(){cart={};open={};sel={};draw()};
+draw();
+</script></body></html>
