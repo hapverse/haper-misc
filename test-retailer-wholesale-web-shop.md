@@ -47,4 +47,17 @@ Not browser-tested yet: only `tsc`, `vite build` and node unit tests were run.
 - No size drawer, tiles or "Wholesale only" card on web (web has no size-variants UI yet); no wholesale rail/list page, credit or ledger.
 - Needs deploy: backend wholesale contract (already built); web deploy.
 
-Unit tests: `node --test utils/*.test.mjs` (29 pass; wholesale.test.mjs adds 8).
+Unit tests: `node --test utils/*.test.mjs` (wholesale.test.mjs: 13 pass).
+
+## F. Online payment switched off (wholesale cart)
+1. Admin turns the retailer's online payment OFF; cart with a wholesale item: only Cash on Delivery shown, preselected, note "Online payment isn't available for your wholesale orders. Pay with cash on delivery.". ✅ / ❌
+2. Online selected, then admin turns it OFF and the cart refreshes: selection switches to COD with the note. ✅ / ❌
+3. Retail-only cart (no `paymentOptions`) for the same retailer, and normal customers: Pay Online and COD both shown as before. ✅ / ❌
+4. COD OFF (online on): online only, as before. ✅ / ❌
+5. Wallet covers the whole bill with online hidden: order sent as WALLET, places fine. ✅ / ❌
+6. Force online anyway (turn online OFF after opening checkout, place with Pay Online): red banner with the server message "Online payment isn't available for your wholesale orders. Please choose cash payment." (`RETAILER_ONLINE_DISABLED`), cart refetches, COD selected, no maintenance screen. ✅ / ❌
+7. Place again with COD: order is placed. ✅ / ❌
+8. Online OFF + wholesale cart + choose Schedule on a store whose scheduled methods are online-only (the default): the method list is replaced by "Scheduled delivery needs online payment, which isn't on for your wholesale orders. Choose Deliver now." and Place Order is disabled; the old "pay with cash on delivery" note is not shown. Switch back to Deliver now: Cash on Delivery returns and Place Order works. No generic 400 "isn't available for scheduled orders". ✅ / ❌
+8b. Online OFF + wholesale cart + Schedule on an online-only store, with wallet applied and covering the WHOLE bill (To Pay = 0): no block note, Place Order enabled, order goes through paid by wallet. If the wallet only covers part (To Pay > 0) the block note + disabled button return. ✅ / ❌
+9. Online OFF + scheduled slot where COD IS allowed: normal COD-only view, order places. Normal customer on Schedule: unchanged. ✅ / ❌
+Needs: web deploy (backend flag already built). Unit tests: `node --test utils/*.test.mjs`.
