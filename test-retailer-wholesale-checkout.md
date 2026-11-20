@@ -223,3 +223,34 @@ Two simultaneous "Place order" requests for the same cart used to create two ord
 Status code is 422 (not 409) on purpose: shipped apps treat 409 from this endpoint as "store under maintenance".
 
 Automated: `packages/user/__tests__/order-place-concurrency.test.js` and the double-tap cases in `wholesale-tier-edge.test.js`.
+
+## Online payment switch per retailer (2026-11-19)
+
+A super admin can now turn **online payment** off for one retailer's **wholesale** orders, next to the existing COD switch. Default is ON for everyone (old profiles have no value and read as ON). It only affects a cart that holds a wholesale (pack) line; the retailer's normal retail cart keeps every payment method. Backend only so far; admin UI toggle and app handling are follow-ups.
+
+Example data (fictional): retailer "Verma Provisions" (GSTIN 10ABCDE1234F1ZF), approved, COD switch ON. Business cart: 1 x "Tata Salt 1 kg Pack of 25".
+
+**Admin API** `PATCH /admin/retailer/:id/settings` body `{ rev, codEnabled?, onlineEnabled? }`
+- ✅ Super admin sends `{ rev, onlineEnabled: false }` (COD already on) → 200, `profile.settings.onlineEnabled: false`, `rev` goes up by 1, one `retailer.settings` audit row with before/after settings.
+- ✅ `GET /admin/retailer/:id` on a profile never switched → `settings.onlineEnabled: true`.
+- ✅ Old admin screen sends only `{ rev, codEnabled }` → works exactly as before.
+- ❌ COD off and `{ onlineEnabled: false }` → 400, `reason: "RETAILER_NO_PAYMENT_METHOD"`, message "Cash on delivery and online payment can't both be off. Keep at least one payment method on for this retailer." Nothing saved.
+- ❌ Online already off, then `{ codEnabled: false }` → same 400, nothing saved.
+- ❌ Store admin or manager (even with retailers.verify) → 403. Old `rev` → 409 `STALE`. `onlineEnabled: "false"` (a string) → 400 `FIELD_INVALID`.
+
+**Customer side, online OFF**
+- ✅ `GET /user/cart` (Business mode) for the wholesale cart → `paymentOptions: { cod: true, online: false, credit: null }`.
+- ❌ `POST /user/order/place` with `paymentMethod: "RAZORPAY"` (or `STORE_PICKUP_PREPAID`), now or scheduled → 400, `reason: "RETAILER_ONLINE_DISABLED"`, message "Online payment isn't available for your wholesale orders. Please choose cash payment." No order, no stock taken, no Razorpay order created.
+- ✅ Same cart with `paymentMethod: "COD"` → order placed.
+- ❌ Online off, scheduled slot on a store whose scheduled methods are online-only (default `[RAZORPAY]`), `paymentMethod: "COD"` → 400 "This payment method isn't available for scheduled orders". Web, Android and iOS therefore block Schedule in this state (copy "Scheduled delivery needs online payment, which isn't on for your wholesale orders. Choose Deliver now.", Place Order disabled) instead of sending it.
+- ✅ Retailer's retail-only cart (no packs) with `RAZORPAY` → order placed; retail cart response has no `paymentOptions` (same as before).
+- ✅ A normal customer's cart response is byte-for-byte unchanged.
+- ✅ Online order placed BEFORE the switch went off and not yet paid → `GET /user/order/:id/payment-status` still shows `canRetry: true`; the customer can finish paying. The stored method stays `RAZORPAY`.
+- ✅ Admin edit / reopen of an existing online wholesale order is not blocked by the online switch (only COD is re-checked there).
+
+**Switch back on**
+- ✅ `{ rev, onlineEnabled: true }` → 200; within about 60 s (viewer cache) the cart shows `online: true` again; checkout reads the profile fresh, so placing with `RAZORPAY` works immediately.
+
+**Known gaps:** shipped apps ignore `paymentOptions.online`, so they still show "Pay online" for a wholesale cart and only learn from the 400 (handled by their generic error path; it is a 400, not 409, so it is never read as "store under maintenance"). Admin UI has no online toggle yet.
+
+Automated: `packages/user/__tests__/retailer-online-payment.test.js`, `packages/admin/__tests__/retailer-online-switch.test.js`.

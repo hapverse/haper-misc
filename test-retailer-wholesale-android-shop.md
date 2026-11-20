@@ -85,3 +85,21 @@ Plain example: Test Retailer One does not see packs in the normal Haper shop any
 Test those through the API until they land (`test-b2b-business-mode.md`, section 10).
 
 **Automated (2026-11-01):** `./gradlew :app:testDebugUnitTest` for `ShopModeStateTest`, `ShopModeEchoTest`, `BusinessSwitchSheetTest`, `DeepLinkShopModeTest` (20 tests, green).
+
+## Online payment switched off for a retailer (2026-11-19)
+
+Plain example: admin turns online payment off for Test Retailer One. His wholesale cart now offers only cash on delivery. Server sends `paymentOptions: {cod:true, online:false}`; normal customers and retail carts have no `paymentOptions`.
+
+**Checks**
+- [ ] Online off, wholesale cart: checkout shows only "Cash on Delivery" (selected) plus the note "Online payment isn't available for your wholesale orders. Pay with cash on delivery."
+- [ ] Both on: "Online Payment" and "Cash on Delivery" both shown, no note.
+- [ ] COD off, online on (existing): only "Online Payment", COD note shown.
+- [ ] Open checkout with Online selected, then admin turns online off and the cart refreshes: selection moves to Cash on Delivery and the banner shows "We've switched you to cash on delivery."
+- [ ] Old build or stale screen places an online order while off: 400 `RETAILER_ONLINE_DISABLED`, banner shows the server message ("Online payment isn't available for your wholesale orders. Please choose cash payment."), selection switches to COD, tapping Place Order again works. No "store under maintenance" screen.
+- [ ] Online off + choose a scheduled slot where COD is not allowed (store default is online-only): the method list is replaced by "Scheduled delivery needs online payment, which isn't on for your wholesale orders. Choose Deliver now." and Place Order is disabled. Switch back to Deliver now: Cash on Delivery returns and Place Order works. No generic 400 "isn't available for scheduled orders" is ever seen.
+- [ ] Online off + scheduled slot where COD is allowed: normal COD row, order places.
+- [ ] Wallet covers the whole bill: Place Order sends WALLET (never RAZORPAY), works with online off.
+- [ ] Normal customer and retail cart: checkout unchanged, both methods shown.
+- [ ] Not both off: the server never sends `cod:false, online:false`.
+
+**Automated:** `RetailerCheckoutTest` (online/COD flag combinations, selection fallback, reason mapping).

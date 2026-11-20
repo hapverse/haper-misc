@@ -682,6 +682,34 @@ The API now answers every invoice request with 200 + the PDF (no redirect, no li
 
 ---
 
+## CH-23 · Shop by Brand in Haper Business (brand strip, All brands, brand page, search chips) — backend + Android built; admin, iOS, web TO DO
+**Backend:** ✅ built (haper-backend, uncommitted at time of writing). Reference: `haper-backend/docs/reference/brand-shop.md`.
+**Android:** ✅ built 2026-11-20 (uncommitted at time of writing). Not device-tested yet.
+**Plan:** `haper-misc/plan-brand-shop-business.md` (APPROVED 2026-11-19). Design: `haper-misc/design-brand-shop-business.md`. Test guide: `haper-misc/test-brand-shop-business.md`.
+**Plain summary:** Haper Business (wholesale) buyers get a "Shop by brand" strip on Home, an All brands screen, a brand page with that brand's wholesale items, and brand chips in search. A brand is the name on the pack (Amul, Dabur). Haper (retail) users see none of it.
+**Flag:** `BRAND_SHOP_ENABLED` (backend env). **Off by default** (unset = off). The owner sets `true` on dev. Agents never touch env files or AWS.
+
+| Client | What to do | Status |
+|---|---|---|
+| **backend** | `GET /user/brand` and `GET /user/brand/items?key=&page=&q=`. Search `data.brands` is an additive key. Flag `BRAND_SHOP_ENABLED`, off by default. | ✅ built (uncommitted) |
+| **admin** | Phase 2 "Brands" screen (super admin): logos, merge spellings, hide brands. Starts only after Phase 1 is on dev. | ⏳ to do (after Phase 1) |
+| **android** | Strip on Home (Business only, after "Shop by category"), All brands screen, brand page (search, paging, add to cart, size sheet), brand chips in search, "Under Rs 50" hidden in Business. All new model fields nullable (Gson). | ✅ built 2026-11-20 (uncommitted), not device-tested |
+| **ios** | Not started. Needs the iOS Business switch first (see the Haper Business row above). Same API as Android. Every new key optional (Codable). | ⏳ to do |
+| **web** | Not started. Needs the web Business switch first. Same API as iOS. Ignore `brands` until built. | ⏳ to do |
+| **delivery** | Not affected. | — |
+| **picker** | Not affected. | — |
+
+**Backend notes (CH-23):**
+- Brand object: `{ "key": "amul", "name": "Amul", "itemCount": 12, "logoUrl": null }`. `logoUrl` is always `null` in Phase 1.
+- Gate: flag on AND Business audience. Otherwise HTTP 200 with empty data and no DB read. Haper mode always gets `brands: []`.
+- `itemCount` = number of cards the brand page shows (size groups count once).
+- Search chips: Business only, page 1, non-fallback, max 3.
+- Hidden names: `generic, genric, na, n/a, unbranded, local, none`, and blank or symbol-only names.
+- Cache: 120 s per store and view.
+- Phase 0 (ops, not app code): staff fix misspelt brands in Product Master before Business goes live. Read-only report: `haper-backend/scripts/migrations/report-brand-duplicates.js`.
+
+---
+
 ## Future changes
 **This file is COMPLETE for inventory-v2** — CH-1…6 cover every shipped backend change (Phases 0–4) with a
 per-client checklist + exact endpoints, and CH-7 covers the one optional P9 item (with its backend prerequisite).

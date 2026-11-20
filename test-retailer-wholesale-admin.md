@@ -103,3 +103,19 @@ Plan: plan-b2b-business-mode.md (T1-T3). Super admin only (product master API).
 - ✅ Product that never had tiers: Save body has no `wholesaleTiers` key (unchanged from before).
 - Dark and light themes readable; keyboard order qty -> % -> remove per row, then Add tier, preview store select, tick, Save.
 - Needs backend `wholesaleTiers` + `/wholesale-tiers/preview` on dev. Automated: `npx vitest run src/pages/Products`.
+
+## 11. Online payment switch (retailer Payment options)
+Retailer detail of an APPROVED or SUSPENDED retailer (e.g. "Sample Kirana"). Card now shows: Cash on delivery, Online payment, Pay later (credit).
+- ✅ Older retailer that never had the setting: "Online payment for wholesale orders" shows ON.
+- ✅ Super admin, COD on: switch Online off -> Save -> toast "Payment options saved"; Network: PATCH `/admin/retailer/:id/settings` body `{ rev, onlineEnabled: false }` only (no `codEnabled`, never `creditEnabled`); reopen shows Online OFF and rev +1; audit log has a `retailer.settings` entry.
+- ✅ Retailer app (cart with a wholesale item) now shows only cash on delivery; a retail-only cart keeps every method; orders already placed unchanged.
+- ✅ COD-only change still sends `{ rev, codEnabled }` only (unchanged behaviour).
+- ❌ Legacy retailer (COD off, Online on): switch Online off -> "Turn on cash on delivery to switch online off." and Save is disabled; turn COD on -> message gone, Save enabled. Symmetric: Online off first, then COD off -> "Turn on online payment to switch cash on delivery off.".
+- ✅ After Save, the button stays on "Saving…" until the profile has reloaded; a fast second click cannot send the old rev or show a false "updated by someone else" banner.
+- ✅ COD off + Online on, change to COD on + Online off in one go -> one Save sends both keys and succeeds.
+- ❌ Another admin turned COD off meanwhile (server 400 `RETAILER_NO_PAYMENT_METHOD`) -> red box with the server's message "Cash on delivery and online payment can't both be off...".
+- ❌ Stale rev (409 STALE) -> same Reload banner as section 4; switches locked until reload.
+- ✅ Store admin / manager: Online switch disabled but shows the real value, lock icon, "Only a super admin can change this.", no Save.
+- ✅ Switch Online back on -> Save -> body `{ rev, onlineEnabled: true }`; retailer sees online payment again on next checkout.
+- Keyboard: Tab reaches COD switch, Online switch, Save; Space toggles.
+- Needs backend `onlineEnabled` on `/admin/retailer/:id/settings` deployed (dev) + admin build (user-manual). Automated: `npx vitest run src/pages/Retailers src/api/retailers.test.ts`.

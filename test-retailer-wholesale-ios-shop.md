@@ -49,3 +49,20 @@ The API now answers every invoice request with 200 and the PDF itself (no redire
 3. Download twice: both open the same PDF. ✅/❌
 Automated: `-only-testing:haperTests/InvoiceRedirectPolicyTests`.
 Android: see `test-retailer-wholesale-android-shop.md` (same defence in depth).
+
+## Retailer online payment switched off (wholesale cart -> COD only)
+Server returns `paymentOptions {cod:true, online:false}` for an approved retailer's wholesale cart when an admin turns online payment off.
+1. Online off, wholesale cart: checkout shows only Cash on Delivery (note "Online payment isn't available..."), COD preselected. ✅/❌
+2. Online on + COD on: both shown, default unchanged (Online). ✅/❌
+3. COD off, online on: only Online shown (unchanged). ✅/❌
+4. Normal customer / retail cart (no `paymentOptions`): both shown, nothing changes. ✅/❌
+5. Admin turns online off while Online is selected, then cart refreshes: selection switches to COD with the short notice. ✅/❌
+6. Wallet covers the whole bill: order is sent as WALLET (never RAZORPAY), places fine. ✅/❌
+7. Force a RAZORPAY order anyway (400 `RETAILER_ONLINE_DISABLED`): server message in the banner, cart options refresh, COD selected, no maintenance overlay. ✅/❌
+8. Scheduled delivery with online off: Online is not forced back on. ✅/❌
+9. Online off + store's scheduled methods are online-only (default) + pick Schedule: the method list is replaced by "Scheduled delivery needs online payment, which isn't on for your wholesale orders. Choose Deliver now."; Place Order disabled; switching to Deliver now restores COD and Place Order. ✅/❌
+10. Same as 9 but the store allows COD for scheduled orders: COD shown and the order places. ✅/❌
+11. Online off + schedule + store disallows COD for scheduled + wallet covers the whole bill: Place Order is enabled and the order places as WALLET. With the wallet only part-covering, it stays blocked (as step 9). ✅/❌
+12. Server refusal if reached anyway (online method on a wholesale order): message "Online payment isn't available for your wholesale orders. Please choose cash payment." ✅/❌
+13. Online switched off while Online was selected: banner reads "We've switched you to cash on delivery." (differs from the note above the methods). ✅/❌
+Automated: `-only-testing:haperTests/WholesaleTests`.
