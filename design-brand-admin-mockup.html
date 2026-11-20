@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<title>Brands admin - mockup (Shop by Brand Phase 2)</title>
+<meta name="viewport" content="width=1320">
+<style>
+:root{--bg-primary:#0a0a0a;--bg-secondary:#1a1a1a;--bg-panel:#242424;--text-primary:#fff;--text-secondary:#a0a0a0;--accent-primary:#5b57e8;--accent-text:#a5b4fc;--accent-soft:rgba(91,87,232,.16);--accent-border:rgba(91,87,232,.45);--danger:#ef4444;--success:#22c55e;--border-color:#333;--radius-md:8px;--radius-lg:12px;--warning-text:#fbbf24;--warning-soft:rgba(217,119,6,.14);--warning-border:rgba(251,191,36,.40);--warning-fill:#b45309}
+[data-theme=light]{--bg-primary:#f4f5f7;--bg-secondary:#fff;--bg-panel:#fff;--text-primary:#111827;--text-secondary:#6b7280;--accent-text:#4f46e5;--accent-soft:rgba(91,87,232,.10);--accent-border:rgba(91,87,232,.30);--success:#16a34a;--border-color:#e5e7eb;--warning-text:#92400e;--warning-soft:rgba(180,83,9,.10);--warning-border:rgba(180,83,9,.35)}
+*{box-sizing:border-box}
+body{margin:0;font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;background:#7b7f88;color:var(--text-primary);padding:20px}
+.mk-bar{display:flex;justify-content:space-between;align-items:center;max-width:1280px;margin:0 auto 14px;color:#fff}
+.mk-bar h1{font-size:1.1rem;margin:0}
+.mk-bar button{background:#111;color:#fff;border:1px solid #555;border-radius:8px;padding:.45rem .8rem;cursor:pointer;font:inherit;font-size:.85rem}
+.cap{max-width:1280px;margin:26px auto 8px;color:#fff;font-size:.9rem}
+.cap b{font-size:1rem}
+.cap span{display:block;opacity:.85;font-size:.8rem;margin-top:2px}
+/* admin frame */
+.frame{position:relative;max-width:1280px;margin:0 auto;height:1010px;overflow:hidden;border-radius:12px;background:var(--bg-primary);display:flex;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+.side{width:220px;flex:none;background:var(--bg-secondary);border-right:1px solid var(--border-color);padding:16px 10px;font-size:.84rem}
+.side .logo{font-weight:800;font-size:1.1rem;padding:4px 10px 16px}
+.side .sec{font-size:.68rem;text-transform:uppercase;letter-spacing:.06em;color:var(--text-secondary);padding:12px 10px 6px}
+.side .it{display:flex;gap:10px;align-items:center;padding:8px 10px;border-radius:8px;color:var(--text-secondary)}
+.side .it.on{background:var(--accent-soft);color:var(--accent-text);font-weight:600}
+.side .ic{width:16px;height:16px;border:1.6px solid currentColor;border-radius:4px;flex:none}
+.side .it.on .ic{border-radius:5px 5px 5px 1px}
+.main{flex:1;display:flex;flex-direction:column;min-width:0}
+.top{height:64px;flex:none;border-bottom:1px solid var(--border-color);display:flex;align-items:center;gap:12px;padding:0 24px;background:var(--bg-secondary)}
+.top .sel{border:1px solid var(--border-color);border-radius:8px;padding:.45rem .9rem;min-width:200px;font-size:.85rem;background:var(--bg-panel)}
+.top .srch{border:1px solid var(--border-color);border-radius:8px;padding:.45rem .9rem;width:280px;font-size:.85rem;color:var(--text-secondary)}
+.content{padding:2rem;overflow:hidden;flex:1}
+/* house primitives */
+.ph h2{margin:0;font-size:1.4rem}
+.ph p{margin:.25rem 0 1.1rem;color:var(--text-secondary);font-size:.85rem}
+.card{background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:var(--radius-md);padding:1rem}
+.filters{display:flex;flex-wrap:wrap;gap:.75rem;align-items:flex-end;margin-bottom:.75rem}
+.fl{font-size:.78rem;color:var(--text-secondary);display:flex;flex-direction:column;gap:.3rem}
+.in{min-height:40px;padding:.55rem .7rem;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-primary);color:var(--text-primary);font-size:.85rem;display:flex;align-items:center;justify-content:space-between;gap:8px;white-space:nowrap}
+.in.ph-t{color:var(--text-secondary)}
+.chev::after{content:'';width:6px;height:6px;border-right:1.5px solid var(--text-secondary);border-bottom:1.5px solid var(--text-secondary);transform:rotate(45deg) translateY(-2px);display:inline-block}
+.btn{padding:.5rem .85rem;border-radius:8px;border:none;background:var(--accent-primary);color:#fff;font-size:.8rem;font-weight:500;cursor:pointer;font-family:inherit;min-height:36px;white-space:nowrap}
+.btn.g{background:transparent;border:1px solid var(--border-color);color:var(--text-secondary)}
+.btn.dis{opacity:.55;cursor:not-allowed}
+.lnk{background:none;border:none;color:var(--accent-text);font:inherit;font-size:.8rem;cursor:pointer;padding:0;text-decoration:underline}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;padding:.55rem .7rem;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;color:var(--text-secondary);border-bottom:1px solid var(--border-color);white-space:nowrap;font-weight:600}
+td{padding:.55rem .7rem;font-size:.85rem;border-bottom:1px solid var(--border-color);vertical-align:middle}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+tr.row:hover td,tr.row.sel td{background:var(--accent-soft)}
+.bc{display:flex;align-items:center;gap:10px;min-width:0}
+.bn{font-weight:600}
+.key{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.74rem;color:var(--text-secondary)}
+.muted{color:var(--text-secondary)}
+.small{font-size:.74rem}
+.pill{display:inline-flex;align-items:center;gap:4px;padding:.12rem .5rem;border-radius:999px;font-size:.7rem;font-weight:600;white-space:nowrap;color:var(--text-secondary);border:1px solid color-mix(in srgb,var(--text-secondary) 40%,transparent);background:color-mix(in srgb,var(--text-secondary) 12%,transparent)}
+.pill.new{color:var(--accent-text);border-color:var(--accent-border);background:var(--accent-soft)}
+.pill.warn{color:var(--warning-text);border-color:var(--warning-border);background:var(--warning-soft)}
+.ico{width:11px;height:11px;flex:none}
+.wtxt{color:var(--warning-text)}
+.foot{display:flex;justify-content:space-between;align-items:center;margin-top:.8rem;font-size:.78rem;color:var(--text-secondary)}
+.pager{display:flex;gap:.5rem;align-items:center}
+.infoi{display:inline-flex;width:13px;height:13px;border-radius:50%;border:1.3px solid var(--text-secondary);font-size:9px;align-items:center;justify-content:center;margin-left:4px;vertical-align:-2px;text-transform:none}
+.updating{display:flex;justify-content:flex-end;font-size:.75rem;color:var(--text-secondary);height:20px}
+/* tile */
+.tile{position:relative;flex:none;display:inline-flex;align-items:center;justify-content:center;font-family:Quicksand,inherit;font-weight:700;overflow:hidden;box-shadow:inset 0 0 0 1px var(--border-color);line-height:1}
+.tile.logo{background:#fff}
+.tile.logo svg{width:76%;height:76%}
+/* drawer */
+.scrim{position:absolute;inset:0;background:rgba(0,0,0,.45);display:flex;justify-content:flex-end;z-index:5}
+.drawer{width:520px;height:100%;background:var(--bg-panel);border-left:1px solid var(--border-color);display:flex;flex-direction:column}
+.dh{display:flex;gap:12px;align-items:center;padding:1rem 1.25rem;border-bottom:1px solid var(--border-color)}
+.dh .nm{font-size:1.05rem;font-weight:700}
+.dh .sub{font-size:.78rem;color:var(--text-secondary);margin-top:2px}
+.x{margin-left:auto;width:44px;height:44px;display:flex;align-items:center;justify-content:center;color:var(--text-secondary);font-size:1.2rem;border-radius:8px}
+.db{flex:1;overflow:hidden;padding:0 1.25rem}
+.sect{padding:1rem 0;border-bottom:1px solid var(--border-color)}
+.sect:last-child{border-bottom:none}
+.st{margin:0 0 .7rem;font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--text-secondary);font-weight:600}
+.sub-t{font-size:.78rem;font-weight:600;margin:.2rem 0 .35rem}
+.help{font-size:.76rem;color:var(--text-secondary);line-height:1.4}
+.nl{display:grid;grid-template-columns:112px 1fr;gap:16px;align-items:start}
+.prev{text-align:center}
+.prev .pn{font-size:.8rem;font-weight:600;margin-top:6px}
+.prev .pc{font-size:.72rem;color:var(--text-secondary)}
+.prev .cap2{font-size:.68rem;color:var(--text-secondary);margin-top:4px;text-transform:uppercase;letter-spacing:.04em}
+.lbl{font-size:.78rem;color:var(--text-secondary);margin-bottom:.3rem}
+.inp{min-height:40px;padding:.55rem .7rem;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-primary);font-size:.85rem;width:100%}
+.inp.focus{outline:2px solid var(--accent-primary);outline-offset:2px}
+.btns{display:flex;gap:8px;margin:.7rem 0 .35rem;flex-wrap:wrap}
+.al{display:grid;grid-template-columns:24px 1fr auto;gap:10px;align-items:center;padding:.55rem 0;border-top:1px solid var(--border-color)}
+.al:first-of-type{border-top:none}
+.al .t1{font-size:.84rem;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.al .t2{font-size:.76rem;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:330px}
+.strike{text-decoration:line-through}
+.combo{display:flex;align-items:center;gap:8px;min-height:40px;padding:.4rem .7rem;border-radius:8px;border:1px solid var(--border-color);background:var(--bg-primary);font-size:.85rem;color:var(--text-secondary)}
+.swrow{display:flex;justify-content:space-between;gap:12px;align-items:center;min-height:44px}
+.sw{width:42px;height:24px;border-radius:999px;background:var(--border-color);position:relative;flex:none}
+.sw::after{content:'';position:absolute;left:3px;top:3px;width:18px;height:18px;border-radius:50%;background:#fff}
+.sw.on{background:var(--accent-primary)}.sw.on::after{left:21px}
+.df{border-top:1px solid var(--border-color);padding:.9rem 1.25rem;display:flex;justify-content:flex-end;gap:.6rem}
+.edited{font-size:.76rem;color:var(--text-secondary);padding:.8rem 0}
+.banner{display:flex;gap:10px;align-items:flex-start;padding:.7rem .85rem;border-radius:8px;font-size:.82rem;line-height:1.4;margin-top:1rem}
+.banner.warn{background:var(--warning-soft);border:1px solid var(--warning-border)}
+.banner.err{border:1px solid var(--danger)}
+.banner.neu{border:1px solid var(--border-color)}
+.banner .bi{width:16px;height:16px;flex:none;margin-top:1px}
+.banner .bt{flex:1}
+.ac{border:1px solid var(--danger);border-radius:8px;padding:.5rem .6rem;margin-top:.4rem}
+/* dialog */
+.dlg{width:520px;background:var(--bg-panel);border-radius:12px;box-shadow:0 20px 45px rgba(0,0,0,.35);overflow:hidden}
+.dlg .hd{padding:1.15rem 1.5rem;border-bottom:1px solid var(--border-color);font-size:1.1rem;font-weight:700;display:flex;justify-content:space-between;align-items:center}
+.dlg .hd.warn{background:var(--warning-soft);border-bottom-color:var(--warning-border)}
+.dlg .bd{padding:1.25rem 1.5rem;display:grid;gap:1rem;font-size:.88rem}
+.dlg .ft{padding:1rem 1.5rem;border-top:1px solid var(--border-color);display:flex;justify-content:flex-end;gap:.75rem}
+.mt th,.mt td{padding:.4rem .5rem;font-size:.82rem}
+.mt tr.sum td{font-weight:700;border-bottom:none}
+.mt .samp td{padding-top:0;font-size:.74rem;color:var(--text-secondary)}
+.dlg ul{margin:0;padding-left:1.1rem;color:var(--text-primary);line-height:1.5;font-size:.84rem}
+.ack{display:flex;gap:.6rem;align-items:center;padding:.75rem .9rem;border-radius:8px;border:1px solid var(--warning-border);background:var(--warning-soft);font-size:.85rem;font-weight:600}
+.ack i{width:18px;height:18px;border:1.5px solid var(--text-secondary);border-radius:4px;flex:none}
+/* states grid */
+.grid{max-width:1280px;margin:0 auto;display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+.pane{background:var(--bg-primary);border-radius:12px;padding:18px}
+.pane h4{margin:0 0 10px;font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:var(--text-secondary)}
+.emp{text-align:center;display:grid;gap:.5rem;justify-items:center;padding:2rem 1rem}
+.emp h3{margin:0;font-size:1.05rem}
+.emp p{margin:0;color:var(--text-secondary);font-size:.88rem;max-width:440px}
+.info-strip{display:flex;gap:8px;align-items:center;border:1px solid var(--border-color);border-radius:8px;padding:.6rem .8rem;font-size:.82rem;background:var(--bg-secondary)}
+.dpart{background:var(--bg-panel);border:1px solid var(--border-color);border-radius:12px;overflow:hidden}
+.dpart .inner{padding:0 1.25rem 1rem}
+</style>
+</head>
+<body>
+
+<div class="mk-bar">
+  <h1>Brands admin page - mockup (desktop 1280). Logos are fictional placeholder shapes.</h1>
+  <button type="button" id="themeBtn">Switch to light theme</button>
+</div>
+
+<div class="cap"><b>1. List page with the edit drawer open (flow A: a spelling staged, not saved yet)</b>
+<span>Sidebar Catalog: Brands sits after Product Master. Drawer = WalletHistoryDrawer shell, 520px. Nothing changes in the app until Save changes.</span></div>
+
+<div class="frame">
+  <aside class="side">
+    <div class="logo">Haper</div>
+    <div class="sec">Overview</div>
+    <div class="it"><i class="ic"></i>Dashboard</div>
+    <div class="sec">Catalog</div>
+    <div class="it"><i class="ic"></i>Items</div>
+    <div class="it"><i class="ic"></i>Product Master</div>
+    <div class="it on"><i class="ic"></i>Brands</div>
+    <div class="it"><i class="ic"></i>Categories</div>
+    <div class="it"><i class="ic"></i>Banners</div>
+    <div class="it"><i class="ic"></i>Inventory Groups</div>
+    <div class="it"><i class="ic"></i>Size groups</div>
+    <div class="it"><i class="ic"></i>Shelf Labels</div>
+    <div class="sec">People</div>
+    <div class="it"><i class="ic"></i>Retailers</div>
+  </aside>
+  <div class="main">
+    <div class="top"><div class="sel chev">All Stores</div><div class="srch">Search pages...</div></div>
+    <div class="content">
+      <div class="ph"><h2>Brands</h2><p>Name, logo and spellings Haper Business buyers see in Shop by brand.</p></div>
+      <div class="card filters">
+        <label class="fl" style="flex:1 1 240px;max-width:320px">Search<span class="in ph-t">Name, key or spelling</span></label>
+        <label class="fl" style="flex:0 1 190px">Store (wholesale counts)<span class="in chev">Patna Main</span></label>
+        <label class="fl" style="flex:0 1 150px">Visibility<span class="in chev">All</span></label>
+        <label class="fl" style="flex:0 1 120px">Logo<span class="in chev">Any</span></label>
+        <label class="fl" style="flex:0 1 170px">Spellings<span class="in chev">Any</span></label>
+        <label class="fl" style="flex:0 1 170px">Sort<span class="in chev">Most products</span></label>
+      </div>
+      <div class="card">
+        <div class="updating"></div>
+        <table>
+          <thead><tr>
+            <th>Brand</th><th>Spellings</th><th class="num">Products<span class="infoi">i</span></th><th class="num">Wholesale at Patna Main<span class="infoi">i</span></th><th>Visibility</th><th class="num">Last edited</th><th></th>
+          </tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+        <div class="foot"><span>403 brands - 41 with a logo</span><span class="pager"><button class="btn g dis">&lsaquo; Prev</button>Page 1 of 9<button class="btn g">Next &rsaquo;</button></span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="scrim">
+    <div class="drawer" role="dialog" aria-label="Cadbury">
+      <div class="dh">
+        <span data-tile="Cadbury" data-size="40"></span>
+        <div><div class="nm">Cadbury</div><div class="sub"><span class="key">cadbury</span> - 45 products - 12 wholesale at Patna Main</div></div>
+        <span class="x">&#10005;</span>
+      </div>
+      <div class="db">
+        <div class="sect">
+          <h3 class="st">Name and logo</h3>
+          <div class="nl">
+            <div class="prev"><span data-tile="Cadbury" data-size="96"></span><div class="pn">Cadbury</div><div class="pc">12 items</div><div class="cap2">App preview</div></div>
+            <div>
+              <div class="lbl">Display name</div>
+              <div class="inp" style="color:var(--text-secondary)">Cadbury</div>
+              <div class="help" style="margin-top:.35rem">Leave blank to use "Cadbury" (the most common spelling). The badge colour comes from the name.</div>
+              <div class="btns"><button class="btn g">Upload logo</button></div>
+              <div class="help">PNG or JPG, up to 5 MB. A square or transparent PNG looks best.</div>
+            </div>
+          </div>
+        </div>
+        <div class="sect">
+          <h3 class="st">Spellings</h3>
+          <div class="sub-t">Seen on products</div>
+          <div style="font-size:.84rem">Cadbury <span class="muted">40</span> &nbsp;-&nbsp; CADBURY <span class="muted">2</span></div>
+          <div class="help" style="margin-top:.2rem">Same letters with different capitals or spaces merge automatically.</div>
+
+          <div class="sub-t" style="margin-top:.9rem">Merged into this brand</div>
+          <div class="al"><span data-tile="cadbuary" data-size="24"></span><div><div class="t1"><b>cadbuary</b><span class="muted">1 product</span></div><div class="t2">Cadbuary Eclairs 1 pc</div></div><button class="btn g" style="min-height:32px">Unmerge</button></div>
+          <div class="al"><span data-tile="Cadbbury" data-size="24"></span><div><div class="t1"><b>Cadbbury</b><span class="muted">3 products</span><span class="pill new">New</span></div><div class="t2">Cadbbury Dairy Milk 50 g, Cadbbury Gems 20 g, Cadbbury 5 Star</div></div><button class="lnk">Undo</button></div>
+
+          <div class="sub-t" style="margin-top:.9rem">Possible duplicates</div>
+          <div class="al"><span data-tile="Cadbury Ltd" data-size="24"></span><div><div class="t1"><b>Cadbury Ltd</b><span class="muted">2 products</span><span class="pill">Starts with the same words</span></div><div class="t2">Cadbury Ltd Bournvita 500 g, Cadbury Ltd Celebrations</div></div><button class="btn g">Merge in</button></div>
+
+          <div class="sub-t" style="margin-top:.9rem">Merge another brand</div>
+          <div class="combo">&#9906; Search brands to merge in</div>
+        </div>
+        <div class="sect">
+          <h3 class="st">Visibility</h3>
+          <div class="swrow"><span style="font-size:.88rem">Hide from Shop by brand</span><span class="sw"></span></div>
+          <div class="help">Hidden brands don't appear in the brand strip, All brands or brand search chips. Their items stay in categories and search. Applies to every store.</div>
+          <div class="edited">Last edited by Priya S - 18 Nov 2026, 4:12 pm</div>
+        </div>
+      </div>
+      <div class="df"><button class="btn g">Cancel</button><button class="btn">Save changes</button></div>
+    </div>
+  </div>
+</div>
+
+<div class="cap"><b>2. Merge preview (opens on Save when the draft adds a merge)</b>
+<span>ConfirmDialog, zIndex 210 (above the drawer). Left: normal merge from Possible duplicates. Right: picked by hand or 10+ products, so amber tone and the checkbox.</span></div>
+<div class="grid">
+  <div class="pane" style="display:flex;justify-content:center">
+    <div class="dlg">
+      <div class="hd">Merge 1 spelling into Cadbury?<span class="muted">&#10005;</span></div>
+      <div class="bd">
+        <table class="mt"><thead><tr><th></th><th class="num">Products</th><th class="num">Wholesale at Patna Main</th></tr></thead>
+          <tbody>
+            <tr><td>Cadbury <span class="muted">(stays)</span></td><td class="num">42</td><td class="num">12</td></tr>
+            <tr><td>+ Cadbbury</td><td class="num">3</td><td class="num">1</td></tr>
+            <tr class="samp"><td colspan="3">Cadbbury Dairy Milk 50 g, Cadbbury Gems 20 g, Cadbbury 5 Star</td></tr>
+            <tr class="sum"><td>= Cadbury</td><td class="num">45</td><td class="num">13</td></tr>
+          </tbody></table>
+        <ul>
+          <li>In the app, Cadbbury stops showing as its own brand. Its items show under Cadbury.</li>
+          <li>Products are not edited. Product Master keeps the spelling it has.</li>
+          <li>You can unmerge any time from this drawer.</li>
+        </ul>
+      </div>
+      <div class="ft"><button class="btn g">Cancel</button><button class="btn">Merge and save</button></div>
+    </div>
+  </div>
+  <div class="pane" style="display:flex;justify-content:center">
+    <div class="dlg">
+      <div class="hd warn"><span><span class="wtxt">&#9888;</span> Merge 1 spelling into Cadbury?</span><span class="muted">&#10005;</span></div>
+      <div class="bd">
+        <table class="mt"><thead><tr><th></th><th class="num">Products</th><th class="num">Wholesale at Patna Main</th></tr></thead>
+          <tbody>
+            <tr><td>Cadbury <span class="muted">(stays)</span></td><td class="num">42</td><td class="num">12</td></tr>
+            <tr><td>+ Bournvita <span class="pill">Picked by hand</span></td><td class="num">14</td><td class="num">5</td></tr>
+            <tr class="samp"><td colspan="3">Bournvita 500 g, Bournvita 1 kg jar, Bournvita Lil Champs 200 g</td></tr>
+            <tr class="sum"><td>= Cadbury</td><td class="num">56</td><td class="num">17</td></tr>
+          </tbody></table>
+        <ul>
+          <li>In the app, Bournvita stops showing as its own brand. Its items show under Cadbury.</li>
+          <li>Products are not edited. Product Master keeps the spelling it has.</li>
+          <li>Bournvita's own logo and name are not used while it is merged.</li>
+          <li>You can unmerge any time from this drawer.</li>
+        </ul>
+        <label class="ack"><i></i>I checked these are the same brand, not two different brands.</label>
+      </div>
+      <div class="ft"><button class="btn g">Cancel</button><button class="btn dis" style="background:var(--warning-fill)">Merge and save</button></div>
+    </div>
+  </div>
+</div>
+
+<div class="cap"><b>3. Drawer states</b><span>Banner slot sits at the top of the drawer body. Error copy is never red text: red border + icon, normal text colour.</span></div>
+<div class="grid">
+  <div class="pane"><h4>Stale edit (409 BRAND_STALE)</h4>
+    <div class="dpart"><div class="dh"><span data-tile="Cadbury" data-size="40"></span><div><div class="nm">Cadbury</div><div class="sub"><span class="key">cadbury</span> - 45 products</div></div><span class="x">&#10005;</span></div>
+    <div class="inner"><div class="banner warn"><svg class="bi" viewBox="0 0 16 16"><path d="M8 1.5 15 14H1z" fill="none" stroke="var(--warning-text)" stroke-width="1.5"/><path d="M8 6v4M8 11.6v.4" stroke="var(--warning-text)" stroke-width="1.5"/></svg><span class="bt">Someone else changed Cadbury while you were editing. Reload to see their changes. Your edits here will be lost.</span><button class="btn g" style="min-height:32px">Reload</button></div></div>
+    <div class="df"><button class="btn g">Cancel</button><button class="btn dis">Save changes</button></div></div>
+  </div>
+  <div class="pane"><h4>Alias taken by someone else (409 BRAND_ALIAS_TAKEN)</h4>
+    <div class="dpart"><div class="inner">
+      <div class="banner warn"><svg class="bi" viewBox="0 0 16 16"><path d="M8 1.5 15 14H1z" fill="none" stroke="var(--warning-text)" stroke-width="1.5"/><path d="M8 6v4M8 11.6v.4" stroke="var(--warning-text)" stroke-width="1.5"/></svg><span class="bt">Cadbbury was just merged into Cadbury Dairy Milk by someone else.</span></div>
+      <div class="ac"><div class="al" style="border:none;padding:0"><span data-tile="Cadbbury" data-size="24"></span><div><div class="t1"><b>Cadbbury</b><span class="muted">3 products</span><span class="pill new">New</span></div><div class="t2" style="color:var(--text-primary)">Already merged into Cadbury Dairy Milk.</div></div><button class="lnk">Remove</button></div></div>
+    </div><div class="df"><button class="btn g">Cancel</button><button class="btn dis">Save changes</button></div></div>
+  </div>
+  <div class="pane"><h4>Opened the typo (flow A2): bigger brand suggested</h4>
+    <div class="dpart"><div class="dh"><span data-tile="Cadbbury" data-size="40"></span><div><div class="nm">Cadbbury</div><div class="sub"><span class="key">cadbbury</span> - 3 products - 1 wholesale at Patna Main</div></div><span class="x">&#10005;</span></div>
+    <div class="inner"><div class="sub-t" style="margin-top:1rem">Possible duplicates</div>
+      <div class="al"><span data-tile="Cadbury" data-size="24"></span><div><div class="t1"><b>Cadbury</b><span class="muted">42 products</span><span class="pill">1 letter different</span></div><div class="t2 wtxt">Bigger than this brand</div></div><button class="btn g">Merge into Cadbury</button></div>
+    </div></div>
+  </div>
+  <div class="pane"><h4>Catch-all brand (read-only)</h4>
+    <div class="dpart"><div class="dh"><span data-tile="Generic" data-size="40"></span><div><div class="nm">Generic</div><div class="sub"><span class="key">generic</span> - 364 products</div></div><span class="x">&#10005;</span></div>
+    <div class="inner"><div class="banner neu"><svg class="bi" viewBox="0 0 16 16"><rect x="3" y="7" width="10" height="7" rx="1.5" fill="none" stroke="var(--text-secondary)" stroke-width="1.5"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" fill="none" stroke="var(--text-secondary)" stroke-width="1.5"/></svg><span class="bt">Catch-all names like Generic are always hidden from Shop by brand. Their items stay in categories and search.</span></div></div>
+    <div class="df"><button class="btn g">Close</button></div></div>
+  </div>
+  <div class="pane"><h4>Merge picker: blocked options stay visible with the reason</h4>
+    <div class="dpart"><div class="inner" style="padding-top:1rem">
+      <div class="combo" style="outline:2px solid var(--accent-primary);outline-offset:2px;color:var(--text-primary)">&#9906; gen</div>
+      <div style="border:1px solid var(--border-color);border-radius:8px;margin-top:.25rem;box-shadow:0 8px 16px rgba(0,0,0,.2);background:var(--bg-panel)">
+        <div class="al" style="padding:.6rem .75rem;background:var(--accent-soft)"><span data-tile="Genius" data-size="24"></span><div><div class="t1"><b>Genius</b><span class="muted">4 products</span></div><div class="t2">Genius Glass Cleaner 500 ml, Genius Mop</div></div><span></span></div>
+        <div class="al" style="padding:.6rem .75rem;opacity:.55"><span data-tile="Generic" data-size="24"></span><div><div class="t1"><b>Generic</b><span class="muted">364 products</span></div><div class="t2">Catch-all name - can't be merged</div></div><span></span></div>
+        <div class="al" style="padding:.6rem .75rem;opacity:.55"><span data-tile="Genric" data-size="24"></span><div><div class="t1"><b>Genric</b><span class="muted">4 products</span></div><div class="t2">Catch-all name - can't be merged</div></div><span></span></div>
+      </div>
+    </div></div>
+  </div>
+  <div class="pane"><h4>Save failed (network) + discard check</h4>
+    <div class="dpart">
+      <div style="padding:0 1.25rem"><div class="banner err" role="alert"><svg class="bi" viewBox="0 0 16 16"><path d="M8 1.5 15 14H1z" fill="none" stroke="var(--danger)" stroke-width="1.5"/><path d="M8 6v4M8 11.6v.4" stroke="var(--danger)" stroke-width="1.5"/></svg><span class="bt">Couldn't save. Your changes are still here.</span></div></div>
+      <div class="df" style="border-top:none"><button class="btn g">Cancel</button><button class="btn">Retry save</button></div>
+    </div>
+    <div class="dlg" style="margin-top:14px;width:100%">
+      <div class="hd" style="background:rgba(239,68,68,.1);border-bottom-color:rgba(239,68,68,.3)">Discard changes to Cadbury?<span class="muted">&#10005;</span></div>
+      <div class="bd">Your changes haven't been saved.</div>
+      <div class="ft"><button class="btn g">Keep editing</button><button class="btn" style="background:var(--danger)">Discard</button></div>
+    </div>
+  </div>
+</div>
+
+<div class="cap"><b>4. List page states</b><span>Same card patterns as Size groups and Retailers.</span></div>
+<div class="grid">
+  <div class="pane"><h4>Loading</h4><div class="card"><div style="display:grid;gap:8px"><div style="height:44px;border-radius:6px;background:var(--border-color)"></div><div style="height:44px;border-radius:6px;background:var(--border-color);opacity:.8"></div><div style="height:44px;border-radius:6px;background:var(--border-color);opacity:.6"></div></div></div></div>
+  <div class="pane"><h4>Error</h4><div class="card" role="alert" style="border-color:var(--danger);display:grid;gap:.6rem"><strong>Couldn't load brands</strong><span class="muted" style="font-size:.85rem">Check your connection and try again.</span><div><button class="btn g">Retry</button></div></div></div>
+  <div class="pane"><h4>Empty (no product has a brand)</h4><div class="card emp"><h3>No brands yet</h3><p>Brands appear here once products have a Brand filled in Product Master.</p><button class="btn g">Open Product Master</button></div></div>
+  <div class="pane"><h4>No match</h4><div class="card emp"><strong>No brands are in the app at Patna Main yet</strong><p>A brand shows once this store has a wholesale item of it in stock.</p><button class="btn g">Clear filters</button></div></div>
+  <div class="pane"><h4>Denied (403)</h4><div class="card emp"><h3>You do not have access to Brands</h3><p>Only a super admin can manage brands.</p><button class="btn g">Back to dashboard</button></div></div>
+  <div class="pane"><h4>Flag off (above the table)</h4><div class="info-strip"><span style="color:var(--accent-text);font-weight:700">i</span>Shop by brand is off in the app right now. Changes here are saved and show up once it is on.</div></div>
+</div>
+
+<script>
+const PAL=[['#F5E3CD','#8A5A12'],['#D8EEE1','#20654E'],['#DCEAF3','#1F332B'],['#FADEE4','#1F332B'],['#D5EDE9','#20654E'],['#F7EBCF','#8A5A12'],['#E1E3F5','#1F332B'],['#F7E0EA','#1F332B']];
+const words=n=>n.trim().split(/\s+/).filter(Boolean);
+function initials(n){const w=words(n||'');if(!w.length)return '#';if(w.length===1){const c=[...w[0]].slice(0,2);return c[0].toUpperCase()+c.slice(1).join('').toLowerCase();}return w.slice(0,2).map(x=>x[0].toUpperCase()).join('');}
+function slot(n){return [...words((n||'').toLowerCase()).join(' ')].reduce((a,c)=>a+c.codePointAt(0),0)%8;}
+const LOGOS={
+ 'Amul':'<svg viewBox="0 0 100 60" aria-hidden="true"><rect x="10" y="12" width="80" height="36" rx="18" fill="#E21F26"/><text x="50" y="37" font-size="17" font-weight="800" fill="#fff" text-anchor="middle" font-family="Arial,sans-serif">amul</text></svg>',
+ 'Britannia':'<svg viewBox="0 0 100 60" aria-hidden="true"><rect x="4" y="18" width="92" height="24" rx="5" fill="#C8102E"/><text x="50" y="35" font-size="11" font-weight="700" fill="#fff" text-anchor="middle" font-family="Arial,sans-serif">BRITANNIA</text></svg>',
+ 'Dabur':'<svg viewBox="0 0 100 60" aria-hidden="true"><circle cx="30" cy="30" r="14" fill="#2E8B3E"/><text x="66" y="36" font-size="15" font-weight="700" fill="#2E8B3E" text-anchor="middle" font-family="Arial,sans-serif">Dabur</text></svg>',
+ 'Parle':'<svg viewBox="0 0 100 60" aria-hidden="true"><rect x="14" y="14" width="72" height="32" rx="6" fill="#FFD100"/><text x="50" y="36" font-size="16" font-weight="800" fill="#D7261E" text-anchor="middle" font-family="Arial,sans-serif">Parle</text></svg>'
+};
+function tile(name,size){const r=Math.round(size*.23);if(LOGOS[name])return `<span class="tile logo" style="width:${size}px;height:${size}px;border-radius:${r}px;padding:${Math.round(size*.12)}px">${LOGOS[name]}</span>`;const p=PAL[slot(name)];return `<span class="tile" style="width:${size}px;height:${size}px;border-radius:${r}px;background:${p[0]};color:${p[1]};font-size:${Math.round(size*.30)}px">${initials(name)}</span>`;}
+document.querySelectorAll('[data-tile]').forEach(el=>{el.outerHTML=tile(el.dataset.tile,+el.dataset.size);});
+const EYE='<svg class="ico" viewBox="0 0 16 16"><path d="M2 2l12 12M6.5 6.6A2 2 0 0 0 9.4 9.5M4.2 4.3C2.8 5.2 1.8 6.6 1.5 8c.8 2.9 3.6 5 6.5 5 1.3 0 2.5-.4 3.6-1M7 3.1c.3 0 .7-.1 1-.1 2.9 0 5.7 2.1 6.5 5-.2.8-.6 1.6-1.1 2.3" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>';
+const LOCK='<svg class="ico" viewBox="0 0 16 16"><rect x="3" y="7" width="10" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>';
+const R=[
+ ['Cadbury','cadbury','Cadbury, CADBURY','<span class="pill">+1 merged</span>','',45,12,'s','18 Nov 2026',1],
+ ['Amul','amul','Amul, AMUL +1 more','','2 look-alikes',38,9,'s','-'],
+ ['Britannia','britannia','Britannia','','',36,11,'s','12 Nov 2026'],
+ ['Dabur','dabur','Dabur, DABUR','','',31,7,'s','-'],
+ ['Haldiram\'s','haldiram\'s','Haldiram\'s','','1 look-alike',21,0,'h','17 Nov 2026'],
+ ['Parle','parle','Parle, PARLE','','',19,6,'s','-'],
+ ['Ching\'s Secret','ching\'s secret','Ching\'s Secret','','',14,4,'s','-'],
+ ['Generic','generic','Generic, GENERIC','','',364,null,'c','-'],
+ ['Tata Sampann','tata sampann','Tata Sampann','','',9,3,'s','-'],
+ ['9am','9am','9am','','',2,1,'s','-']
+];
+document.getElementById('rows').innerHTML=R.map(r=>{
+ const vis=r[7]==='s'?'<span class="muted">Shown</span>':r[7]==='h'?`<span class="pill">${EYE}Hidden</span>`:`<span class="pill">${LOCK}Catch-all</span>`;
+ const w=r[6]===null?'<span class="muted">-</span>':r[6]===0?'<span class="muted">0</span>':r[6];
+ return `<tr class="row${r[9]?' sel':''}"><td><div class="bc">${tile(r[0],32)}<div><div class="bn">${r[0]}</div><div class="key">${r[1]}</div></div></div></td>
+ <td><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span>${r[2]}</span>${r[3]}</div>${r[4]?`<div class="small wtxt">${r[4]}</div>`:''}</td>
+ <td class="num">${r[5]}</td><td class="num">${w}</td><td>${vis}</td><td class="num muted">${r[8]}</td><td class="muted">&rsaquo;</td></tr>`;}).join('');
+const b=document.getElementById('themeBtn');
+b.addEventListener('click',()=>{const h=document.documentElement;const l=h.dataset.theme==='light';h.dataset.theme=l?'dark':'light';b.textContent=l?'Switch to light theme':'Switch to dark theme';});
+if(location.hash==='#light'){document.documentElement.dataset.theme='light';b.textContent='Switch to dark theme';}
+</script>
+</body>
+</html>
